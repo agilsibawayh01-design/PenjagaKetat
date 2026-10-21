@@ -300,7 +300,7 @@ class MainActivity : Activity() {
 
     private fun renderApps(strict: Boolean) {
         header("Aplikasi diblokir")
-        root.addView(text("Centang aplikasi yang ingin diblokir, lalu tekan "Atur aturan" di bawah aplikasinya: blokir penuh atau timer tunggu, selalu atau sesuai jadwal. Tiap aplikasi punya aturan sendiri.", 12f))
+        root.addView(text("Centang aplikasi yang ingin diblokir, lalu tekan tombol Atur aturan di bawah aplikasinya: blokir penuh atau timer tunggu, selalu atau sesuai jadwal. Tiap aplikasi punya aturan sendiri.", 12f))
         val chosen = Store.apps(this)
         val rows = loadApps().sortedWith(compareByDescending<AppRow> { it.pkg in chosen }.thenBy { it.label.lowercase() })
         for (a in rows) {
