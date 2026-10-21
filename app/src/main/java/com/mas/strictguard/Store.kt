@@ -2,6 +2,15 @@ package com.mas.strictguard
 
 import android.content.Context
 
+class AppCfg(
+    val wait: Int = 0,
+    val pass: Int = 5,
+    val schOn: Boolean = false,
+    val start: Int = 21 * 60,
+    val end: Int = 5 * 60,
+    val days: Int = 127
+)
+
 object Store {
     private fun sp(c: Context) = c.getSharedPreferences("strictguard", Context.MODE_PRIVATE)
 
@@ -19,6 +28,60 @@ object Store {
     fun protectedApps(c: Context): Set<String> = getSet(c, "prot") + Config.SEED_PROTECTED
     fun addProtected(c: Context, p: String) = putSet(c, "prot", getSet(c, "prot") + p)
     fun removeProtected(c: Context, p: String) = putSet(c, "prot", getSet(c, "prot") - p)
+
+    fun appCfg(c: Context, pkg: String): AppCfg {
+        val raw = sp(c).getString("cfg_$pkg", null) ?: return AppCfg()
+        return try {
+            val p = raw.split('|')
+            AppCfg(p[0].toInt(), p[1].toInt(), p[2] == "1", p[3].toInt(), p[4].toInt(), p[5].toInt())
+        } catch (e: Exception) {
+            AppCfg()
+        }
+    }
+
+    fun setAppCfg(c: Context, pkg: String, g: AppCfg) {
+        val raw = "${g.wait}|${g.pass}|${if (g.schOn) "1" else "0"}|${g.start}|${g.end}|${g.days}"
+        sp(c).edit().putString("cfg_$pkg", raw).commit()
+    }
+
+    fun exitDelayMin(c: Context): Int = sp(c).getInt("exit_delay", 60)
+    fun setExitDelayMin(c: Context, v: Int) { sp(c).edit().putInt("exit_delay", v).commit() }
+
+    fun autoBlockNew(c: Context): Boolean = sp(c).getBoolean("auto_new", true)
+    fun setAutoBlockNew(c: Context, v: Boolean) { sp(c).edit().putBoolean("auto_new", v).commit() }
+
+    fun newApps(c: Context): List<Pair<String, Long>> {
+        val out = ArrayList<Pair<String, Long>>()
+        for (e in getSet(c, "newapps")) {
+            val i = e.lastIndexOf('|')
+            if (i <= 0) continue
+            val t = e.substring(i + 1).toLongOrNull() ?: continue
+            out.add(Pair(e.substring(0, i), t))
+        }
+        return out.sortedByDescending { it.second }.take(15)
+    }
+
+    fun addNewApp(c: Context, pkg: String) {
+        val all = getSet(c, "newapps").filter { !it.startsWith("$pkg|") }.toMutableSet()
+        all.add(pkg + "|" + System.currentTimeMillis())
+        putSet(c, "newapps", all)
+    }
+
+    fun extraBrowsers(c: Context): Set<String> = getSet(c, "browsers")
+    fun addBrowser(c: Context, p: String) = putSet(c, "browsers", getSet(c, "browsers") + p)
+
+    fun logs(c: Context): List<String> {
+        val raw = sp(c).getString("log", "") ?: ""
+        return raw.split('\n').filter { it.isNotBlank() }
+    }
+
+    fun log(c: Context, msg: String) {
+        val stamp = java.text.SimpleDateFormat("dd/MM HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+        val lines = ArrayList(logs(c))
+        lines.add("$stamp  $msg")
+        val kept = lines.takeLast(40)
+        sp(c).edit().putString("log", kept.joinToString("\n")).apply()
+    }
 
     fun addApp(c: Context, p: String) = putSet(c, "apps", apps(c) + p)
     fun removeApp(c: Context, p: String) = putSet(c, "apps", apps(c) - p)

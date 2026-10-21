@@ -18,6 +18,7 @@ class BlockActivity : Activity() {
     private lateinit var info: TextView
     private lateinit var openBtn: Button
     private var pkg = ""
+    private var passMin = 5
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -62,7 +63,9 @@ class BlockActivity : Activity() {
             "protect" -> info.text = "Mode Ketat aktif.\nHalaman pengaturan ini tidak bisa dibuka."
             "content" -> info.text = "Konten ini diblokir oleh Penjaga Ketat."
             else -> {
-                val wait = Store.waitSeconds(this)
+                val cfg = Store.appCfg(this, pkg)
+                passMin = cfg.pass
+                val wait = cfg.wait
                 if (wait <= 0) {
                     info.text = "Aplikasi ini sedang diblokir."
                 } else {
@@ -81,13 +84,13 @@ class BlockActivity : Activity() {
             remaining--
             handler.postDelayed({ tick() }, 1000L)
         } else {
-            info.text = "Waktu tunggu selesai.\nAplikasi terbuka ${Store.passMinutes(this)} menit."
+            info.text = "Waktu tunggu selesai.\nAplikasi terbuka $passMin menit."
             openBtn.isEnabled = true
         }
     }
 
     private fun openTarget() {
-        Store.setPass(this, pkg, System.currentTimeMillis() + Store.passMinutes(this) * 60000L)
+        Store.setPass(this, pkg, System.currentTimeMillis() + passMin * 60000L)
         val i = packageManager.getLaunchIntentForPackage(pkg)
         if (i != null) startActivity(i)
         finish()

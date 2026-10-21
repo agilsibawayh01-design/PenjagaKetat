@@ -20,10 +20,30 @@ class GuardService : AccessibilityService() {
     private var keywords: Set<String> = emptySet()
     private var domains: Set<String> = emptySet()
     private var protectedNames: List<String> = emptyList()
+    private var browsers: Set<String> = Config.BROWSERS
+    private var watcher: PackageWatcher? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         Store.seed(this)
+        try {
+            if (watcher == null) watcher = PackageWatcher.register(this)
+        } catch (t: Throwable) {
+            // abaikan
+        }
+        BrowserScanner.scan(this)
+        TimeGuard.check(this)
+        if (Store.strictOn(this)) WatchdogService.start(this)
+    }
+
+    override fun onDestroy() {
+        try {
+            watcher?.let { unregisterReceiver(it) }
+        } catch (t: Throwable) {
+            // abaikan
+        }
+        watcher = null
+        super.onDestroy()
     }
 
     override fun onInterrupt() {}
@@ -34,6 +54,7 @@ class GuardService : AccessibilityService() {
         apps = Store.apps(this)
         keywords = Store.keywords(this)
         domains = Store.domains(this)
+        browsers = Config.BROWSERS + Store.extraBrowsers(this)
         val names = ArrayList<String>()
         names.add(Config.APP_LABEL)
         for (p in Store.protectedApps(this)) {
@@ -62,9 +83,10 @@ class GuardService : AccessibilityService() {
     private fun handle(event: AccessibilityEvent, pkg: String) {
         val now = System.currentTimeMillis()
         refreshCache(now)
+        TimeGuard.check(this)
 
         // 1. Blokir aplikasi
-        if (pkg in apps && Rules.blockingActive(this) && Store.passUntil(this, pkg) <= now) {
+        if (pkg in apps && Rules.blockingActive(this, Store.appCfg(this, pkg)) && Store.passUntil(this, pkg) <= now) {
             blockApp(pkg)
             return
         }
@@ -91,7 +113,7 @@ class GuardService : AccessibilityService() {
         }
 
         // 4. Browser: periksa kolom alamat dan teks halaman
-        if (pkg in Config.BROWSERS && now - lastScanAt > 500L) {
+        if (pkg in browsers && now - lastScanAt > 500L) {
             lastScanAt = now
             val root = rootInActiveWindow ?: return
             for (n in collect(root, 400)) {

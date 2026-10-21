@@ -1,13 +1,16 @@
 package com.mas.strictguard
 
+import android.Manifest
 import android.app.Activity
 import android.app.TimePickerDialog
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -45,6 +48,7 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         Store.seed(this)
+        if (Store.strictOn(this) && !WatchdogService.running) WatchdogService.start(this)
         render()
     }
 
@@ -142,12 +146,13 @@ class MainActivity : Activity() {
         })
 
         renderStrict(strict, acc && adm)
+        renderProtection(strict)
         renderApps(strict)
+        renderNewApps(strict)
         renderProtected(strict)
         renderWords(strict)
-        renderWait(strict)
-        renderSchedule(strict)
         renderFeeds(strict)
+        renderLog()
 
         scroll.post { scroll.scrollTo(0, keepY) }
     }
@@ -156,45 +161,58 @@ class MainActivity : Activity() {
         header("Mode Ketat")
         if (!strict) {
             root.addView(text("Mati. Semua pengaturan bisa diubah bebas.", 13f))
+            root.addView(text("Waktu tunggu untuk keluar dari Mode Ketat (menit, 10 sampai 1440)", 12f))
+            val delay = EditText(this)
+            delay.inputType = InputType.TYPE_CLASS_NUMBER
+            delay.setText(Store.exitDelayMin(this).toString())
+            root.addView(delay)
             root.addView(button("Aktifkan Mode Ketat") {
                 if (!ready) {
                     toast("Aktifkan Aksesibilitas dan perlindungan uninstall dulu")
                 } else {
+                    val d = (delay.text.toString().toIntOrNull() ?: 60).coerceIn(10, 1440)
+                    Store.setExitDelayMin(this, d)
                     Store.setStrict(this, true)
-                    Store.setDisableRequestedAt(this, 0L)
+                    SafeTimer.cancel(this, "exit")
+                    Store.log(this, "Mode Ketat diaktifkan (tunggu keluar $d menit)")
+                    WatchdogService.start(this)
                     render()
                 }
             })
             return
         }
         root.addView(text("AKTIF. Daftar blokir hanya bisa ditambah, tidak bisa dikurangi. Pengaturan lain terkunci. Aplikasi tidak bisa dicopot, dan halaman Pengaturan yang menyebut Penjaga Ketat diblokir.", 13f, true, Color.rgb(180, 0, 0)))
-        val req = Store.disableRequestedAt(this)
-        if (req == 0L) {
-            root.addView(button("Minta nonaktifkan (tunggu 60 menit)") {
-                Store.setDisableRequestedAt(this, System.currentTimeMillis())
+        if (!SafeTimer.isRunning(this, "exit")) {
+            val delay = Store.exitDelayMin(this)
+            root.addView(button("Minta nonaktifkan (tunggu $delay menit)") {
+                SafeTimer.start(this, "exit")
+                Store.log(this, "Permintaan keluar Mode Ketat dimulai")
                 gateText = null
                 render()
             })
             return
         }
-        val left = req + Config.DISABLE_WAIT_MS - System.currentTimeMillis()
+        val totalMs = Store.exitDelayMin(this) * 60000L
+        val left = totalMs - SafeTimer.elapsed(this, "exit")
         if (left > 0) {
-            root.addView(text("Permintaan nonaktif berjalan. Sisa ${left / 60000L + 1} menit.", 14f, true))
+            root.addView(text("Permintaan nonaktif berjalan. Sisa ${left / 60000L + 1} menit. Waktu dihitung dari jam internal, jadi mengubah jam HP tidak mempercepatnya.", 14f, true))
             root.addView(button("Batalkan permintaan") {
-                Store.setDisableRequestedAt(this, 0L)
+                SafeTimer.cancel(this, "exit")
                 render()
             })
             handler.postDelayed({ render() }, 30000L)
         } else {
             val code = gateText ?: Rules.randomText().also { gateText = it }
             root.addView(text("Waktu tunggu selesai. Ketik teks ini persis untuk menonaktifkan:", 13f))
-            root.addView(text(code, 20f, true).apply { setTextIsSelectable(false) })
-            val input = EditText(this).apply { inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS }
+            root.addView(text(code, 20f, true))
+            val input = EditText(this)
+            input.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             root.addView(input)
             root.addView(button("Konfirmasi nonaktifkan") {
                 if (input.text.toString() == code) {
                     Store.setStrict(this, false)
-                    Store.setDisableRequestedAt(this, 0L)
+                    SafeTimer.cancel(this, "exit")
+                    Store.log(this, "Mode Ketat dinonaktifkan")
                     gateText = null
                     render()
                 } else {
@@ -202,16 +220,87 @@ class MainActivity : Activity() {
                 }
             })
             root.addView(button("Batalkan permintaan") {
-                Store.setDisableRequestedAt(this, 0L)
+                SafeTimer.cancel(this, "exit")
                 gateText = null
                 render()
             })
         }
     }
 
+    private fun renderProtection(strict: Boolean) {
+        header("Perlindungan diri")
+        val secure = SelfProtector.canWriteSecure(this)
+        val usage = Foreground.hasUsageAccess(this)
+        status(secure, "Pemulih otomatis aksesibilitas (izin WRITE_SECURE_SETTINGS)")
+        status(usage, "Akses Penggunaan (mengenali aplikasi bank terbuka)")
+        status(WatchdogService.running, "Pengawas berjalan (hanya saat Mode Ketat aktif)")
+        if (!secure) {
+            root.addView(text("Agar aksesibilitas yang dimatikan otomatis menyala lagi, jalankan SEKALI dari PC (USB debugging aktif):", 12f))
+            root.addView(text("adb shell pm grant $packageName android.permission.WRITE_SECURE_SETTINGS", 12f).apply {
+                setTextIsSelectable(true)
+                setBackgroundColor(Color.rgb(235, 235, 235))
+                setPadding(dp(8), dp(8), dp(8), dp(8))
+            })
+            root.addView(text("Tanpa izin ini, pengawas hanya memberi peringatan lewat notifikasi, tidak bisa menyalakan sendiri.", 12f))
+        }
+        if (!usage) root.addView(button("Buka pengaturan Akses Penggunaan") {
+            startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+        })
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            root.addView(button("Izinkan notifikasi peringatan") {
+                requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+            })
+        }
+        root.addView(text("Jam HP diubah saat Mode Ketat aktif: jadwal diabaikan dan blokir berlaku penuh 30 menit.", 12f))
+        root.addView(text("Pemulihan darurat: keluar Mode Ketat lewat tombol di atas (tunggu lalu ketik teks acak). Itu jalur pemulihan yang selalu tersedia, tanpa PC.", 12f))
+    }
+
+    private fun renderNewApps(strict: Boolean) {
+        header("Aplikasi baru")
+        val cb = CheckBox(this)
+        cb.text = "Blokir otomatis aplikasi yang baru dipasang"
+        cb.isChecked = Store.autoBlockNew(this)
+        cb.setOnClickListener {
+            val v = cb.isChecked
+            if (!v && strict) {
+                toast("Mode Ketat aktif: tidak bisa dimatikan")
+            } else {
+                Store.setAutoBlockNew(this, v)
+            }
+            render()
+        }
+        root.addView(cb)
+        val list = Store.newApps(this)
+        if (list.isEmpty()) {
+            root.addView(text("Belum ada aplikasi baru yang terdeteksi.", 12f))
+        }
+        val fmtDate = java.text.SimpleDateFormat("dd/MM HH:mm", java.util.Locale.getDefault())
+        for ((p, t) in list) {
+            val label = try {
+                packageManager.getApplicationLabel(packageManager.getApplicationInfo(p, 0)).toString()
+            } catch (e: Exception) {
+                p + " (sudah dicopot)"
+            }
+            val blocked = if (p in Store.apps(this)) " - diblokir" else ""
+            root.addView(text(fmtDate.format(java.util.Date(t)) + "  " + label + blocked, 12f))
+        }
+    }
+
+    private fun renderLog() {
+        header("Catatan perlindungan")
+        val lines = Store.logs(this)
+        if (lines.isEmpty()) {
+            root.addView(text("Belum ada catatan.", 12f))
+        } else {
+            for (l in lines.takeLast(15).reversed()) root.addView(text(l, 11f))
+        }
+    }
+
     private fun renderApps(strict: Boolean) {
         header("Aplikasi diblokir")
-        root.addView(text("Centang aplikasi yang ingin diblokir (sesuai jadwal di bawah).", 12f))
+        root.addView(text("Centang aplikasi yang ingin diblokir, lalu tekan "Atur aturan" di bawah aplikasinya: blokir penuh atau timer tunggu, selalu atau sesuai jadwal. Tiap aplikasi punya aturan sendiri.", 12f))
         val chosen = Store.apps(this)
         val rows = loadApps().sortedWith(compareByDescending<AppRow> { it.pkg in chosen }.thenBy { it.label.lowercase() })
         for (a in rows) {
@@ -232,7 +321,100 @@ class MainActivity : Activity() {
                 }
             }
             root.addView(cb)
+            if (a.pkg in chosen) {
+                val cfg = Store.appCfg(this, a.pkg)
+                root.addView(text("     " + summary(cfg), 12f, false, Color.rgb(90, 90, 90)))
+                root.addView(button("Atur aturan: ${a.label}") { editCfg(a.pkg, a.label, strict) })
+            }
         }
+    }
+
+    private fun summary(c: AppCfg): String {
+        val mode = if (c.wait <= 0) "Blokir penuh" else "Timer ${c.wait} dtk, terbuka ${c.pass} mnt"
+        val sch = if (c.schOn) "${fmt(c.start)}-${fmt(c.end)}" else "selalu"
+        return "$mode • $sch"
+    }
+
+    private fun editCfg(pkg: String, label: String, strict: Boolean) {
+        if (strict) {
+            toast("Mode Ketat aktif: aturan terkunci")
+            return
+        }
+        val cfg = Store.appCfg(this, pkg)
+        var start = cfg.start
+        var end = cfg.end
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), dp(8))
+        }
+        box.addView(text("Detik tunggu (0 = blokir penuh, tanpa tombol buka)", 12f))
+        val wait = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setText(cfg.wait.toString())
+        }
+        box.addView(wait)
+        box.addView(text("Menit aplikasi terbuka setelah menunggu", 12f))
+        val pass = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setText(cfg.pass.toString())
+        }
+        box.addView(pass)
+        val schCb = CheckBox(this).apply {
+            text = "Hanya pada jadwal (kalau tidak dicentang: berlaku terus)"
+            isChecked = cfg.schOn
+        }
+        box.addView(schCb)
+        val startBtn = Button(this)
+        startBtn.text = "Mulai: ${fmt(start)}"
+        startBtn.setOnClickListener {
+            TimePickerDialog(this, { _, h, mi ->
+                start = h * 60 + mi
+                startBtn.text = "Mulai: ${fmt(start)}"
+            }, start / 60, start % 60, true).show()
+        }
+        box.addView(startBtn)
+        val endBtn = Button(this)
+        endBtn.text = "Selesai: ${fmt(end)}"
+        endBtn.setOnClickListener {
+            TimePickerDialog(this, { _, h, mi ->
+                end = h * 60 + mi
+                endBtn.text = "Selesai: ${fmt(end)}"
+            }, end / 60, end % 60, true).show()
+        }
+        box.addView(endBtn)
+        val names = arrayOf("Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min")
+        val dayBoxes = ArrayList<CheckBox>()
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        for (i in 0 until 7) {
+            val d = CheckBox(this)
+            d.text = names[i]
+            d.textSize = 10f
+            d.isChecked = (cfg.days and (1 shl i)) != 0
+            dayBoxes.add(d)
+            row.addView(d)
+        }
+        box.addView(row)
+        val scrollBox = ScrollView(this)
+        scrollBox.addView(box)
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Aturan: $label")
+            .setView(scrollBox)
+            .setPositiveButton("Simpan") { _, _ ->
+                var mask = 0
+                for (i in 0 until 7) if (dayBoxes[i].isChecked) mask = mask or (1 shl i)
+                if (mask == 0) mask = 127
+                Store.setAppCfg(
+                    this, pkg,
+                    AppCfg(
+                        (wait.text.toString().toIntOrNull() ?: 0).coerceIn(0, 600),
+                        (pass.text.toString().toIntOrNull() ?: 5).coerceIn(1, 120),
+                        schCb.isChecked, start, end, mask
+                    )
+                )
+                render()
+            }
+            .setNegativeButton("Batal", null)
+            .show()
     }
 
     private fun renderProtected(strict: Boolean) {

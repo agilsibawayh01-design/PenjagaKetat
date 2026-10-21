@@ -28,6 +28,13 @@ object Config {
         "com.google.android.googlequicksearchbox", "mark.via.gp", "com.uc.browser.en"
     )
 
+    /** Paket bank yang dikenal (sama dengan BankSwitch). Dipakai agar pengawas tidak menyalakan aksesibilitas saat bank terbuka. */
+    val BANK_HINT: Set<String> = setOf(
+        "id.bni.wondr", "com.bibit.bibitid", "com.bca", "com.bca.mybca.omni.android", "id.co.bri.brimo",
+        "id.bmri.livin", "com.jago.digitalBanking", "com.bcadigital.blu", "com.btpn.dc",
+        "id.co.cimbniaga.mobile.android", "com.bsm.activity2", "com.id.bankbsi.superapp"
+    )
+
     const val YOUTUBE = "com.google.android.youtube"
     const val INSTAGRAM = "com.instagram.android"
 
