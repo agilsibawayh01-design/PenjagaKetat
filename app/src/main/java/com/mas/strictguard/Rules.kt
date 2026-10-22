@@ -7,9 +7,16 @@ import java.util.Calendar
 object Rules {
     /** True bila blokir aplikasi sedang berlaku (selalu, atau sesuai jadwal). */
     fun blockingActive(c: Context, g: AppCfg): Boolean {
-        if (!g.schOn) return true
         if (TimeGuard.penaltyActive(c)) return true
+        if (!g.schOn) return dayActive(c, g.days)
         return scheduleActive(g.start, g.end, g.days)
+    }
+
+    /** True bila hari ini termasuk hari yang dipilih (Senin=bit 0 .. Minggu=bit 6). Penalti jam = selalu aktif. */
+    fun dayActive(c: Context, days: Int): Boolean {
+        if (TimeGuard.penaltyActive(c)) return true
+        val today = (Calendar.getInstance().get(Calendar.DAY_OF_WEEK) + 5) % 7
+        return (days and (1 shl today)) != 0
     }
 
     /** True bila sekarang berada dalam jendela jadwal (mendukung jadwal lewat tengah malam). */
@@ -49,11 +56,31 @@ object Rules {
         return null
     }
 
+    private val HOST = Regex("[a-z0-9][a-z0-9.-]*\\.[a-z]{2,}")
+
+    /** Rapikan input situs: huruf kecil, tanpa skema, tanpa "*." dan "www.", tanpa path. */
+    fun normalizeDomain(raw: String): String {
+        var d = raw.trim().lowercase()
+        d = d.removePrefix("https://").removePrefix("http://")
+        d = d.removePrefix("*.").removePrefix("www.")
+        val slash = d.indexOf('/')
+        if (slash >= 0) d = d.substring(0, slash)
+        return d.trim().trim('.')
+    }
+
+    /**
+     * Cocokkan situs beserta subdomainnya: "xvideos.com" cocok untuk "m.xvideos.com" dan "www.xvideos.com",
+     * tetapi "x.com" tidak cocok untuk "netflix.com".
+     */
     fun matchesDomain(text: String, domains: Collection<String>): String? {
         val t = text.lowercase()
+        val hosts = HOST.findAll(t).map { it.value.removePrefix("www.") }.toList()
         for (d in domains) {
-            val dd = d.trim().lowercase()
-            if (dd.isNotEmpty() && t.contains(dd)) return d
+            val dd = normalizeDomain(d)
+            if (dd.isEmpty()) continue
+            for (h in hosts) {
+                if (h == dd || h.endsWith(".$dd")) return d
+            }
         }
         return null
     }

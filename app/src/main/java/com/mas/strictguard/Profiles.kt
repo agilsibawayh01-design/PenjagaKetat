@@ -130,10 +130,17 @@ object BlockEngine {
         if (pkg in apps) {
             val cfg = Store.appCfg(c, pkg)
             if (cfg.blockUntil > now) return "until"
-            val passOk = Store.passUntil(c, pkg) > now
-            if (!passOk) {
-                if (cfg.mode == 0 && Rules.blockingActive(c, cfg)) return "app"
-                if (cfg.limitMin > 0 && UsageTracker.todayMs(c, pkg) >= cfg.limitMin * 60000L) return "limit"
+            if (Rules.dayActive(c, cfg.days)) {
+                // kondisi keras: tidak bisa ditembus dengan pass
+                if (cfg.twUse > 0 && cfg.twWait > 0 && WaitTimer.remaining(c, pkg, cfg, now) > 0L) return "wait"
+                if (cfg.hourLimit > 0 && UsageTracker.hourMs(c, pkg) >= cfg.hourLimit * 60000L) return "hour"
+                if (cfg.launchDay > 0 && UsageTracker.launchesToday(c, pkg) > cfg.launchDay) return "launch"
+                if (cfg.launchHour > 0 && UsageTracker.launchesHour(c, pkg) > cfg.launchHour) return "launch"
+                val passOk = Store.passUntil(c, pkg) > now
+                if (!passOk) {
+                    if (cfg.mode == 0 && Rules.blockingActive(c, cfg)) return "app"
+                    if (cfg.limitMin > 0 && UsageTracker.todayMs(c, pkg) >= cfg.limitMin * 60000L) return "limit"
+                }
             }
         }
         for (p in profiles) {
@@ -146,7 +153,10 @@ object BlockEngine {
 
     /** True bila aplikasi punya batas harian (supaya perlu dicek berkala selama dipakai). */
     fun hasLimit(c: Context, pkg: String, apps: Set<String>, profiles: List<Profile>): Boolean {
-        if (pkg in apps && Store.appCfg(c, pkg).limitMin > 0) return true
+        if (pkg in apps) {
+            val g = Store.appCfg(c, pkg)
+            if (g.limitMin > 0 || g.hourLimit > 0 || (g.twUse > 0 && g.twWait > 0)) return true
+        }
         for (p in profiles) {
             if (pkg in p.apps && p.limitMin > 0 && ProfileEngine.isActive(c, p)) return true
         }

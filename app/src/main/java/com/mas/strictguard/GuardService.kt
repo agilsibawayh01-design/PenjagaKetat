@@ -85,8 +85,8 @@ class GuardService : AccessibilityService() {
         apps = Store.apps(this)
         profiles = ProfileStore.load(this)
         val active = profiles.filter { ProfileEngine.isActive(this, it) }
-        keywords = Store.keywords(this) + active.flatMap { it.keywords }
-        domains = Store.domains(this) + active.flatMap { it.domains }
+        keywords = Store.keywords(this) + Categories.keywords(this) + active.flatMap { it.keywords }
+        domains = Store.domains(this) + Categories.domains(this) + active.flatMap { it.domains }
         browsers = Config.BROWSERS + Store.extraBrowsers(this)
         val names = ArrayList<String>()
         names.add(Config.APP_LABEL)
@@ -241,10 +241,6 @@ class GuardService : AccessibilityService() {
         return false
     }
 
-    private fun blockApp(pkg: String) {
-        launchBlock("app", pkg)
-    }
-
     private fun blockContent(mode: String) {
         launchBlock(mode, "")
     }
@@ -253,6 +249,7 @@ class GuardService : AccessibilityService() {
         val now = System.currentTimeMillis()
         if (now - lastBlockAt < 800L) return
         lastBlockAt = now
+        StatsDb.addBlock(this, mode, pkg)
         performGlobalAction(GLOBAL_ACTION_HOME)
         val i = Intent(this, BlockActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION)

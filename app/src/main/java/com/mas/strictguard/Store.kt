@@ -12,7 +12,13 @@ data class AppCfg(
     val mode: Int = 0,
     val limitMin: Int = 0,
     val cooldown: Int = 0,
-    val blockUntil: Long = 0L
+    val blockUntil: Long = 0L,
+    val hourLimit: Int = 0,
+    val launchDay: Int = 0,
+    val launchHour: Int = 0,
+    val twUse: Int = 0,
+    val twWait: Int = 0,
+    val twAdaptive: Boolean = true
 )
 
 object Store {
@@ -37,7 +43,13 @@ object Store {
         val raw = sp(c).getString("cfg_$pkg", null) ?: return AppCfg()
         return try {
             val p = raw.split('|')
-            if (p.size >= 10) {
+            if (p.size >= 16) {
+                AppCfg(
+                    p[0].toInt(), p[1].toInt(), p[2] == "1", p[3].toInt(), p[4].toInt(), p[5].toInt(),
+                    p[6].toInt(), p[7].toInt(), p[8].toInt(), p[9].toLong(),
+                    p[10].toInt(), p[11].toInt(), p[12].toInt(), p[13].toInt(), p[14].toInt(), p[15] == "1"
+                )
+            } else if (p.size >= 10) {
                 AppCfg(
                     p[0].toInt(), p[1].toInt(), p[2] == "1", p[3].toInt(), p[4].toInt(), p[5].toInt(),
                     p[6].toInt(), p[7].toInt(), p[8].toInt(), p[9].toLong()
@@ -52,7 +64,8 @@ object Store {
 
     fun setAppCfg(c: Context, pkg: String, g: AppCfg) {
         val raw = "${g.wait}|${g.pass}|${if (g.schOn) "1" else "0"}|${g.start}|${g.end}|${g.days}|" +
-            "${g.mode}|${g.limitMin}|${g.cooldown}|${g.blockUntil}"
+            "${g.mode}|${g.limitMin}|${g.cooldown}|${g.blockUntil}|" +
+            "${g.hourLimit}|${g.launchDay}|${g.launchHour}|${g.twUse}|${g.twWait}|${if (g.twAdaptive) "1" else "0"}"
         sp(c).edit().putString("cfg_$pkg", raw).commit()
     }
 
@@ -77,6 +90,13 @@ object Store {
         lines.add("$stamp|$pkg|$minutes")
         sp(c).edit().putString("passlog", lines.takeLast(30).joinToString("\n")).apply()
     }
+
+    fun motivation(c: Context): String = sp(c).getString("motivation", null)
+        ?: "Ingat tujuanmu. Waktu yang kamu jaga hari ini adalah investasi untuk dirimu esok."
+    fun setMotivation(c: Context, v: String) { sp(c).edit().putString("motivation", v.trim()).commit() }
+
+    fun categoryOn(c: Context, id: String): Boolean = sp(c).getBoolean("cat_$id", id == "dewasa" || id == "judi")
+    fun setCategory(c: Context, id: String, v: Boolean) { sp(c).edit().putBoolean("cat_$id", v).commit() }
 
     fun exitDelayMin(c: Context): Int = sp(c).getInt("exit_delay", 60)
     fun setExitDelayMin(c: Context, v: Int) { sp(c).edit().putInt("exit_delay", v).commit() }
@@ -121,7 +141,10 @@ object Store {
     fun removeApp(c: Context, p: String) = putSet(c, "apps", apps(c) - p)
     fun addKeyword(c: Context, k: String) = putSet(c, "keywords", keywords(c) + k.trim().lowercase())
     fun removeKeyword(c: Context, k: String) = putSet(c, "keywords", keywords(c) - k)
-    fun addDomain(c: Context, d: String) = putSet(c, "domains", domains(c) + d.trim().lowercase())
+    fun addDomain(c: Context, d: String) {
+        val n = Rules.normalizeDomain(d)
+        if (n.isNotEmpty()) putSet(c, "domains", domains(c) + n)
+    }
     fun removeDomain(c: Context, d: String) = putSet(c, "domains", domains(c) - d)
 
     fun seed(c: Context) {

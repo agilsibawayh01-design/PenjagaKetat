@@ -153,8 +153,11 @@ class MainActivity : Activity() {
         renderProfiles(strict)
         renderNewApps(strict)
         renderProtected(strict)
+        renderCategories(strict)
         renderWords(strict)
         renderFeeds(strict)
+        renderMotivation(strict)
+        renderStats(strict)
         renderLog()
 
         scroll.post { scroll.scrollTo(0, keepY) }
@@ -355,13 +358,18 @@ class MainActivity : Activity() {
     }
 
     private fun summary(c: AppCfg): String {
-        val mode = if (c.mode == 1) "Hanya batas harian"
+        val mode = if (c.mode == 1) "Hanya kondisi batas"
         else if (c.wait <= 0) "Blokir penuh"
         else "Timer ${c.wait} dtk, terbuka ${c.pass} mnt"
         val sch = if (c.schOn) "${fmt(c.start)}-${fmt(c.end)}" else "selalu"
         var s = "$mode • $sch"
         if (c.limitMin > 0) s += " • batas ${c.limitMin} mnt/hari"
         if (c.cooldown > 0) s += " • cooldown ${c.cooldown} mnt"
+        if (c.hourLimit > 0) s += " • ${c.hourLimit} mnt/jam"
+        if (c.launchDay > 0) s += " • ${c.launchDay} buka/hari"
+        if (c.launchHour > 0) s += " • ${c.launchHour} buka/jam"
+        if (c.twUse > 0 && c.twWait > 0) s += " • timer: pakai ${c.twUse} mnt → tunggu ${c.twWait} mnt"
+        s += " • " + dayNames(c.days)
         if (c.blockUntil > System.currentTimeMillis()) {
             val f = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
             s += " • blokir penuh sampai " + f.format(java.util.Date(c.blockUntil))
@@ -373,7 +381,7 @@ class MainActivity : Activity() {
         if (!Foreground.hasUsageAccess(this)) return "Pemakaian: aktifkan Akses Penggunaan"
         val u = UsageTracker.get(this)
         val usedMin = (u.ms[pkg] ?: 0L) / 60000L
-        var s = "Hari ini: $usedMin mnt"
+        var s = "Hari ini: $usedMin mnt, ${u.launches[pkg] ?: 0}x buka"
         if (c.limitMin > 0) s += " • sisa " + Math.max(0L, c.limitMin - usedMin) + " mnt"
         val last = u.last[pkg] ?: 0L
         if (last > 0L) {
@@ -418,7 +426,7 @@ class MainActivity : Activity() {
         box.setPadding(dp(20), dp(8), dp(20), dp(8))
 
         box.addView(text("Mode", 12f, true))
-        val modeSp = spinnerOf(listOf("Blokir (penuh atau timer tunggu)", "Hanya batas harian"), cfg.mode)
+        val modeSp = spinnerOf(listOf("Blokir (penuh atau timer tunggu)", "Hanya kondisi batas (tanpa blokir penuh)"), cfg.mode)
         box.addView(modeSp)
 
         box.addView(text("Detik tunggu (0 = blokir penuh / Strictly Blocked)", 12f))
@@ -436,6 +444,29 @@ class MainActivity : Activity() {
         box.addView(text("Batas harian (menit, 0 = tanpa batas)", 12f))
         val limit = numberField(cfg.limitMin)
         box.addView(limit)
+
+        box.addView(text("Batas per jam (menit pemakaian dalam 60 menit terakhir, 0 = tanpa batas)", 12f))
+        val hourLim = numberField(cfg.hourLimit)
+        box.addView(hourLim)
+
+        box.addView(text("Jumlah peluncuran per hari (0 = tanpa batas)", 12f))
+        val launchD = numberField(cfg.launchDay)
+        box.addView(launchD)
+
+        box.addView(text("Jumlah peluncuran per jam (0 = tanpa batas)", 12f))
+        val launchH = numberField(cfg.launchHour)
+        box.addView(launchH)
+
+        box.addView(text("Timer tunggu: setelah dipakai ... menit (0 = mati)", 12f, true))
+        val twUse = numberField(cfg.twUse)
+        box.addView(twUse)
+        box.addView(text("... aplikasi diblokir selama ... menit", 12f))
+        val twWait = numberField(cfg.twWait)
+        box.addView(twWait)
+        val twAd = CheckBox(this)
+        twAd.text = "Timer adaptif: bila tidak mencoba membuka aplikasi selama separuh masa tunggu, tunggu selesai lebih cepat"
+        twAd.isChecked = cfg.twAdaptive
+        box.addView(twAd)
 
         val schCb = CheckBox(this)
         schCb.text = "Blokir hanya pada jadwal (tidak dicentang: berlaku terus)"
@@ -490,7 +521,13 @@ class MainActivity : Activity() {
                     days = mask,
                     mode = modeSp.selectedItemPosition,
                     limitMin = (limit.text.toString().toIntOrNull() ?: 0).coerceIn(0, 1440),
-                    cooldown = (cool.text.toString().toIntOrNull() ?: 0).coerceIn(0, 1440)
+                    cooldown = (cool.text.toString().toIntOrNull() ?: 0).coerceIn(0, 1440),
+                    hourLimit = (hourLim.text.toString().toIntOrNull() ?: 0).coerceIn(0, 60),
+                    launchDay = (launchD.text.toString().toIntOrNull() ?: 0).coerceIn(0, 1000),
+                    launchHour = (launchH.text.toString().toIntOrNull() ?: 0).coerceIn(0, 100),
+                    twUse = (twUse.text.toString().toIntOrNull() ?: 0).coerceIn(0, 1440),
+                    twWait = (twWait.text.toString().toIntOrNull() ?: 0).coerceIn(0, 1440),
+                    twAdaptive = twAd.isChecked
                 )
                 Store.setAppCfg(this, pkg, newCfg)
                 render()
@@ -694,6 +731,97 @@ class MainActivity : Activity() {
             }
             root.addView(cb)
         }
+    }
+
+    private fun renderCategories(strict: Boolean) {
+        header("Kategori situs")
+        root.addView(text("Nyalakan kategori untuk memblokir situs dan kata kunci sekaligus. Subdomain ikut terblokir (mis. m.situs.com). Saat Mode Ketat aktif, kategori hanya bisa dinyalakan, tidak bisa dimatikan.", 12f))
+        for (cat in Categories.ALL) {
+            val on = Store.categoryOn(this, cat.id)
+            root.addView(CheckBox(this).apply {
+                text = cat.name + "\n" + cat.desc
+                textSize = 13f
+                isChecked = on
+                setOnClickListener { v ->
+                    val now = (v as CheckBox).isChecked
+                    if (!now && strict) {
+                        toast("Mode Ketat aktif: kategori tidak bisa dimatikan")
+                    } else {
+                        Store.setCategory(this@MainActivity, cat.id, now)
+                        Store.log(this@MainActivity, "Kategori ${cat.name}: " + (if (now) "ON" else "OFF"))
+                    }
+                    render()
+                }
+            })
+        }
+    }
+
+    private fun renderMotivation(strict: Boolean) {
+        header("Teks motivasi")
+        root.addView(text("Ditampilkan di layar blokir.", 12f))
+        val et = EditText(this).apply {
+            setText(Store.motivation(this@MainActivity))
+            textSize = 13f
+        }
+        root.addView(et)
+        root.addView(button("Simpan teks motivasi") {
+            Store.setMotivation(this, et.text.toString())
+            toast("Tersimpan")
+        })
+    }
+
+    private fun reasonName(r: String): String = when (r) {
+        "app" -> "Aplikasi diblokir"
+        "limit" -> "Batas harian"
+        "hour" -> "Batas per jam"
+        "launch" -> "Batas peluncuran"
+        "wait" -> "Timer tunggu"
+        "until" -> "Blokir penuh sementara"
+        "profile" -> "Profil"
+        "content" -> "Konten/situs/kata kunci"
+        "protect" -> "Perlindungan pengaturan"
+        else -> r
+    }
+
+    private fun appLabel(pkg: String): String = try {
+        packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
+    } catch (e: Exception) {
+        pkg
+    }
+
+    private fun renderStats(strict: Boolean) {
+        header("Statistik")
+        if (!Foreground.hasUsageAccess(this)) {
+            root.addView(text("Aktifkan Akses Penggunaan agar pemakaian aplikasi tercatat.", 12f))
+        } else {
+            UsageTracker.get(this)
+        }
+        try {
+            val dayStart = UsageTracker.startOfDay()
+            val today = StatsDb.blocksByReason(this, dayStart)
+            val week = StatsDb.blocksByReason(this, dayStart - 6L * 86400000L)
+            root.addView(text("Blokir hari ini: " + (if (today.isEmpty()) "0" else today.joinToString(", ") { reasonName(it.first) + " " + it.second }), 12f))
+            root.addView(text("Blokir 7 hari: " + (if (week.isEmpty()) "0" else week.joinToString(", ") { reasonName(it.first) + " " + it.second }), 12f))
+
+            val totals = StatsDb.dailyTotals(this, 7)
+            val maxMs = Math.max(1L, totals.maxOf { it.second })
+            root.addView(text("Pemakaian 7 hari (semua aplikasi tercatat):", 12f, true))
+            for ((day, ms) in totals) {
+                val bars = (ms * 20L / maxMs).toInt()
+                val line = day.substring(5) + "  " + "█".repeat(bars) + " " + (ms / 60000L) + " mnt"
+                root.addView(text(line, 11f))
+            }
+            val top = StatsDb.topApps(this, 7, 8)
+            if (top.isNotEmpty()) {
+                root.addView(text("Aplikasi teratas 7 hari:", 12f, true))
+                for ((pkg, ms, l) in top) root.addView(text(appLabel(pkg) + "  " + (ms / 60000L) + " mnt, " + l + "x buka", 11f))
+            }
+        } catch (t: Throwable) {
+            root.addView(text("Statistik belum tersedia.", 12f))
+        }
+        root.addView(button("Hapus statistik") {
+            if (strict) toast("Mode Ketat aktif: statistik terkunci") else { StatsDb.clear(this); render() }
+        })
     }
 
     private fun renderWords(strict: Boolean) {

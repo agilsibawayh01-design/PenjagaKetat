@@ -17,6 +17,7 @@ class BlockActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())
     private var remaining = 0
     private lateinit var info: TextView
+    private lateinit var motiv: TextView
     private lateinit var openBtn: Button
     private var pkg = ""
     private var passMin = 5
@@ -45,6 +46,14 @@ class BlockActivity : Activity() {
             gravity = Gravity.CENTER
             setPadding(0, 24, 0, 24)
         }
+        motiv = TextView(this).apply {
+            textSize = 14f
+            setTextColor(Color.rgb(70, 70, 70))
+            setTypeface(null, Typeface.ITALIC)
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, 24)
+            text = Store.motivation(this@BlockActivity)
+        }
         openBtn = Button(this).apply {
             text = "Buka aplikasi"
             visibility = View.GONE
@@ -56,6 +65,7 @@ class BlockActivity : Activity() {
         }
         root.addView(title)
         root.addView(info)
+        root.addView(motiv)
         root.addView(openBtn)
         root.addView(closeBtn)
         setContentView(root)
@@ -69,6 +79,14 @@ class BlockActivity : Activity() {
                 val f = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
                 info.text = "Aplikasi ini diblokir penuh sampai " + f.format(java.util.Date(until)) + "."
             }
+            "wait" -> {
+                val g = Store.appCfg(this, pkg)
+                WaitTimer.noteAttempt(this, pkg)
+                val left = WaitTimer.remaining(this, pkg, g, System.currentTimeMillis())
+                info.text = "Timer tunggu aktif.\nAplikasi bisa dibuka lagi sekitar " + (left / 60000L + 1) + " menit lagi."
+            }
+            "hour" -> info.text = "Batas pemakaian per jam tercapai.\nCoba lagi nanti."
+            "launch" -> info.text = "Batas jumlah peluncuran aplikasi ini tercapai."
             else -> startTimerFlow(mode)
         }
     }
