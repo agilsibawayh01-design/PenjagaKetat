@@ -60,4 +60,26 @@ object SelfProtector {
             false
         }
     }
+
+    private const val NOTIF_KEY = "enabled_notification_listeners"
+
+    fun notifListenerOn(c: Context): Boolean {
+        val raw = Settings.Secure.getString(c.contentResolver, NOTIF_KEY) ?: ""
+        return raw.split(':').any { ComponentName.unflattenFromString(it)?.packageName == c.packageName }
+    }
+
+    /** Menyalakan akses notifikasi sendiri. Butuh WRITE_SECURE_SETTINGS. */
+    fun enableNotifListener(c: Context): Boolean {
+        if (!canWriteSecure(c)) return false
+        if (notifListenerOn(c)) return true
+        return try {
+            val raw = Settings.Secure.getString(c.contentResolver, NOTIF_KEY) ?: ""
+            val list = raw.split(':').filter { it.isNotBlank() }.toMutableList()
+            list.add(ComponentName(c, NotifGuard::class.java).flattenToString())
+            Settings.Secure.putString(c.contentResolver, NOTIF_KEY, list.joinToString(":"))
+            true
+        } catch (t: Throwable) {
+            false
+        }
+    }
 }
