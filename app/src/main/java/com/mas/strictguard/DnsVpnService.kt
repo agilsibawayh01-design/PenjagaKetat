@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.VpnService
 import android.os.ParcelFileDescriptor
+import android.system.OsConstants
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.DatagramPacket
@@ -11,6 +12,7 @@ import java.net.DatagramSocket
 import java.net.InetAddress
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Filter DNS lokal lewat VPN. Hanya lalu lintas DNS (ke 10.0.0.1) yang masuk ke terowongan;
@@ -50,6 +52,10 @@ class DnsVpnService : VpnService() {
                 .addDnsServer(DNS_IP)
                 .addRoute(DNS_IP, 32)
                 .setMtu(1500)
+                .setBlocking(true)
+                .setMetered(false)
+                .allowFamily(OsConstants.AF_INET)
+                .allowFamily(OsConstants.AF_INET6)
             val p = b.establish()
             if (p == null) {
                 stopVpn()
@@ -57,9 +63,13 @@ class DnsVpnService : VpnService() {
             }
             pfd = p
             out = FileOutputStream(p.fileDescriptor)
-            pool = Executors.newFixedThreadPool(4)
+            pool = Executors.newFixedThreadPool(16)
             active = true
             running = true
+            qTotal.set(0)
+            qBlocked.set(0)
+            qForwarded.set(0)
+            qFailed.set(0)
             val input = FileInputStream(p.fileDescriptor)
             Thread { readLoop(input) }.start()
             Store.log(this, "VPN DNS aktif")
@@ -157,8 +167,11 @@ class DnsVpnService : VpnService() {
     }
 
     private fun answer(query: ByteArray, srcIp: ByteArray, dstIp: ByteArray, srcPort: Int) {
+        qTotal.incrementAndGet()
         val name = parseName(query)
-        val reply: ByteArray? = if (name != null && blocked(name)) nxdomain(query) else forward(query)
+        val isBlocked = name != null && blocked(name)
+        if (isBlocked) qBlocked.incrementAndGet()
+        val reply: ByteArray? = if (isBlocked) nxdomain(query) else forward(query)
         if (reply != null) writeUdp(dstIp, srcIp, 53, srcPort, reply)
     }
 
@@ -207,11 +220,25 @@ class DnsVpnService : VpnService() {
     }
 
     private fun forward(q: ByteArray): ByteArray? {
+        val first = Store.vpnUpstream(this).coerceIn(0, UPSTREAMS.size - 1)
+        val order = listOf(first) + (0 until UPSTREAMS.size).filter { it != first }
+        for (idx in order) {
+            val r = ask(q, UPSTREAMS[idx])
+            if (r != null) {
+                qForwarded.incrementAndGet()
+                return r
+            }
+        }
+        qFailed.incrementAndGet()
+        return null
+    }
+
+    private fun ask(q: ByteArray, ip: String): ByteArray? {
         val s = DatagramSocket()
         return try {
             protect(s)
-            s.soTimeout = 4000
-            val addr = InetAddress.getByName(UPSTREAMS[Store.vpnUpstream(this).coerceIn(0, UPSTREAMS.size - 1)])
+            s.soTimeout = 2500
+            val addr = InetAddress.getByName(ip)
             s.send(DatagramPacket(q, q.size, addr, 53))
             val rb = ByteArray(4096)
             val rp = DatagramPacket(rb, rb.size)
@@ -352,6 +379,10 @@ class DnsVpnService : VpnService() {
 
         @Volatile
         var running = false
+        val qTotal = AtomicInteger(0)
+        val qBlocked = AtomicInteger(0)
+        val qForwarded = AtomicInteger(0)
+        val qFailed = AtomicInteger(0)
 
         fun consentNeeded(c: Context): Intent? = VpnService.prepare(c)
 
