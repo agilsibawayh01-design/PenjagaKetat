@@ -24,6 +24,7 @@ class GuardService : AccessibilityService() {
     private var watcher: PackageWatcher? = null
     private var profiles: List<Profile> = emptyList()
     private var limitPkg = ""
+    private var backing = false
 
     private val limitRunnable = object : Runnable {
         override fun run() {
@@ -34,7 +35,7 @@ class GuardService : AccessibilityService() {
                     val v = BlockEngine.check(this@GuardService, p, System.currentTimeMillis(), apps, profiles)
                     if (v != null) {
                         limitPkg = ""
-                        launchBlock(v, p)
+                        startBlock(v, p)
                         return
                     }
                     handler.postDelayed(this, 20000L)
@@ -117,11 +118,12 @@ class GuardService : AccessibilityService() {
         val now = System.currentTimeMillis()
         refreshCache(now)
         TimeGuard.check(this)
+        if (backing) return
 
         // 1. Blokir aplikasi
         val verdict = BlockEngine.check(this, pkg, now, apps, profiles)
         if (verdict != null) {
-            launchBlock(verdict, pkg)
+            startBlock(verdict, pkg)
             return
         }
         if (BlockEngine.hasLimit(this, pkg, apps, profiles)) scheduleLimitCheck(pkg)
@@ -132,7 +134,7 @@ class GuardService : AccessibilityService() {
             if (typed.isNotEmpty() &&
                 (Rules.matchesKeyword(typed, keywords) != null || Rules.matchesDomain(typed, domains) != null)
             ) {
-                blockContent("content")
+                startBlock("typed", "")
             }
             return
         }
@@ -142,7 +144,7 @@ class GuardService : AccessibilityService() {
             lastProtectAt = now
             val root = rootInActiveWindow
             if (root != null && showsProtected(root)) {
-                blockContent("protect")
+                startBlock("protect", "")
                 return
             }
         }
@@ -151,20 +153,7 @@ class GuardService : AccessibilityService() {
         if (pkg in browsers && now - lastScanAt > 500L) {
             lastScanAt = now
             val root = rootInActiveWindow ?: return
-            for (n in collect(root, 400)) {
-                val txt = n.text?.toString() ?: continue
-                if (txt.isEmpty()) continue
-                val id = (n.viewIdResourceName ?: "").lowercase()
-                val isUrlBar = id.contains("url") || id.contains("location_bar") || id.contains("omnibox")
-                if (isUrlBar && Rules.matchesDomain(txt, domains) != null) {
-                    blockContent("content")
-                    return
-                }
-                if (Rules.matchesKeyword(txt, keywords) != null) {
-                    blockContent("content")
-                    return
-                }
-            }
+            if (browserHasBlocked(root)) startBlock("content", "")
             return
         }
 
@@ -241,19 +230,73 @@ class GuardService : AccessibilityService() {
         return false
     }
 
-    private fun blockContent(mode: String) {
-        launchBlock(mode, "")
+    private fun browserHasBlocked(root: AccessibilityNodeInfo): Boolean {
+        for (n in collect(root, 400)) {
+            val txt = n.text?.toString() ?: continue
+            if (txt.isEmpty()) continue
+            val id = (n.viewIdResourceName ?: "").lowercase()
+            val isUrlBar = id.contains("url") || id.contains("location_bar") || id.contains("omnibox")
+            if (isUrlBar && Rules.matchesDomain(txt, domains) != null) return true
+            if (Rules.matchesKeyword(txt, keywords) != null) return true
+        }
+        return false
     }
 
-    private fun launchBlock(mode: String, pkg: String) {
+    /** True bila layar masih menampilkan hal yang harus ditutup, sesuai jenis blokir. */
+    private fun stillBad(mode: String, pkg: String): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val cur = root.packageName?.toString() ?: return false
+        return when (mode) {
+            "content" -> cur in browsers && browserHasBlocked(root)
+            "protect" -> cur in Config.PROTECTED && showsProtected(root)
+            else -> cur == pkg
+        }
+    }
+
+    private fun maxSteps(mode: String): Int = when (mode) {
+        "typed" -> 2
+        "content" -> 6
+        "protect" -> 5
+        else -> 4
+    }
+
+    /**
+     * Mode back: tekan Kembali berulang sampai konten terblokir hilang dari layar
+     * (halaman situs sebelumnya, dialog copot, atau keluar dari aplikasi), baru tampilkan layar blokir.
+     */
+    private fun startBlock(mode: String, pkg: String) {
         val now = System.currentTimeMillis()
-        if (now - lastBlockAt < 800L) return
+        if (backing || now - lastBlockAt < 800L) return
         lastBlockAt = now
-        StatsDb.addBlock(this, mode, pkg)
-        performGlobalAction(GLOBAL_ACTION_HOME)
+        backing = true
+        StatsDb.addBlock(this, if (mode == "typed") "content" else mode, pkg)
+        stepBack(mode, pkg, 0)
+    }
+
+    private fun stepBack(mode: String, pkg: String, n: Int) {
+        try {
+            val bad = if (mode == "typed") n < maxSteps(mode) else stillBad(mode, pkg)
+            if (!bad || n >= maxSteps(mode)) {
+                finishBack(mode, pkg)
+                return
+            }
+            performGlobalAction(GLOBAL_ACTION_BACK)
+            handler.postDelayed({ stepBack(mode, pkg, n + 1) }, 400L)
+        } catch (t: Throwable) {
+            backing = false
+        }
+    }
+
+    private fun finishBack(mode: String, pkg: String) {
+        try {
+            if (mode != "typed" && stillBad(mode, pkg)) performGlobalAction(GLOBAL_ACTION_HOME)
+        } catch (t: Throwable) {
+            // lanjut menampilkan layar blokir
+        }
+        val shown = if (mode == "typed") "content" else mode
         val i = Intent(this, BlockActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-            .putExtra("mode", mode)
+            .putExtra("mode", shown)
             .putExtra("pkg", pkg)
         handler.postDelayed({
             try {
@@ -261,6 +304,8 @@ class GuardService : AccessibilityService() {
             } catch (e: Exception) {
                 // abaikan
             }
-        }, 150L)
+            lastBlockAt = System.currentTimeMillis()
+            backing = false
+        }, 250L)
     }
 }
