@@ -21,11 +21,13 @@ class BlockActivity : Activity() {
     private lateinit var openBtn: Button
     private var pkg = ""
     private var passMin = 5
+    private var modeName = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val mode = intent.getStringExtra("mode") ?: "content"
         pkg = intent.getStringExtra("pkg") ?: ""
+        modeName = mode
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -61,7 +63,7 @@ class BlockActivity : Activity() {
         }
         val closeBtn = Button(this).apply {
             text = "Tutup"
-            setOnClickListener { goHome() }
+            setOnClickListener { closeScreen() }
         }
         root.addView(title)
         root.addView(info)
@@ -139,9 +141,14 @@ class BlockActivity : Activity() {
         finish()
     }
 
+    /** Situs, kata kunci, dan perlindungan: cukup tutup layar blokir (halaman sebelumnya sudah dikembalikan). Lainnya: ke layar utama. */
+    private fun closeScreen() {
+        if (modeName == "content" || modeName == "protect") finish() else goHome()
+    }
+
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        goHome()
+        closeScreen()
     }
 
     override fun onDestroy() {
