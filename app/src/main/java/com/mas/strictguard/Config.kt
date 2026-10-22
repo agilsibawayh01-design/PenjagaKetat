@@ -17,7 +17,14 @@ object Config {
         "com.android.permissioncontroller",
         "com.android.vending",
         "com.samsung.android.lool",
-        "com.samsung.android.sm"
+        "com.samsung.android.sm",
+        // layar utama (uninstall lewat tekan lama atau seret ke "Hapus instalan")
+        "com.sec.android.app.launcher",
+        "com.google.android.apps.nexuslauncher",
+        "com.android.launcher3",
+        "com.miui.home",
+        "com.oppo.launcher",
+        "com.transsion.hilauncher"
     )
 
     val BROWSERS: Set<String> = setOf(
@@ -38,7 +45,7 @@ object Config {
     /** Kata tombol yang menandai halaman detail aplikasi / dialog copot (awal teks). */
     val ACTION_WORDS = listOf(
         "paksa berhenti", "force stop", "copot", "uninstall", "hapus data", "clear data",
-        "nonaktifkan", "deactivate", "disable", "putus", "disconnect", "lupakan", "forget", "hapus vpn", "remove vpn"
+        "nonaktifkan", "deactivate", "disable", "uninstal", "hapus", "putus", "disconnect", "lupakan", "forget", "hapus vpn", "remove vpn"
     )
 
     /** Potongan deskripsi layanan aksesibilitas kita (muncul di halaman detail layanan). */
