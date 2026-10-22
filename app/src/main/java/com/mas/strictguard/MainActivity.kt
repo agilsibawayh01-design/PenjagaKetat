@@ -16,11 +16,13 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.text.InputType
+import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 
@@ -148,6 +150,7 @@ class MainActivity : Activity() {
         renderStrict(strict, acc && adm)
         renderProtection(strict)
         renderApps(strict)
+        renderProfiles(strict)
         renderNewApps(strict)
         renderProtected(strict)
         renderWords(strict)
@@ -289,6 +292,22 @@ class MainActivity : Activity() {
     }
 
     private fun renderLog() {
+        header("Riwayat pass")
+        val ph = Store.passHistory(this)
+        if (ph.isEmpty()) {
+            root.addView(text("Belum ada pass yang dipakai.", 12f))
+        } else {
+            for (line in ph.takeLast(10).reversed()) {
+                val parts = line.split('|')
+                if (parts.size < 3) continue
+                val label = try {
+                    packageManager.getApplicationLabel(packageManager.getApplicationInfo(parts[1], 0)).toString()
+                } catch (e: Exception) {
+                    parts[1]
+                }
+                root.addView(text(parts[0] + "  " + label + "  " + parts[2] + " mnt", 11f))
+            }
+        }
         header("Catatan perlindungan")
         val lines = Store.logs(this)
         if (lines.isEmpty()) {
@@ -324,15 +343,65 @@ class MainActivity : Activity() {
             if (a.pkg in chosen) {
                 val cfg = Store.appCfg(this, a.pkg)
                 root.addView(text("     " + summary(cfg), 12f, false, Color.rgb(90, 90, 90)))
+                root.addView(text("     " + usageLine(a.pkg, cfg), 12f, false, Color.rgb(90, 90, 90)))
                 root.addView(button("Atur aturan: ${a.label}") { editCfg(a.pkg, a.label, strict) })
+                root.addView(button("Blokir penuh 1 jam: ${a.label}") {
+                    Store.extendBlockUntil(this, a.pkg, 60)
+                    Store.log(this, "Blokir penuh 1 jam: ${a.label}")
+                    render()
+                })
             }
         }
     }
 
     private fun summary(c: AppCfg): String {
-        val mode = if (c.wait <= 0) "Blokir penuh" else "Timer ${c.wait} dtk, terbuka ${c.pass} mnt"
+        val mode = if (c.mode == 1) "Hanya batas harian"
+        else if (c.wait <= 0) "Blokir penuh"
+        else "Timer ${c.wait} dtk, terbuka ${c.pass} mnt"
         val sch = if (c.schOn) "${fmt(c.start)}-${fmt(c.end)}" else "selalu"
-        return "$mode • $sch"
+        var s = "$mode • $sch"
+        if (c.limitMin > 0) s += " • batas ${c.limitMin} mnt/hari"
+        if (c.cooldown > 0) s += " • cooldown ${c.cooldown} mnt"
+        if (c.blockUntil > System.currentTimeMillis()) {
+            val f = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+            s += " • blokir penuh sampai " + f.format(java.util.Date(c.blockUntil))
+        }
+        return s
+    }
+
+    private fun usageLine(pkg: String, c: AppCfg): String {
+        if (!Foreground.hasUsageAccess(this)) return "Pemakaian: aktifkan Akses Penggunaan"
+        val u = UsageTracker.get(this)
+        val usedMin = (u.ms[pkg] ?: 0L) / 60000L
+        var s = "Hari ini: $usedMin mnt"
+        if (c.limitMin > 0) s += " • sisa " + Math.max(0L, c.limitMin - usedMin) + " mnt"
+        val last = u.last[pkg] ?: 0L
+        if (last > 0L) {
+            val f = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+            s += " • terakhir " + f.format(java.util.Date(last))
+        }
+        return s
+    }
+
+    private fun spinnerOf(items: List<String>, selected: Int): Spinner {
+        val sp = Spinner(this)
+        sp.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, items)
+        sp.setSelection(if (selected in items.indices) selected else 0)
+        return sp
+    }
+
+    private fun numberField(value: Int): EditText {
+        val e = EditText(this)
+        e.inputType = InputType.TYPE_CLASS_NUMBER
+        e.setText(value.toString())
+        return e
+    }
+
+    private fun dayNames(mask: Int): String {
+        val names = arrayOf("Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min")
+        val out = ArrayList<String>()
+        for (i in 0 until 7) if ((mask and (1 shl i)) != 0) out.add(names[i])
+        return if (out.size == 7) "tiap hari" else out.joinToString(",")
     }
 
     private fun editCfg(pkg: String, label: String, strict: Boolean) {
@@ -343,26 +412,34 @@ class MainActivity : Activity() {
         val cfg = Store.appCfg(this, pkg)
         var start = cfg.start
         var end = cfg.end
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(8), dp(20), dp(8))
-        }
-        box.addView(text("Detik tunggu (0 = blokir penuh, tanpa tombol buka)", 12f))
-        val wait = EditText(this).apply {
-            inputType = InputType.TYPE_CLASS_NUMBER
-            setText(cfg.wait.toString())
-        }
+        val passOptions = listOf(5, 10, 15, 30)
+        val box = LinearLayout(this)
+        box.orientation = LinearLayout.VERTICAL
+        box.setPadding(dp(20), dp(8), dp(20), dp(8))
+
+        box.addView(text("Mode", 12f, true))
+        val modeSp = spinnerOf(listOf("Blokir (penuh atau timer tunggu)", "Hanya batas harian"), cfg.mode)
+        box.addView(modeSp)
+
+        box.addView(text("Detik tunggu (0 = blokir penuh / Strictly Blocked)", 12f))
+        val wait = numberField(cfg.wait)
         box.addView(wait)
-        box.addView(text("Menit aplikasi terbuka setelah menunggu", 12f))
-        val pass = EditText(this).apply {
-            inputType = InputType.TYPE_CLASS_NUMBER
-            setText(cfg.pass.toString())
-        }
-        box.addView(pass)
-        val schCb = CheckBox(this).apply {
-            text = "Hanya pada jadwal (kalau tidak dicentang: berlaku terus)"
-            isChecked = cfg.schOn
-        }
+
+        box.addView(text("Lama aplikasi terbuka setelah menunggu (pass)", 12f))
+        val passSp = spinnerOf(passOptions.map { "$it menit" }, passOptions.indexOf(cfg.pass))
+        box.addView(passSp)
+
+        box.addView(text("Cooldown setelah pass habis (menit, 0 = tanpa cooldown)", 12f))
+        val cool = numberField(cfg.cooldown)
+        box.addView(cool)
+
+        box.addView(text("Batas harian (menit, 0 = tanpa batas)", 12f))
+        val limit = numberField(cfg.limitMin)
+        box.addView(limit)
+
+        val schCb = CheckBox(this)
+        schCb.text = "Blokir hanya pada jadwal (tidak dicentang: berlaku terus)"
+        schCb.isChecked = cfg.schOn
         box.addView(schCb)
         val startBtn = Button(this)
         startBtn.text = "Mulai: ${fmt(start)}"
@@ -384,7 +461,8 @@ class MainActivity : Activity() {
         box.addView(endBtn)
         val names = arrayOf("Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min")
         val dayBoxes = ArrayList<CheckBox>()
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
         for (i in 0 until 7) {
             val d = CheckBox(this)
             d.text = names[i]
@@ -403,14 +481,188 @@ class MainActivity : Activity() {
                 var mask = 0
                 for (i in 0 until 7) if (dayBoxes[i].isChecked) mask = mask or (1 shl i)
                 if (mask == 0) mask = 127
-                Store.setAppCfg(
-                    this, pkg,
-                    AppCfg(
-                        (wait.text.toString().toIntOrNull() ?: 0).coerceIn(0, 600),
-                        (pass.text.toString().toIntOrNull() ?: 5).coerceIn(1, 120),
-                        schCb.isChecked, start, end, mask
-                    )
+                val newCfg = cfg.copy(
+                    wait = (wait.text.toString().toIntOrNull() ?: 0).coerceIn(0, 600),
+                    pass = passOptions[passSp.selectedItemPosition],
+                    schOn = schCb.isChecked,
+                    start = start,
+                    end = end,
+                    days = mask,
+                    mode = modeSp.selectedItemPosition,
+                    limitMin = (limit.text.toString().toIntOrNull() ?: 0).coerceIn(0, 1440),
+                    cooldown = (cool.text.toString().toIntOrNull() ?: 0).coerceIn(0, 1440)
                 )
+                Store.setAppCfg(this, pkg, newCfg)
+                render()
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    private fun editSchedule(onDone: (Sched) -> Unit) {
+        var start = 21 * 60
+        var end = 5 * 60
+        val box = LinearLayout(this)
+        box.orientation = LinearLayout.VERTICAL
+        box.setPadding(dp(20), dp(8), dp(20), dp(8))
+        val startBtn = Button(this)
+        startBtn.text = "Mulai: ${fmt(start)}"
+        startBtn.setOnClickListener {
+            TimePickerDialog(this, { _, h, mi ->
+                start = h * 60 + mi
+                startBtn.text = "Mulai: ${fmt(start)}"
+            }, start / 60, start % 60, true).show()
+        }
+        box.addView(startBtn)
+        val endBtn = Button(this)
+        endBtn.text = "Selesai: ${fmt(end)}"
+        endBtn.setOnClickListener {
+            TimePickerDialog(this, { _, h, mi ->
+                end = h * 60 + mi
+                endBtn.text = "Selesai: ${fmt(end)}"
+            }, end / 60, end % 60, true).show()
+        }
+        box.addView(endBtn)
+        val names = arrayOf("Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min")
+        val dayBoxes = ArrayList<CheckBox>()
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        for (i in 0 until 7) {
+            val d = CheckBox(this)
+            d.text = names[i]
+            d.textSize = 10f
+            d.isChecked = true
+            dayBoxes.add(d)
+            row.addView(d)
+        }
+        box.addView(row)
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Tambah jadwal")
+            .setView(box)
+            .setPositiveButton("Tambah") { _, _ ->
+                var mask = 0
+                for (i in 0 until 7) if (dayBoxes[i].isChecked) mask = mask or (1 shl i)
+                if (mask == 0) mask = 127
+                onDone(Sched(start, end, mask))
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    private fun pickApps(chosen: MutableSet<String>, onDone: () -> Unit) {
+        val rows = loadApps()
+        val labels = Array(rows.size) { rows[it].label }
+        val checked = BooleanArray(rows.size) { rows[it].pkg in chosen }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Pilih aplikasi")
+            .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
+                if (isChecked) chosen.add(rows[which].pkg) else chosen.remove(rows[which].pkg)
+            }
+            .setPositiveButton("OK") { _, _ -> onDone() }
+            .show()
+    }
+
+    private fun renderProfiles(strict: Boolean) {
+        header("Profil")
+        root.addView(text("Profil (Kerja, Belajar, Tidur, Mode Ketat, Custom) memblokir aplikasinya selama jadwalnya berjalan, dan menambah kata kunci dan situs selama aktif. Profil tanpa jadwal aktif terus selama dinyalakan. Batas harian lebih dari 0: aplikasi boleh dipakai sampai batas itu, setelah itu diblokir. Saat Mode Ketat aktif, profil hanya bisa diperketat.", 12f))
+        for (p in ProfileStore.load(this)) {
+            val live = ProfileEngine.isActive(this, p)
+            val state = if (!p.enabled) "mati" else if (live) "AKTIF sekarang" else "menunggu jadwal"
+            root.addView(text(p.name + " - " + state, 14f, true))
+            val sch = if (p.schedules.isEmpty()) "tanpa jadwal" else
+                p.schedules.joinToString("; ") { "${fmt(it.start)}-${fmt(it.end)} ${dayNames(it.days)}" }
+            root.addView(text("${p.apps.size} aplikasi • ${p.keywords.size} kata kunci • ${p.domains.size} situs • $sch" +
+                (if (p.limitMin > 0) " • batas ${p.limitMin} mnt" else ""), 12f, false, Color.rgb(90, 90, 90)))
+            val cb = CheckBox(this)
+            cb.text = "Aktifkan profil " + p.name
+            cb.isChecked = p.enabled
+            cb.setOnClickListener {
+                val v = cb.isChecked
+                if (!v && strict) {
+                    toast("Mode Ketat aktif: profil tidak bisa dimatikan")
+                } else {
+                    ProfileStore.replace(this, p.copy(enabled = v))
+                }
+                render()
+            }
+            root.addView(cb)
+            root.addView(button("Atur profil: " + p.name) { editProfile(p, strict) })
+        }
+    }
+
+    private fun editProfile(p: Profile, strict: Boolean) {
+        val apps = HashSet(p.apps)
+        val scheds = ArrayList(p.schedules)
+        val box = LinearLayout(this)
+        box.orientation = LinearLayout.VERTICAL
+        box.setPadding(dp(20), dp(8), dp(20), dp(8))
+        if (strict) box.addView(text("Mode Ketat aktif: perubahan hanya menambah, tidak mengurangi.", 12f, true, Color.rgb(180, 0, 0)))
+
+        box.addView(text("Batas harian per aplikasi (menit, 0 = blokir penuh)", 12f))
+        val limit = numberField(p.limitMin)
+        box.addView(limit)
+
+        val appsBtn = Button(this)
+        appsBtn.text = "Pilih aplikasi (${apps.size})"
+        appsBtn.setOnClickListener {
+            pickApps(apps) { appsBtn.text = "Pilih aplikasi (${apps.size})" }
+        }
+        box.addView(appsBtn)
+
+        box.addView(text("Kata kunci (pisahkan dengan koma)", 12f))
+        val kw = EditText(this)
+        kw.setText(p.keywords.sorted().joinToString(", "))
+        box.addView(kw)
+
+        box.addView(text("Situs (pisahkan dengan koma)", 12f))
+        val dm = EditText(this)
+        dm.setText(p.domains.sorted().joinToString(", "))
+        box.addView(dm)
+
+        box.addView(text("Jadwal (boleh lebih dari satu)", 12f, true))
+        val schedBox = LinearLayout(this)
+        schedBox.orientation = LinearLayout.VERTICAL
+        box.addView(schedBox)
+
+        fun refreshScheds() {
+            schedBox.removeAllViews()
+            for (i in scheds.indices) {
+                val s = scheds[i]
+                schedBox.addView(button("Hapus: ${fmt(s.start)}-${fmt(s.end)} ${dayNames(s.days)}") {
+                    if (strict) {
+                        toast("Mode Ketat aktif: jadwal tidak bisa dihapus")
+                    } else {
+                        scheds.removeAt(i)
+                        refreshScheds()
+                    }
+                })
+            }
+        }
+        refreshScheds()
+        box.addView(button("Tambah jadwal") {
+            editSchedule { s ->
+                scheds.add(s)
+                refreshScheds()
+            }
+        })
+
+        val scrollBox = ScrollView(this)
+        scrollBox.addView(box)
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Profil: " + p.name)
+            .setView(scrollBox)
+            .setPositiveButton("Simpan") { _, _ ->
+                val newKw = kw.text.toString().split(',').map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
+                val newDm = dm.text.toString().split(',').map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
+                var np = p.copy(
+                    apps = apps,
+                    keywords = newKw,
+                    domains = newDm,
+                    schedules = scheds,
+                    limitMin = (limit.text.toString().toIntOrNull() ?: 0).coerceIn(0, 1440)
+                )
+                if (strict) np = ProfileStore.mergeStrict(p, np)
+                ProfileStore.replace(this, np)
                 render()
             }
             .setNegativeButton("Batal", null)
@@ -471,83 +723,6 @@ class MainActivity : Activity() {
                 if (strict) toast("Mode Ketat aktif: tidak bisa menghapus") else { Store.removeDomain(this, d); render() }
             })
         }
-    }
-
-    private fun renderWait(strict: Boolean) {
-        header("Timer tunggu")
-        root.addView(text("Detik tunggu sebelum aplikasi terblokir bisa dibuka (0 = blokir penuh, tanpa tombol buka).", 12f))
-        val wait = EditText(this).apply {
-            inputType = InputType.TYPE_CLASS_NUMBER
-            setText(Store.waitSeconds(this@MainActivity).toString())
-            isEnabled = !strict
-        }
-        val pass = EditText(this).apply {
-            inputType = InputType.TYPE_CLASS_NUMBER
-            setText(Store.passMinutes(this@MainActivity).toString())
-            isEnabled = !strict
-        }
-        root.addView(text("Detik tunggu", 12f))
-        root.addView(wait)
-        root.addView(text("Menit aplikasi terbuka setelah menunggu", 12f))
-        root.addView(pass)
-        root.addView(button("Simpan timer") {
-            if (strict) {
-                toast("Mode Ketat aktif: pengaturan terkunci")
-            } else {
-                val w = wait.text.toString().toIntOrNull() ?: 0
-                val p = pass.text.toString().toIntOrNull() ?: 5
-                Store.setWait(this, w.coerceIn(0, 600), p.coerceIn(1, 120))
-                toast("Tersimpan")
-            }
-        })
-    }
-
-    private fun renderSchedule(strict: Boolean) {
-        header("Jadwal blokir aplikasi")
-        var on = Store.scheduleEnabled(this)
-        var start = Store.startMin(this)
-        var end = Store.endMin(this)
-        var days = Store.days(this)
-
-        val cb = CheckBox(this).apply {
-            text = "Pakai jadwal (kalau mati: diblokir terus)"
-            isChecked = on
-            setOnClickListener {
-                if (strict) { toast("Mode Ketat aktif: pengaturan terkunci"); render() }
-                else { on = isChecked; Store.setSchedule(this@MainActivity, on, start, end, days) }
-            }
-        }
-        root.addView(cb)
-        root.addView(button("Mulai: ${fmt(start)}") {
-            if (strict) toast("Mode Ketat aktif: pengaturan terkunci") else
-                TimePickerDialog(this, { _, h, m ->
-                    Store.setSchedule(this, on, h * 60 + m, end, days); render()
-                }, start / 60, start % 60, true).show()
-        })
-        root.addView(button("Selesai: ${fmt(end)}") {
-            if (strict) toast("Mode Ketat aktif: pengaturan terkunci") else
-                TimePickerDialog(this, { _, h, m ->
-                    Store.setSchedule(this, on, start, h * 60 + m, days); render()
-                }, end / 60, end % 60, true).show()
-        })
-        val names = arrayOf("Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min")
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        for (i in 0 until 7) {
-            val d = CheckBox(this).apply {
-                text = names[i]
-                textSize = 11f
-                isChecked = (days and (1 shl i)) != 0
-                setOnClickListener {
-                    if (strict) { toast("Mode Ketat aktif: pengaturan terkunci"); render() }
-                    else {
-                        days = if (isChecked) days or (1 shl i) else days and (1 shl i).inv()
-                        Store.setSchedule(this@MainActivity, on, start, end, days)
-                    }
-                }
-            }
-            row.addView(d)
-        }
-        root.addView(row)
     }
 
     private fun renderFeeds(strict: Boolean) {

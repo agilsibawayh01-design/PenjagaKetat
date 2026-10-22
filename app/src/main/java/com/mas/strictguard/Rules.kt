@@ -9,11 +9,14 @@ object Rules {
     fun blockingActive(c: Context, g: AppCfg): Boolean {
         if (!g.schOn) return true
         if (TimeGuard.penaltyActive(c)) return true
+        return scheduleActive(g.start, g.end, g.days)
+    }
+
+    /** True bila sekarang berada dalam jendela jadwal (mendukung jadwal lewat tengah malam). */
+    fun scheduleActive(s: Int, e: Int, days: Int): Boolean {
         val now = Calendar.getInstance()
         val today = (now.get(Calendar.DAY_OF_WEEK) + 5) % 7 // Senin=0 .. Minggu=6
         val minute = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)
-        val s = g.start
-        val e = g.end
         val inWindow: Boolean
         var dayIdx = today
         if (s <= e) {
@@ -22,7 +25,7 @@ object Rules {
             inWindow = minute >= s || minute < e
             if (minute < e) dayIdx = (today + 6) % 7
         }
-        return inWindow && (g.days and (1 shl dayIdx)) != 0
+        return inWindow && (days and (1 shl dayIdx)) != 0
     }
 
     fun matchesKeyword(text: String, keywords: Collection<String>): String? {

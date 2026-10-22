@@ -35,6 +35,15 @@ object Config {
         "id.co.cimbniaga.mobile.android", "com.bsm.activity2", "com.id.bankbsi.superapp"
     )
 
+    /** Kata tombol yang menandai halaman detail aplikasi / dialog copot (awal teks). */
+    val ACTION_WORDS = listOf(
+        "paksa berhenti", "force stop", "copot", "uninstall", "hapus data", "clear data",
+        "nonaktifkan", "deactivate", "disable"
+    )
+
+    /** Potongan deskripsi layanan aksesibilitas kita (muncul di halaman detail layanan). */
+    const val SERVICE_MARKER = "memblokir aplikasi, situs, dan kata kunci"
+
     const val YOUTUBE = "com.google.android.youtube"
     const val INSTAGRAM = "com.instagram.android"
 

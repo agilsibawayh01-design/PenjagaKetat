@@ -2,13 +2,17 @@ package com.mas.strictguard
 
 import android.content.Context
 
-class AppCfg(
+data class AppCfg(
     val wait: Int = 0,
     val pass: Int = 5,
     val schOn: Boolean = false,
     val start: Int = 21 * 60,
     val end: Int = 5 * 60,
-    val days: Int = 127
+    val days: Int = 127,
+    val mode: Int = 0,
+    val limitMin: Int = 0,
+    val cooldown: Int = 0,
+    val blockUntil: Long = 0L
 )
 
 object Store {
@@ -33,15 +37,45 @@ object Store {
         val raw = sp(c).getString("cfg_$pkg", null) ?: return AppCfg()
         return try {
             val p = raw.split('|')
-            AppCfg(p[0].toInt(), p[1].toInt(), p[2] == "1", p[3].toInt(), p[4].toInt(), p[5].toInt())
+            if (p.size >= 10) {
+                AppCfg(
+                    p[0].toInt(), p[1].toInt(), p[2] == "1", p[3].toInt(), p[4].toInt(), p[5].toInt(),
+                    p[6].toInt(), p[7].toInt(), p[8].toInt(), p[9].toLong()
+                )
+            } else {
+                AppCfg(p[0].toInt(), p[1].toInt(), p[2] == "1", p[3].toInt(), p[4].toInt(), p[5].toInt())
+            }
         } catch (e: Exception) {
             AppCfg()
         }
     }
 
     fun setAppCfg(c: Context, pkg: String, g: AppCfg) {
-        val raw = "${g.wait}|${g.pass}|${if (g.schOn) "1" else "0"}|${g.start}|${g.end}|${g.days}"
+        val raw = "${g.wait}|${g.pass}|${if (g.schOn) "1" else "0"}|${g.start}|${g.end}|${g.days}|" +
+            "${g.mode}|${g.limitMin}|${g.cooldown}|${g.blockUntil}"
         sp(c).edit().putString("cfg_$pkg", raw).commit()
+    }
+
+    /** Memperpanjang blokir penuh (tidak bisa dibuka) sampai waktu tertentu. Hanya memperketat. */
+    fun extendBlockUntil(c: Context, pkg: String, minutes: Int) {
+        val cfg = appCfg(c, pkg)
+        val until = Math.max(cfg.blockUntil, System.currentTimeMillis() + minutes * 60000L)
+        setAppCfg(c, pkg, cfg.copy(blockUntil = until))
+    }
+
+    fun lastPassEnd(c: Context, pkg: String): Long = sp(c).getLong("pend_$pkg", 0L)
+    fun setLastPassEnd(c: Context, pkg: String, v: Long) { sp(c).edit().putLong("pend_$pkg", v).commit() }
+
+    fun passHistory(c: Context): List<String> {
+        val raw = sp(c).getString("passlog", "") ?: ""
+        return raw.split('\n').filter { it.isNotBlank() }
+    }
+
+    fun addPassHistory(c: Context, pkg: String, minutes: Int) {
+        val stamp = java.text.SimpleDateFormat("dd/MM HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+        val lines = ArrayList(passHistory(c))
+        lines.add("$stamp|$pkg|$minutes")
+        sp(c).edit().putString("passlog", lines.takeLast(30).joinToString("\n")).apply()
     }
 
     fun exitDelayMin(c: Context): Int = sp(c).getInt("exit_delay", 60)

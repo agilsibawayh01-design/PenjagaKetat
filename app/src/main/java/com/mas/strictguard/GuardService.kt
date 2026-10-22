@@ -22,6 +22,37 @@ class GuardService : AccessibilityService() {
     private var protectedNames: List<String> = emptyList()
     private var browsers: Set<String> = Config.BROWSERS
     private var watcher: PackageWatcher? = null
+    private var profiles: List<Profile> = emptyList()
+    private var limitPkg = ""
+
+    private val limitRunnable = object : Runnable {
+        override fun run() {
+            val p = limitPkg
+            if (p.isEmpty()) return
+            try {
+                if (Foreground.hasUsageAccess(this@GuardService) && Foreground.current(this@GuardService) == p) {
+                    val v = BlockEngine.check(this@GuardService, p, System.currentTimeMillis(), apps, profiles)
+                    if (v != null) {
+                        limitPkg = ""
+                        launchBlock(v, p)
+                        return
+                    }
+                    handler.postDelayed(this, 20000L)
+                } else {
+                    limitPkg = ""
+                }
+            } catch (t: Throwable) {
+                limitPkg = ""
+            }
+        }
+    }
+
+    private fun scheduleLimitCheck(pkg: String) {
+        if (limitPkg == pkg) return
+        limitPkg = pkg
+        handler.removeCallbacks(limitRunnable)
+        handler.postDelayed(limitRunnable, 20000L)
+    }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -52,8 +83,10 @@ class GuardService : AccessibilityService() {
         if (now - cacheAt < 1500L) return
         cacheAt = now
         apps = Store.apps(this)
-        keywords = Store.keywords(this)
-        domains = Store.domains(this)
+        profiles = ProfileStore.load(this)
+        val active = profiles.filter { ProfileEngine.isActive(this, it) }
+        keywords = Store.keywords(this) + active.flatMap { it.keywords }
+        domains = Store.domains(this) + active.flatMap { it.domains }
         browsers = Config.BROWSERS + Store.extraBrowsers(this)
         val names = ArrayList<String>()
         names.add(Config.APP_LABEL)
@@ -86,10 +119,12 @@ class GuardService : AccessibilityService() {
         TimeGuard.check(this)
 
         // 1. Blokir aplikasi
-        if (pkg in apps && Rules.blockingActive(this, Store.appCfg(this, pkg)) && Store.passUntil(this, pkg) <= now) {
-            blockApp(pkg)
+        val verdict = BlockEngine.check(this, pkg, now, apps, profiles)
+        if (verdict != null) {
+            launchBlock(verdict, pkg)
             return
         }
+        if (BlockEngine.hasLimit(this, pkg, apps, profiles)) scheduleLimitCheck(pkg)
 
         // 2. Kata kunci saat mengetik (kolom pencarian, URL, dll.)
         if (event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) {
@@ -106,7 +141,7 @@ class GuardService : AccessibilityService() {
         if (Store.strictOn(this) && pkg in Config.PROTECTED && now - lastProtectAt > 500L) {
             lastProtectAt = now
             val root = rootInActiveWindow
-            if (root != null && showsOurApp(root)) {
+            if (root != null && showsProtected(root)) {
                 blockContent("protect")
                 return
             }
@@ -168,14 +203,40 @@ class GuardService : AccessibilityService() {
         return out
     }
 
-    private fun showsOurApp(root: AccessibilityNodeInfo): Boolean {
+    /**
+     * True bila layar menampilkan halaman yang berbahaya bagi aplikasi terlindungi:
+     * halaman detail (nama aplikasi + tombol copot/paksa berhenti/nonaktifkan),
+     * atau halaman detail layanan aksesibilitas Penjaga Ketat.
+     * Daftar aplikasi biasa (hanya memuat nama) tetap boleh dibuka.
+     */
+    private fun showsProtected(root: AccessibilityNodeInfo): Boolean {
+        var nameHit = false
+        var actionHit = false
         for (n in collect(root, 600)) {
-            val t = n.text?.toString()?.lowercase() ?: ""
-            val d = n.contentDescription?.toString()?.lowercase() ?: ""
+            val t = n.text?.toString()?.lowercase()?.trim() ?: ""
+            val d = n.contentDescription?.toString()?.lowercase()?.trim() ?: ""
             if (t.isEmpty() && d.isEmpty()) continue
-            for (name in protectedNames) {
-                if (t.contains(name) || d.contains(name)) return true
+            if (t.contains(Config.SERVICE_MARKER) || d.contains(Config.SERVICE_MARKER)) return true
+            if (!nameHit) {
+                for (name in protectedNames) {
+                    if (t.contains(name) || d.contains(name)) {
+                        nameHit = true
+                        break
+                    }
+                }
             }
+            if (!actionHit) {
+                if (isActionText(t) || isActionText(d)) actionHit = true
+            }
+            if (nameHit && actionHit) return true
+        }
+        return false
+    }
+
+    private fun isActionText(s: String): Boolean {
+        if (s.isEmpty() || s.length > 60) return false
+        for (w in Config.ACTION_WORDS) {
+            if (s == w || s.startsWith(w)) return true
         }
         return false
     }

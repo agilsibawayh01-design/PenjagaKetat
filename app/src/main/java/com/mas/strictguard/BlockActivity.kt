@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
+import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -46,7 +47,7 @@ class BlockActivity : Activity() {
         }
         openBtn = Button(this).apply {
             text = "Buka aplikasi"
-            visibility = android.view.View.GONE
+            visibility = View.GONE
             setOnClickListener { openTarget() }
         }
         val closeBtn = Button(this).apply {
@@ -60,37 +61,53 @@ class BlockActivity : Activity() {
         setContentView(root)
 
         when (mode) {
-            "protect" -> info.text = "Mode Ketat aktif.\nHalaman pengaturan ini tidak bisa dibuka."
+            "protect" -> info.text = "Mode Ketat aktif.\nHalaman ini tidak bisa dibuka."
             "content" -> info.text = "Konten ini diblokir oleh Penjaga Ketat."
-            else -> {
-                val cfg = Store.appCfg(this, pkg)
-                passMin = cfg.pass
-                val wait = cfg.wait
-                if (wait <= 0) {
-                    info.text = "Aplikasi ini sedang diblokir."
-                } else {
-                    remaining = wait
-                    openBtn.visibility = android.view.View.VISIBLE
-                    openBtn.isEnabled = false
-                    tick()
-                }
+            "profile" -> info.text = "Aplikasi ini diblokir oleh profil yang sedang aktif."
+            "until" -> {
+                val until = Store.appCfg(this, pkg).blockUntil
+                val f = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+                info.text = "Aplikasi ini diblokir penuh sampai " + f.format(java.util.Date(until)) + "."
             }
+            else -> startTimerFlow(mode)
         }
     }
 
-    private fun tick() {
+    private fun startTimerFlow(mode: String) {
+        val cfg = Store.appCfg(this, pkg)
+        passMin = cfg.pass
+        val head = if (mode == "limit") "Batas harian habis.\n" else ""
+        val cooldownLeft = Store.lastPassEnd(this, pkg) + cfg.cooldown * 60000L - System.currentTimeMillis()
+        if (cfg.cooldown > 0 && cooldownLeft > 0) {
+            info.text = head + "Cooldown: tunggu " + (cooldownLeft / 60000L + 1) + " menit sebelum bisa meminta pass lagi."
+            return
+        }
+        if (cfg.wait <= 0) {
+            info.text = head + "Aplikasi ini sedang diblokir."
+            return
+        }
+        remaining = cfg.wait
+        openBtn.visibility = View.VISIBLE
+        openBtn.isEnabled = false
+        tick(head)
+    }
+
+    private fun tick(head: String) {
         if (remaining > 0) {
-            info.text = "Tunggu $remaining detik.\nApakah kamu benar-benar perlu membuka aplikasi ini?"
+            info.text = head + "Tunggu " + remaining + " detik.\nApakah kamu benar-benar perlu membuka aplikasi ini?"
             remaining--
-            handler.postDelayed({ tick() }, 1000L)
+            handler.postDelayed({ tick(head) }, 1000L)
         } else {
-            info.text = "Waktu tunggu selesai.\nAplikasi terbuka $passMin menit."
+            info.text = head + "Waktu tunggu selesai.\nAplikasi terbuka " + passMin + " menit."
             openBtn.isEnabled = true
         }
     }
 
     private fun openTarget() {
-        Store.setPass(this, pkg, System.currentTimeMillis() + passMin * 60000L)
+        val until = System.currentTimeMillis() + passMin * 60000L
+        Store.setPass(this, pkg, until)
+        Store.setLastPassEnd(this, pkg, until)
+        Store.addPassHistory(this, pkg, passMin)
         val i = packageManager.getLaunchIntentForPackage(pkg)
         if (i != null) startActivity(i)
         finish()
