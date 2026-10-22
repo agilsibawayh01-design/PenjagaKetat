@@ -18,7 +18,8 @@ data class AppCfg(
     val launchHour: Int = 0,
     val twUse: Int = 0,
     val twWait: Int = 0,
-    val twAdaptive: Boolean = true
+    val twAdaptive: Boolean = true,
+    val notif: Boolean = false
 )
 
 object Store {
@@ -43,20 +44,14 @@ object Store {
         val raw = sp(c).getString("cfg_$pkg", null) ?: return AppCfg()
         return try {
             val p = raw.split('|')
-            if (p.size >= 16) {
-                AppCfg(
-                    p[0].toInt(), p[1].toInt(), p[2] == "1", p[3].toInt(), p[4].toInt(), p[5].toInt(),
-                    p[6].toInt(), p[7].toInt(), p[8].toInt(), p[9].toLong(),
-                    p[10].toInt(), p[11].toInt(), p[12].toInt(), p[13].toInt(), p[14].toInt(), p[15] == "1"
-                )
-            } else if (p.size >= 10) {
-                AppCfg(
-                    p[0].toInt(), p[1].toInt(), p[2] == "1", p[3].toInt(), p[4].toInt(), p[5].toInt(),
-                    p[6].toInt(), p[7].toInt(), p[8].toInt(), p[9].toLong()
-                )
-            } else {
-                AppCfg(p[0].toInt(), p[1].toInt(), p[2] == "1", p[3].toInt(), p[4].toInt(), p[5].toInt())
-            }
+            fun i(k: Int, d: Int): Int = p.getOrNull(k)?.toIntOrNull() ?: d
+            AppCfg(
+                i(0, 0), i(1, 5), p.getOrNull(2) == "1", i(3, 21 * 60), i(4, 5 * 60), i(5, 127),
+                i(6, 0), i(7, 0), i(8, 0), p.getOrNull(9)?.toLongOrNull() ?: 0L,
+                i(10, 0), i(11, 0), i(12, 0), i(13, 0), i(14, 0),
+                if (p.size > 15) p[15] == "1" else true,
+                p.getOrNull(16) == "1"
+            )
         } catch (e: Exception) {
             AppCfg()
         }
@@ -65,7 +60,7 @@ object Store {
     fun setAppCfg(c: Context, pkg: String, g: AppCfg) {
         val raw = "${g.wait}|${g.pass}|${if (g.schOn) "1" else "0"}|${g.start}|${g.end}|${g.days}|" +
             "${g.mode}|${g.limitMin}|${g.cooldown}|${g.blockUntil}|" +
-            "${g.hourLimit}|${g.launchDay}|${g.launchHour}|${g.twUse}|${g.twWait}|${if (g.twAdaptive) "1" else "0"}"
+            "${g.hourLimit}|${g.launchDay}|${g.launchHour}|${g.twUse}|${g.twWait}|${if (g.twAdaptive) "1" else "0"}|${if (g.notif) "1" else "0"}"
         sp(c).edit().putString("cfg_$pkg", raw).commit()
     }
 
@@ -156,7 +151,34 @@ object Store {
     }
 
     fun strictOn(c: Context): Boolean = sp(c).getBoolean("strict", false)
-    fun setStrict(c: Context, v: Boolean) { sp(c).edit().putBoolean("strict", v).commit() }
+    fun setStrict(c: Context, v: Boolean) {
+        sp(c).edit().putBoolean("strict", v).commit()
+        if (v) {
+            if (!sp(c).contains("locked")) putSet(c, "locked", apps(c))
+        } else {
+            sp(c).edit().remove("locked").commit()
+        }
+    }
+
+    /** Aplikasi yang sudah diblokir dan diatur sebelum Mode Ketat: aturannya terkunci. Aplikasi baru belum terkunci sampai aturannya disimpan. */
+    fun isLocked(c: Context, pkg: String): Boolean {
+        if (!strictOn(c)) return false
+        if (!sp(c).contains("locked")) putSet(c, "locked", apps(c))
+        return pkg in getSet(c, "locked")
+    }
+
+    fun lockApp(c: Context, pkg: String) {
+        if (strictOn(c)) putSet(c, "locked", getSet(c, "locked") + pkg)
+    }
+
+    fun anyNotifRule(c: Context): Boolean = apps(c).any { appCfg(c, it).notif }
+
+    fun vpnOn(c: Context): Boolean = sp(c).getBoolean("vpn_on", false)
+    fun setVpnOn(c: Context, v: Boolean) { sp(c).edit().putBoolean("vpn_on", v).commit() }
+    fun vpnUpstream(c: Context): Int = sp(c).getInt("vpn_up", 0)
+    fun setVpnUpstream(c: Context, v: Int) { sp(c).edit().putInt("vpn_up", v).commit() }
+    fun vpnDoh(c: Context): Boolean = sp(c).getBoolean("vpn_doh", true)
+    fun setVpnDoh(c: Context, v: Boolean) { sp(c).edit().putBoolean("vpn_doh", v).commit() }
 
     fun disableRequestedAt(c: Context): Long = sp(c).getLong("disable_req", 0L)
     fun setDisableRequestedAt(c: Context, v: Long) { sp(c).edit().putLong("disable_req", v).commit() }
