@@ -38,7 +38,7 @@ object Config {
     /** Kata tombol yang menandai halaman detail aplikasi / dialog copot (awal teks). */
     val ACTION_WORDS = listOf(
         "paksa berhenti", "force stop", "copot", "uninstall", "hapus data", "clear data",
-        "nonaktifkan", "deactivate", "disable"
+        "nonaktifkan", "deactivate", "disable", "putus", "disconnect", "lupakan", "forget", "hapus vpn", "remove vpn"
     )
 
     /** Potongan deskripsi layanan aksesibilitas kita (muncul di halaman detail layanan). */
