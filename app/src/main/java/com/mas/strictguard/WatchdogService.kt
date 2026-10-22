@@ -97,6 +97,10 @@ class WatchdogService : Service() {
                 problem = "Aksesibilitas Penjaga Ketat mati. Nyalakan kembali sekarang."
             }
         }
+        if (Store.anyNotifRule(this) && !SelfProtector.notifListenerOn(this)) {
+            if (SelfProtector.enableNotifListener(this)) Store.log(this, "Akses notifikasi dimatikan, dinyalakan kembali otomatis")
+        }
+        if (Store.vpnOn(this) && !DnsVpnService.running) DnsVpnService.start(this)
         if (!SelfProtector.adminOn(this)) {
             problem = "Perlindungan uninstall (Administrator perangkat) dicabut. Aktifkan kembali."
         }
