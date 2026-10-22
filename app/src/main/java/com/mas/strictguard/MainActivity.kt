@@ -10,12 +10,15 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
+import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.text.InputType
+import android.view.View
+import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.CheckBox
@@ -155,6 +158,10 @@ class MainActivity : Activity() {
         renderProtected(strict)
         renderCategories(strict)
         renderWords(strict)
+        renderVpn(strict)
+        renderNotif()
+        renderFriend()
+        renderDetection()
         renderFeeds(strict)
         renderMotivation(strict)
         renderStats(strict)
@@ -214,8 +221,21 @@ class MainActivity : Activity() {
             val input = EditText(this)
             input.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             root.addView(input)
+            val friendInput = EditText(this)
+            if (FriendApproval.isSet(this)) {
+                root.addView(text("Masukkan juga kode teman (teman harus ada di dekatmu):", 13f))
+                friendInput.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+                root.addView(friendInput)
+                val lk = FriendApproval.lockedMinutes(this)
+                if (lk > 0L) root.addView(text("Terkunci karena salah 3 kali. Coba lagi $lk menit lagi.", 12f, true, Color.rgb(180, 0, 0)))
+            }
             root.addView(button("Konfirmasi nonaktifkan") {
                 if (input.text.toString() == code) {
+                    if (FriendApproval.isSet(this) && !FriendApproval.verify(this, friendInput.text.toString())) {
+                        toast("Kode teman salah atau terkunci")
+                        render()
+                        return@button
+                    }
                     Store.setStrict(this, false)
                     SafeTimer.cancel(this, "exit")
                     Store.log(this, "Mode Ketat dinonaktifkan")
@@ -322,7 +342,7 @@ class MainActivity : Activity() {
 
     private fun renderApps(strict: Boolean) {
         header("Aplikasi diblokir")
-        root.addView(text("Centang aplikasi yang ingin diblokir, lalu tekan tombol Atur aturan di bawah aplikasinya: blokir penuh atau timer tunggu, selalu atau sesuai jadwal. Tiap aplikasi punya aturan sendiri.", 12f))
+        root.addView(text("Centang aplikasi yang ingin diblokir, lalu pilih kondisi pemblokirannya (blokir penuh, batas penggunaan, jumlah peluncuran, timer tunggu, interval waktu). Tombol Atur aturan mengubahnya lagi. Saat Mode Ketat aktif, aplikasi yang sudah diatur terkunci, tetapi aplikasi baru masih bisa ditambah dan diatur.", 12f))
         val chosen = Store.apps(this)
         val rows = loadApps().sortedWith(compareByDescending<AppRow> { it.pkg in chosen }.thenBy { it.label.lowercase() })
         for (a in rows) {
@@ -334,8 +354,11 @@ class MainActivity : Activity() {
                     val checked = (v as CheckBox).isChecked
                     if (checked) {
                         Store.addApp(this@MainActivity, a.pkg)
-                    } else if (strict) {
-                        toast("Mode Ketat aktif: tidak bisa melepas blokir")
+                        render()
+                        editCfg(a.pkg, a.label, strict)
+                        return@setOnClickListener
+                    } else if (strict && Store.isLocked(this@MainActivity, a.pkg)) {
+                        toast("Mode Ketat aktif: aplikasi ini sudah terkunci, tidak bisa melepas blokir")
                     } else {
                         Store.removeApp(this@MainActivity, a.pkg)
                     }
@@ -348,11 +371,7 @@ class MainActivity : Activity() {
                 root.addView(text("     " + summary(cfg), 12f, false, Color.rgb(90, 90, 90)))
                 root.addView(text("     " + usageLine(a.pkg, cfg), 12f, false, Color.rgb(90, 90, 90)))
                 root.addView(button("Atur aturan: ${a.label}") { editCfg(a.pkg, a.label, strict) })
-                root.addView(button("Blokir penuh 1 jam: ${a.label}") {
-                    Store.extendBlockUntil(this, a.pkg, 60)
-                    Store.log(this, "Blokir penuh 1 jam: ${a.label}")
-                    render()
-                })
+                root.addView(button("Blok cepat: ${a.label}") { quickBlock(a.pkg, a.label) })
             }
         }
     }
@@ -365,6 +384,7 @@ class MainActivity : Activity() {
         var s = "$mode • $sch"
         if (c.limitMin > 0) s += " • batas ${c.limitMin} mnt/hari"
         if (c.cooldown > 0) s += " • cooldown ${c.cooldown} mnt"
+        if (c.notif) s += " • notifikasi ikut diblokir"
         if (c.hourLimit > 0) s += " • ${c.hourLimit} mnt/jam"
         if (c.launchDay > 0) s += " • ${c.launchDay} buka/hari"
         if (c.launchHour > 0) s += " • ${c.launchHour} buka/jam"
@@ -412,9 +432,54 @@ class MainActivity : Activity() {
         return if (out.size == 7) "tiap hari" else out.joinToString(",")
     }
 
+    private fun vbox(): LinearLayout {
+        val l = LinearLayout(this)
+        l.orientation = LinearLayout.VERTICAL
+        l.setPadding(dp(16), 0, 0, dp(8))
+        return l
+    }
+
+    private fun conditionSection(box: LinearLayout, title: String, on: Boolean, body: LinearLayout): CheckBox {
+        val cb = CheckBox(this)
+        cb.text = title
+        cb.textSize = 14f
+        cb.setTypeface(null, Typeface.BOLD)
+        cb.isChecked = on
+        body.visibility = if (on) View.VISIBLE else View.GONE
+        cb.setOnCheckedChangeListener { _, checked ->
+            body.visibility = if (checked) View.VISIBLE else View.GONE
+        }
+        box.addView(cb)
+        box.addView(body)
+        return cb
+    }
+
+    private fun onPick(sp: Spinner, f: (Int) -> Unit) {
+        sp.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                f(position)
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+    }
+
+    private fun quickBlock(pkg: String, label: String) {
+        val opts = listOf(10, 30, 60, 120, 240)
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Blok cepat: $label")
+            .setItems(opts.map { "$it menit berikutnya" }.toTypedArray()) { _, i ->
+                Store.extendBlockUntil(this, pkg, opts[i])
+                Store.log(this, "Blok cepat ${opts[i]} menit: $label")
+                render()
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
     private fun editCfg(pkg: String, label: String, strict: Boolean) {
-        if (strict) {
-            toast("Mode Ketat aktif: aturan terkunci")
+        if (strict && Store.isLocked(this, pkg)) {
+            toast("Mode Ketat aktif: aturan aplikasi ini terkunci karena sudah diatur sebelum Mode Ketat. Aplikasi baru masih bisa diatur.")
             return
         }
         val cfg = Store.appCfg(this, pkg)
@@ -424,54 +489,13 @@ class MainActivity : Activity() {
         val box = LinearLayout(this)
         box.orientation = LinearLayout.VERTICAL
         box.setPadding(dp(20), dp(8), dp(20), dp(8))
+        box.addView(text("Pilih kondisi pemblokiran. Beberapa kondisi boleh dipakai bersamaan.", 12f))
 
-        box.addView(text("Mode", 12f, true))
-        val modeSp = spinnerOf(listOf("Blokir (penuh atau timer tunggu)", "Hanya kondisi batas (tanpa blokir penuh)"), cfg.mode)
-        box.addView(modeSp)
-
-        box.addView(text("Detik tunggu (0 = blokir penuh / Strictly Blocked)", 12f))
-        val wait = numberField(cfg.wait)
-        box.addView(wait)
-
-        box.addView(text("Lama aplikasi terbuka setelah menunggu (pass)", 12f))
-        val passSp = spinnerOf(passOptions.map { "$it menit" }, passOptions.indexOf(cfg.pass))
-        box.addView(passSp)
-
-        box.addView(text("Cooldown setelah pass habis (menit, 0 = tanpa cooldown)", 12f))
-        val cool = numberField(cfg.cooldown)
-        box.addView(cool)
-
-        box.addView(text("Batas harian (menit, 0 = tanpa batas)", 12f))
-        val limit = numberField(cfg.limitMin)
-        box.addView(limit)
-
-        box.addView(text("Batas per jam (menit pemakaian dalam 60 menit terakhir, 0 = tanpa batas)", 12f))
-        val hourLim = numberField(cfg.hourLimit)
-        box.addView(hourLim)
-
-        box.addView(text("Jumlah peluncuran per hari (0 = tanpa batas)", 12f))
-        val launchD = numberField(cfg.launchDay)
-        box.addView(launchD)
-
-        box.addView(text("Jumlah peluncuran per jam (0 = tanpa batas)", 12f))
-        val launchH = numberField(cfg.launchHour)
-        box.addView(launchH)
-
-        box.addView(text("Timer tunggu: setelah dipakai ... menit (0 = mati)", 12f, true))
-        val twUse = numberField(cfg.twUse)
-        box.addView(twUse)
-        box.addView(text("... aplikasi diblokir selama ... menit", 12f))
-        val twWait = numberField(cfg.twWait)
-        box.addView(twWait)
-        val twAd = CheckBox(this)
-        twAd.text = "Timer adaptif: bila tidak mencoba membuka aplikasi selama separuh masa tunggu, tunggu selesai lebih cepat"
-        twAd.isChecked = cfg.twAdaptive
-        box.addView(twAd)
-
-        val schCb = CheckBox(this)
-        schCb.text = "Blokir hanya pada jadwal (tidak dicentang: berlaku terus)"
-        schCb.isChecked = cfg.schOn
-        box.addView(schCb)
+        // 1. Blokir penuh (selalu atau interval waktu)
+        val fullBody = vbox()
+        fullBody.addView(text("Kapan diblokir", 12f))
+        val whenSp = spinnerOf(listOf("Selalu", "Hanya pada interval waktu"), if (cfg.schOn) 1 else 0)
+        fullBody.addView(whenSp)
         val startBtn = Button(this)
         startBtn.text = "Mulai: ${fmt(start)}"
         startBtn.setOnClickListener {
@@ -480,7 +504,6 @@ class MainActivity : Activity() {
                 startBtn.text = "Mulai: ${fmt(start)}"
             }, start / 60, start % 60, true).show()
         }
-        box.addView(startBtn)
         val endBtn = Button(this)
         endBtn.text = "Selesai: ${fmt(end)}"
         endBtn.setOnClickListener {
@@ -489,7 +512,74 @@ class MainActivity : Activity() {
                 endBtn.text = "Selesai: ${fmt(end)}"
             }, end / 60, end % 60, true).show()
         }
-        box.addView(endBtn)
+        fullBody.addView(startBtn)
+        fullBody.addView(endBtn)
+        onPick(whenSp) { pos ->
+            val v = if (pos == 1) View.VISIBLE else View.GONE
+            startBtn.visibility = v
+            endBtn.visibility = v
+        }
+        val showTimes = if (cfg.schOn) View.VISIBLE else View.GONE
+        startBtn.visibility = showTimes
+        endBtn.visibility = showTimes
+        val fullCb = conditionSection(box, "Blokir penuh", cfg.mode == 0, fullBody)
+
+        // 2. Batas penggunaan
+        val useBody = vbox()
+        useBody.addView(text("Batas harian (menit)", 12f))
+        val limit = numberField(cfg.limitMin)
+        useBody.addView(limit)
+        useBody.addView(text("Batas per jam (menit dalam 60 menit terakhir)", 12f))
+        val hourLim = numberField(cfg.hourLimit)
+        useBody.addView(hourLim)
+        val useCb = conditionSection(box, "Batas penggunaan", cfg.limitMin > 0 || cfg.hourLimit > 0, useBody)
+
+        // 3. Jumlah peluncuran
+        val launchBody = vbox()
+        launchBody.addView(text("Peluncuran per hari", 12f))
+        val launchD = numberField(cfg.launchDay)
+        launchBody.addView(launchD)
+        launchBody.addView(text("Peluncuran per jam", 12f))
+        val launchH = numberField(cfg.launchHour)
+        launchBody.addView(launchH)
+        val launchCb = conditionSection(box, "Jumlah peluncuran", cfg.launchDay > 0 || cfg.launchHour > 0, launchBody)
+
+        // 4. Timer tunggu
+        val twBody = vbox()
+        twBody.addView(text("Setelah dipakai ... menit", 12f))
+        val twUse = numberField(cfg.twUse)
+        twBody.addView(twUse)
+        twBody.addView(text("... aplikasi diblokir selama ... menit", 12f))
+        val twWait = numberField(cfg.twWait)
+        twBody.addView(twWait)
+        val twAd = CheckBox(this)
+        twAd.text = "Timer adaptif: bila tidak mencoba membuka aplikasi selama separuh masa tunggu, tunggu selesai lebih cepat"
+        twAd.isChecked = cfg.twAdaptive
+        twBody.addView(twAd)
+        val twCb = conditionSection(box, "Timer tunggu", cfg.twUse > 0 && cfg.twWait > 0, twBody)
+
+        // 5. Notifikasi
+        val notifCb = CheckBox(this)
+        notifCb.text = "Blokir juga notifikasi aplikasi ini saat sedang diblokir (butuh Akses Notifikasi)"
+        notifCb.isChecked = cfg.notif
+        box.addView(notifCb)
+
+        box.addView(text("Blok cepat: pakai tombol Blok cepat di bawah aplikasinya.", 12f))
+        box.addView(text("Berdasarkan tujuan dan Lokasi: belum tersedia.", 12f))
+
+        // Penghalang
+        box.addView(text("Penghalang saat terblokir (blokir penuh dan batas harian)", 13f, true))
+        box.addView(text("Detik tunggu sebelum bisa membuka (0 = tidak bisa dibuka sama sekali)", 12f))
+        val wait = numberField(cfg.wait)
+        box.addView(wait)
+        box.addView(text("Lama aplikasi terbuka setelah menunggu (pass)", 12f))
+        val passSp = spinnerOf(passOptions.map { "$it menit" }, passOptions.indexOf(cfg.pass))
+        box.addView(passSp)
+        box.addView(text("Cooldown setelah pass habis (menit, 0 = tanpa cooldown)", 12f))
+        val cool = numberField(cfg.cooldown)
+        box.addView(cool)
+
+        box.addView(text("Berlaku pada hari", 13f, true))
         val names = arrayOf("Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min")
         val dayBoxes = ArrayList<CheckBox>()
         val row = LinearLayout(this)
@@ -503,33 +593,46 @@ class MainActivity : Activity() {
             row.addView(d)
         }
         box.addView(row)
+
         val scrollBox = ScrollView(this)
         scrollBox.addView(box)
         android.app.AlertDialog.Builder(this)
-            .setTitle("Aturan: $label")
+            .setTitle("Kondisi blokir: $label")
             .setView(scrollBox)
             .setPositiveButton("Simpan") { _, _ ->
                 var mask = 0
                 for (i in 0 until 7) if (dayBoxes[i].isChecked) mask = mask or (1 shl i)
                 if (mask == 0) mask = 127
+                fun num(e: EditText, max: Int): Int = (e.text.toString().toIntOrNull() ?: 0).coerceIn(0, max)
+                val full = fullCb.isChecked
                 val newCfg = cfg.copy(
-                    wait = (wait.text.toString().toIntOrNull() ?: 0).coerceIn(0, 600),
+                    wait = num(wait, 600),
                     pass = passOptions[passSp.selectedItemPosition],
-                    schOn = schCb.isChecked,
+                    cooldown = num(cool, 1440),
+                    mode = if (full) 0 else 1,
+                    schOn = full && whenSp.selectedItemPosition == 1,
                     start = start,
                     end = end,
                     days = mask,
-                    mode = modeSp.selectedItemPosition,
-                    limitMin = (limit.text.toString().toIntOrNull() ?: 0).coerceIn(0, 1440),
-                    cooldown = (cool.text.toString().toIntOrNull() ?: 0).coerceIn(0, 1440),
-                    hourLimit = (hourLim.text.toString().toIntOrNull() ?: 0).coerceIn(0, 60),
-                    launchDay = (launchD.text.toString().toIntOrNull() ?: 0).coerceIn(0, 1000),
-                    launchHour = (launchH.text.toString().toIntOrNull() ?: 0).coerceIn(0, 100),
-                    twUse = (twUse.text.toString().toIntOrNull() ?: 0).coerceIn(0, 1440),
-                    twWait = (twWait.text.toString().toIntOrNull() ?: 0).coerceIn(0, 1440),
-                    twAdaptive = twAd.isChecked
+                    limitMin = if (useCb.isChecked) num(limit, 1440) else 0,
+                    hourLimit = if (useCb.isChecked) num(hourLim, 60) else 0,
+                    launchDay = if (launchCb.isChecked) num(launchD, 1000) else 0,
+                    launchHour = if (launchCb.isChecked) num(launchH, 100) else 0,
+                    twUse = if (twCb.isChecked) num(twUse, 1440) else 0,
+                    twWait = if (twCb.isChecked) num(twWait, 1440) else 0,
+                    twAdaptive = twAd.isChecked,
+                    notif = notifCb.isChecked
                 )
                 Store.setAppCfg(this, pkg, newCfg)
+                if (strict) Store.lockApp(this, pkg)
+                if (newCfg.notif && !SelfProtector.notifListenerOn(this)) {
+                    if (!SelfProtector.enableNotifListener(this)) {
+                        toast("Nyalakan Akses Notifikasi untuk Penjaga Ketat di bagian Notifikasi di bawah.")
+                    }
+                }
+                if (!full && !useCb.isChecked && !launchCb.isChecked && !twCb.isChecked) {
+                    toast("Belum ada kondisi yang dipilih: aplikasi ini tidak akan terblokir.")
+                }
                 render()
             }
             .setNegativeButton("Batal", null)
@@ -779,6 +882,7 @@ class MainActivity : Activity() {
         "until" -> "Blokir penuh sementara"
         "profile" -> "Profil"
         "content" -> "Konten/situs/kata kunci"
+        "dns" -> "Situs diblokir (DNS)"
         "protect" -> "Perlindungan pengaturan"
         else -> r
     }
@@ -822,6 +926,165 @@ class MainActivity : Activity() {
         root.addView(button("Hapus statistik") {
             if (strict) toast("Mode Ketat aktif: statistik terkunci") else { StatsDb.clear(this); render() }
         })
+    }
+
+    private fun renderVpn(strict: Boolean) {
+        header("VPN DNS (filter situs untuk semua aplikasi)")
+        root.addView(text("VPN lokal yang hanya memeriksa nama situs (DNS) dan menolak situs terblokir, termasuk dari aplikasi dan browser dalam aplikasi. Data lain tidak lewat VPN. Aturan yang dipakai sama dengan daftar situs, kata kunci, kategori dan profil aktif.", 12f))
+        val on = DnsVpnService.running
+        status(on, "VPN DNS berjalan")
+        if (!on) {
+            root.addView(button("Nyalakan VPN DNS") {
+                val i = VpnService.prepare(this)
+                if (i != null) {
+                    startActivityForResult(i, 77)
+                } else {
+                    Store.setVpnOn(this, true)
+                    DnsVpnService.start(this)
+                    handler.postDelayed({ render() }, 800L)
+                }
+            })
+        } else {
+            root.addView(button("Matikan VPN DNS") {
+                if (strict) {
+                    toast("Mode Ketat aktif: VPN DNS tidak bisa dimatikan")
+                } else {
+                    Store.setVpnOn(this, false)
+                    DnsVpnService.stop(this)
+                    render()
+                }
+            })
+        }
+        root.addView(text("DNS upstream", 12f, true))
+        val upSp = spinnerOf(
+            listOf("Cloudflare Family 1.1.1.3 (ikut memblokir dewasa dan malware)", "Cloudflare 1.1.1.1", "Google 8.8.8.8"),
+            Store.vpnUpstream(this)
+        )
+        root.addView(upSp)
+        onPick(upSp) { pos ->
+            if (pos != Store.vpnUpstream(this)) {
+                if (strict) {
+                    toast("Mode Ketat aktif: pengaturan terkunci")
+                    upSp.setSelection(Store.vpnUpstream(this))
+                } else {
+                    Store.setVpnUpstream(this, pos)
+                }
+            }
+        }
+        root.addView(CheckBox(this).apply {
+            text = "Blokir DNS terenkripsi (DoH) umum agar tidak mem-bypass filter"
+            isChecked = Store.vpnDoh(this@MainActivity)
+            setOnClickListener {
+                if (!isChecked && strict) {
+                    toast("Mode Ketat aktif: tidak bisa dimatikan")
+                    render()
+                } else {
+                    Store.setVpnDoh(this@MainActivity, isChecked)
+                }
+            }
+        })
+        val pdns = try {
+            Settings.Global.getString(contentResolver, "private_dns_mode") ?: ""
+        } catch (t: Throwable) {
+            ""
+        }
+        if (pdns == "hostname") {
+            root.addView(text("Peringatan: Private DNS di HP diatur ke nama host tertentu, sehingga melewati filter ini. Ubah ke Otomatis atau Mati di Pengaturan.", 12f, true, Color.rgb(180, 0, 0)))
+        }
+        root.addView(text("Batasan: aplikasi yang memakai DNS terenkripsinya sendiri (mis. pengaturan DNS aman di Chrome ke penyedia lain) bisa lolos. Untuk menjaga VPN tidak dilepas, nyalakan juga VPN Selalu Aktif di Pengaturan > Jaringan > VPN.", 11f))
+    }
+
+    private fun renderNotif() {
+        header("Kontrol notifikasi")
+        root.addView(text("Notifikasi aplikasi yang sedang diblokir dihapus bila opsi notifikasi dicentang di aturan aplikasinya (atau aplikasi diblokir profil aktif).", 12f))
+        val on = SelfProtector.notifListenerOn(this)
+        status(on, "Akses Notifikasi Penjaga Ketat aktif")
+        if (!on) {
+            root.addView(button("Nyalakan Akses Notifikasi") {
+                if (!SelfProtector.enableNotifListener(this)) {
+                    startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                }
+                handler.postDelayed({ render() }, 800L)
+            })
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 77 && resultCode == RESULT_OK) {
+            Store.setVpnOn(this, true)
+            DnsVpnService.start(this)
+            handler.postDelayed({ render() }, 800L)
+        }
+    }
+
+    private fun renderFriend() {
+        header("Persetujuan teman")
+        root.addView(text("Teman mengetik sebuah kode di HP ini. Hanya hash-nya yang disimpan, dan kode itu menjadi syarat tambahan untuk keluar dari Mode Ketat. Serahkan HP ke temanmu saat mengatur kode dan jangan tanya kodenya. Persetujuan jarak jauh dari HP teman belum tersedia.", 12f))
+        val isSet = FriendApproval.isSet(this)
+        status(isSet, "Kode teman sudah diatur")
+        root.addView(button(if (isSet) "Ganti kode teman" else "Atur kode teman") { friendDialog() })
+        if (isSet) root.addView(button("Hapus kode teman") { friendClearDialog() })
+    }
+
+    private fun friendDialog() {
+        val box = LinearLayout(this)
+        box.orientation = LinearLayout.VERTICAL
+        box.setPadding(dp(20), dp(8), dp(20), dp(8))
+        val pw = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        val old = EditText(this)
+        old.inputType = pw
+        old.hint = "Kode lama"
+        if (FriendApproval.isSet(this)) box.addView(old)
+        val n1 = EditText(this)
+        n1.inputType = pw
+        n1.hint = "Kode baru (min 6 karakter)"
+        box.addView(n1)
+        val n2 = EditText(this)
+        n2.inputType = pw
+        n2.hint = "Ulangi kode baru"
+        box.addView(n2)
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Kode teman")
+            .setMessage("Serahkan HP ke temanmu. Dia yang mengetik kodenya.")
+            .setView(box)
+            .setPositiveButton("Simpan") { _, _ ->
+                if (n1.text.toString() != n2.text.toString()) {
+                    toast("Kode tidak sama")
+                } else {
+                    val err = FriendApproval.set(this, old.text.toString(), n1.text.toString())
+                    toast(err ?: "Kode teman tersimpan")
+                }
+                render()
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    private fun friendClearDialog() {
+        val et = EditText(this)
+        et.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        et.hint = "Kode teman"
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Hapus kode teman")
+            .setView(et)
+            .setPositiveButton("Hapus") { _, _ ->
+                val err = FriendApproval.clear(this, et.text.toString())
+                toast(err ?: "Kode teman dihapus")
+                render()
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    private fun renderDetection() {
+        header("Deteksi gambar (NSFW)")
+        val e = Detection.engine
+        status(e.ready, "Mesin deteksi: " + e.name)
+        if (!e.ready) {
+            root.addView(text("PLACEHOLDER. Antarmuka sudah ada, tetapi belum ada model dan belum ada pengambilan layar yang terhubung, jadi gambar belum diperiksa. Pemblokiran saat ini mengandalkan kata kunci, situs, kategori, dan VPN DNS.", 12f))
+        }
     }
 
     private fun renderWords(strict: Boolean) {
