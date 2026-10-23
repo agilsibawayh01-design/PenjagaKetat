@@ -32,6 +32,7 @@ class PackageWatcher : BroadcastReceiver() {
             pkg
         }
         Store.addNewApp(c, pkg)
+        Store.pkgStamp = System.currentTimeMillis()
         Store.log(c, "Aplikasi baru: $label")
         BrowserScanner.scan(c)
         if (Store.autoBlockNew(c) && pkg !in Config.EXCLUDED_FROM_LIST) {

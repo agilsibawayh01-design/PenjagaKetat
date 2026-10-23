@@ -15,7 +15,7 @@ class BootReceiver : BroadcastReceiver() {
         try {
             SafeTimer.elapsed(context, "exit")
             SafeTimer.elapsed(context, "tamper")
-            if (Store.vpnOn(context)) DnsVpnService.start(context)
+            VpnManager.ensure(context)
             if (Store.strictRaw(context)) {
                 Store.log(context, "Pemulihan setelah boot/update")
                 SelfProtector.reenableAccessibility(context)

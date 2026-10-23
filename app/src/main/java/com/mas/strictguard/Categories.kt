@@ -11,9 +11,11 @@ object Categories {
             "dewasa", "Konten dewasa", "Situs dewasa dan kata kunci terkait (aktif secara bawaan).",
             listOf(
                 "pornhub.com", "xvideos.com", "xnxx.com", "xhamster.com", "redtube.com", "youporn.com",
-                "spankbang.com", "eporner.com", "chaturbate.com", "stripchat.com", "nhentai.net", "onlyfans.com"
+                "spankbang.com", "eporner.com", "chaturbate.com", "stripchat.com", "nhentai.net", "onlyfans.com",
+                "tubegalore.com", "simontok.com", "xhamster.desi", "pornhat.com", "porntrex.com", "hqporner.com",
+                "txxx.com", "tnaflix.com", "beeg.com", "motherless.com", "rule34.xxx", "e-hentai.org", "fapello.com", "javhd.com"
             ),
-            listOf("porn", "bokep", "xnxx", "xvideos", "xhamster", "pornhub", "hentai", "nude", "telanjang", "bugil")
+            listOf("porn", "bokep", "xnxx", "xvideos", "xhamster", "pornhub", "hentai", "nude", "telanjang", "bugil", "simontok", "tubegalore", "xxx")
         ),
         Cat(
             "judi", "Judi online", "Situs taruhan dan kata kunci judi online (aktif secara bawaan).",

@@ -78,6 +78,7 @@ class MainActivity : Activity() {
         super.onResume()
         Store.seed(this)
         if (Store.strictRaw(this) && !WatchdogService.running) WatchdogService.start(this)
+        VpnManager.ensure(this)
         if (AppLock.needsAuth(this)) showLockScreen() else render()
     }
 
@@ -401,7 +402,7 @@ class MainActivity : Activity() {
             tile("📱", "Aplikasi", "${Store.apps(this).size} diblokir", Color.parseColor("#1565C0"), "apps"),
             tile("🌐", "Situs & kata", "$wordCount aturan • $cats kategori", Color.parseColor("#6A1B9A"), "words"),
             tile("🗂️", "Profil", "$activeP aktif dari ${profiles.size}", Color.parseColor("#00796B"), "profiles"),
-            tile("🔌", "VPN & notifikasi", if (DnsVpnService.running) "VPN DNS aktif" else "VPN DNS mati", Color.parseColor("#2E7D32"), "net"),
+            tile("🔌", "VPN & notifikasi", if (VpnStatus.running) "VPN DNS aktif" else if (Store.vpnOn(this)) "VPN DNS: " + VpnStatus.state.label else "VPN DNS mati", Color.parseColor("#2E7D32"), "net"),
             tile("📊", "Statistik", "$blocks blokir hari ini", Color.parseColor("#EF6C00"), "stats"),
             tile("⚙️", "Lainnya", "Teman, log, deteksi", Color.parseColor("#455A64"), "more")
         )
@@ -1647,34 +1648,68 @@ class MainActivity : Activity() {
     private fun renderVpn(strict: Boolean) {
         header("VPN DNS (filter situs untuk semua aplikasi)")
         put(text("VPN lokal yang hanya memeriksa nama situs (DNS) dan menolak situs terblokir, termasuk dari aplikasi dan browser dalam aplikasi. Data lain tidak lewat VPN. Aturan yang dipakai sama dengan daftar situs, kata kunci, kategori dan profil aktif.", 12f))
-        val on = DnsVpnService.running
-        status(on, "VPN DNS berjalan")
-        if (on) {
-            put(text("Query DNS: ${DnsVpnService.qTotal.get()} • diblokir ${DnsVpnService.qBlocked.get()} • diteruskan ${DnsVpnService.qForwarded.get()} • gagal ${DnsVpnService.qFailed.get()}", 11f, false, C_SUB))
-            put(button("Segarkan angka") { render() })
+        val st = VpnStatus.state
+        val wanted = Store.vpnOn(this)
+        status(st == VpnState.RUNNING, "VPN DNS: " + VpnStatus.summary())
+        if (wanted) {
+            put(text("Query DNS: ${VpnStatus.qTotal.get()} • diblokir ${VpnStatus.qBlocked.get()} • diteruskan ${VpnStatus.qForwarded.get()} • cache ${VpnStatus.qCached.get()} • gagal ${VpnStatus.qFailed.get()}", 11f, false, C_SUB))
+            put(button("Segarkan status") { render() })
+            put(button("Sambung ulang VPN") {
+                VpnManager.restart(this)
+                handler.postDelayed({ render() }, 1500L)
+            })
         }
-        if (!on) {
-            put(button("Nyalakan VPN DNS") {
+        if (st == VpnState.FAILSAFE) {
+            put(text("VPN dijeda otomatis karena DNS tidak sehat. Internet tetap jalan lewat jaringan biasa. VPN mencoba lagi sendiri.", 12f, true, Color.rgb(180, 90, 0)))
+        }
+        if (!wanted || st == VpnState.NEED_PERMISSION) {
+            put(button(if (wanted) "Beri izin VPN" else "Nyalakan VPN DNS") {
                 val i = VpnService.prepare(this)
                 if (i != null) {
                     startActivityForResult(i, 77)
                 } else {
-                    Store.setVpnOn(this, true)
-                    DnsVpnService.start(this)
-                    handler.postDelayed({ render() }, 800L)
+                    VpnManager.start(this)
+                    handler.postDelayed({ render() }, 1000L)
                 }
             })
-        } else {
+        }
+        if (wanted) {
             put(button("Matikan VPN DNS") {
                 if (strict) {
                     toast("Mode Ketat aktif: VPN DNS tidak bisa dimatikan")
                 } else {
-                    Store.setVpnOn(this, false)
-                    DnsVpnService.stop(this)
-                    render()
+                    VpnManager.stop(this)
+                    handler.postDelayed({ render() }, 500L)
                 }
             })
         }
+        put(CheckBox(this).apply {
+            text = "Kecualikan aplikasi bank dari VPN (wondr, BRImo, myBCA, Livin, Bibit, dll.)"
+            isChecked = Store.vpnExcludeBanks(this@MainActivity)
+            setOnClickListener {
+                if (!isChecked && strict) {
+                    toast("Mode Ketat aktif: tidak bisa dimatikan")
+                    render()
+                } else {
+                    Store.setVpnExcludeBanks(this@MainActivity, isChecked)
+                    if (Store.vpnOn(this@MainActivity)) VpnManager.restart(this@MainActivity)
+                }
+            }
+        })
+        val exc = Store.vpnExcluded(this)
+        put(button("Aplikasi lain yang dikecualikan dari VPN (${exc.size})") {
+            if (strict) {
+                toast("Mode Ketat aktif: pengaturan terkunci")
+            } else {
+                val chosen = exc.toMutableSet()
+                pickApps(chosen) {
+                    Store.setVpnExcluded(this, chosen)
+                    if (Store.vpnOn(this)) VpnManager.restart(this)
+                    render()
+                }
+            }
+        })
+        put(text("Aplikasi yang dikecualikan tidak lewat filter VPN (situsnya tidak terblokir lewat DNS), tetapi internetnya tidak tersentuh sama sekali.", 11f, false, C_SUB))
         put(text("DNS upstream", 12f, true))
         val upSp = spinnerOf(
             listOf("Cloudflare Family 1.1.1.3 (ikut memblokir dewasa dan malware)", "Cloudflare 1.1.1.1", "Google 8.8.8.8"),
@@ -1755,9 +1790,8 @@ class MainActivity : Activity() {
             return
         }
         if (requestCode == 77 && resultCode == RESULT_OK) {
-            Store.setVpnOn(this, true)
-            DnsVpnService.start(this)
-            handler.postDelayed({ render() }, 800L)
+            VpnManager.start(this)
+            handler.postDelayed({ render() }, 1000L)
         }
     }
 

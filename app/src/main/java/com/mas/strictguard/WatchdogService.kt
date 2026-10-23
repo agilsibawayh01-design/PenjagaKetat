@@ -100,7 +100,6 @@ class WatchdogService : Service() {
         if (Store.anyNotifRule(this) && !SelfProtector.notifListenerOn(this)) {
             if (SelfProtector.enableNotifListener(this)) Store.log(this, "Akses notifikasi dimatikan, dinyalakan kembali otomatis")
         }
-        if (Store.vpnOn(this) && !DnsVpnService.running) DnsVpnService.start(this)
         if (!SelfProtector.adminOn(this)) {
             problem = "Perlindungan uninstall (Administrator perangkat) dicabut. Aktifkan kembali."
         }

@@ -1,6 +1,9 @@
 package com.mas.strictguard
 
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
 
 data class AppCfg(
     val wait: Int = 0,
@@ -240,6 +243,97 @@ object Store {
     fun setBlockOtherBrowsers(c: Context, v: Boolean) { sp(c).edit().putBoolean("block_browsers", v).commit() }
 
     /** Browser terpasang selain Chrome yang akan diblokir (bila aturannya aktif). */
+    @Volatile
+    var pkgStamp = 0L
+
+    private val BROWSER_WORDS = listOf("browser", "peramban", "simontok", "vpn browser", "private browser", "incognito")
+
+    /** Semua aplikasi peramban terpasang: filter tautan web umum (tanpa host) atau nama yang mengandung kata peramban. */
+    fun detectedBrowsers(c: Context): Set<String> {
+        val out = HashSet<String>()
+        val pm = c.packageManager
+        try {
+            for (u in listOf("http://example.com", "https://example.com")) {
+                val i = Intent(Intent.ACTION_VIEW, Uri.parse(u)).addCategory(Intent.CATEGORY_BROWSABLE)
+                for (r in pm.queryIntentActivities(i, PackageManager.GET_RESOLVED_FILTER)) {
+                    val f = r.filter ?: continue
+                    if (f.countDataAuthorities() == 0) out.add(r.activityInfo.packageName)
+                }
+            }
+        } catch (t: Throwable) {
+            // lanjut dengan heuristik nama
+        }
+        try {
+            val main = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+            for (r in pm.queryIntentActivities(main, 0)) {
+                val p = r.activityInfo.packageName
+                val label = try { r.loadLabel(pm).toString().lowercase() } catch (e: Exception) { "" }
+                val pl = p.lowercase()
+                if (BROWSER_WORDS.any { label.contains(it) || pl.contains(it) }) out.add(p)
+            }
+        } catch (t: Throwable) {
+            // abaikan
+        }
+        return out
+    }
+
+    fun unsupportedBrowsers(c: Context): Set<String> {
+        val out = HashSet<String>()
+        val pm = c.packageManager
+        for (p in Config.BROWSERS + extraBrowsers(c) + detectedBrowsers(c)) {
+            if (p == Config.ALLOWED_BROWSER || p in Config.BROWSER_NEVER_BLOCK) continue
+            if (p == c.packageName || p in Config.BANK_HINT || p in Config.PROTECTED || p in Config.EXCLUDED_FROM_LIST || p in Config.IGNORED) continue
+            if (pm.getLaunchIntentForPackage(p) == null) continue
+            out.add(p)
+        }
+        return out
+    }
+
+    fun setStrictSchedules(c: Context, list: List<Sched>) {
+        sp(c).edit().putString("strict_sched", list.joinToString(";") { "${it.start},${it.end},${it.days}" }).commit()
+    }
+
+    // ---- Mode Off (jeda) ----
+    /** Menit jeda yang dipilih; 0 = sampai dinyalakan lagi. */
+    fun pauseMinutes(c: Context): Int = sp(c).getInt("pause_min", 0)
+
+    fun pausedNow(c: Context): Boolean {
+        if (!SafeTimer.isRunning(c, "pause")) return false
+        if (strictOn(c)) {
+            SafeTimer.cancel(c, "pause")
+            return false
+        }
+        val m = pauseMinutes(c)
+        if (m > 0 && SafeTimer.elapsed(c, "pause") >= m * 60000L) {
+            SafeTimer.cancel(c, "pause")
+            log(c, "Jeda selesai, blokir bekerja lagi")
+            return false
+        }
+        return true
+    }
+
+    fun pauseStart(c: Context, minutes: Int) {
+        sp(c).edit().putInt("pause_min", minutes).commit()
+        SafeTimer.start(c, "pause")
+        log(c, if (minutes > 0) "Mode Off (jeda $minutes menit)" else "Mode Off (sampai dinyalakan lagi)")
+    }
+
+    fun pauseStop(c: Context) {
+        if (SafeTimer.isRunning(c, "pause")) log(c, "Mode Off diakhiri, kembali ke Mode Normal")
+        SafeTimer.cancel(c, "pause")
+    }
+
+    fun pauseLeftMin(c: Context): Long {
+        val m = pauseMinutes(c)
+        if (m <= 0) return -1L
+        return Math.max(0L, m * 60000L - SafeTimer.elapsed(c, "pause")) / 60000L + 1L
+    }
+
+    // ---- Browser ----
+    fun blockOtherBrowsers(c: Context): Boolean = sp(c).getBoolean("block_browsers", true)
+    fun setBlockOtherBrowsers(c: Context, v: Boolean) { sp(c).edit().putBoolean("block_browsers", v).commit() }
+
+    /** Browser terpasang selain Chrome yang akan diblokir (bila aturannya aktif). */
     fun unsupportedBrowsers(c: Context): Set<String> {
         val out = HashSet<String>()
         val pm = c.packageManager
@@ -279,9 +373,13 @@ object Store {
 
     fun vpnOn(c: Context): Boolean = sp(c).getBoolean("vpn_on", false)
     fun setVpnOn(c: Context, v: Boolean) { sp(c).edit().putBoolean("vpn_on", v).commit() }
+    fun vpnExcluded(c: Context): Set<String> = getSet(c, "vpn_excl")
+    fun setVpnExcluded(c: Context, v: Set<String>) = putSet(c, "vpn_excl", v)
+    fun vpnExcludeBanks(c: Context): Boolean = sp(c).getBoolean("vpn_excl_bank", true)
+    fun setVpnExcludeBanks(c: Context, v: Boolean) { sp(c).edit().putBoolean("vpn_excl_bank", v).commit() }
     fun vpnUpstream(c: Context): Int = sp(c).getInt("vpn_up", 0)
     fun setVpnUpstream(c: Context, v: Int) { sp(c).edit().putInt("vpn_up", v).commit() }
-    fun vpnDoh(c: Context): Boolean = sp(c).getBoolean("vpn_doh", true)
+    fun vpnDoh(c: Context): Boolean = sp(c).getBoolean("vpn_doh", false)
     fun setVpnDoh(c: Context, v: Boolean) { sp(c).edit().putBoolean("vpn_doh", v).commit() }
 
     fun disableRequestedAt(c: Context): Long = sp(c).getLong("disable_req", 0L)

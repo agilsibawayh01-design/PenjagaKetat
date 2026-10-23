@@ -74,6 +74,7 @@ class GuardService : AccessibilityService() {
         BrowserScanner.scan(this)
         TimeGuard.check(this)
         if (Store.strictRaw(this)) WatchdogService.start(this)
+        VpnManager.ensure(this)
     }
 
     override fun onDestroy() {
@@ -93,7 +94,7 @@ class GuardService : AccessibilityService() {
         cacheAt = now
         strictNow = Store.strictOn(this)
         pausedNow = Store.pausedNow(this)
-        if (now - browsersAt > 30000L) {
+        if (now - browsersAt > 30000L || Store.pkgStamp > browsersAt) {
             browsersAt = now
             blockedBrowsers = if (Store.blockOtherBrowsers(this)) Store.unsupportedBrowsers(this) else emptySet()
         }
