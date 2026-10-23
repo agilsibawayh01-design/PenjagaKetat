@@ -216,7 +216,7 @@ class GuardService : AccessibilityService() {
         // Klik pada aplikasi terlindung di Pengaturan (mis. daftar layanan Aksesibilitas): langsung kembali,
         // sebelum halaman detail dan tombol nonaktifkan sempat dipakai.
         if (event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
-            if (strictNow && pkg in Config.PROTECTED && clickedProtected(event)) {
+            if (strictNow && isSettingsLike(pkg) && clickedProtected(event)) {
                 startBlock("protect_click", "")
             }
             return
@@ -353,12 +353,17 @@ class GuardService : AccessibilityService() {
         return false
     }
 
+    /** Hanya aplikasi Pengaturan/pemasang/izin. Layar utama (launcher) tidak termasuk, supaya membuka aplikasi biasa tidak ikut terblokir. */
+    private fun isSettingsLike(pkg: String): Boolean =
+        pkg in Config.PROTECTED && (pkg.contains("settings") || pkg.contains("packageinstaller") ||
+            pkg.contains("permissioncontroller") || pkg.contains("vending"))
+
     /** True bila yang diklik adalah baris/tombol yang memuat nama aplikasi terlindung. */
     private fun clickedProtected(event: AccessibilityEvent): Boolean {
         fun hit(s: String?): Boolean {
             val t = s?.lowercase()?.trim() ?: return false
             if (t.isEmpty() || t.length > 80) return false
-            return protectedNames.any { it.length >= 4 && t.contains(it) }
+            return protectedNames.any { it.length >= 4 && !it.contains('.') && t.contains(it) }
         }
         for (x in event.text) if (hit(x?.toString())) return true
         if (hit(event.contentDescription?.toString())) return true
