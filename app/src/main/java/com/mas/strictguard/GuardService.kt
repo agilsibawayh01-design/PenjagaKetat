@@ -38,7 +38,7 @@ class GuardService : AccessibilityService() {
                 refreshCache(now)
                 // Notifikasi timer harus tetap hidup walau BlockActivity/PenjagaKetat sedang menjadi foreground.
                 val activeAppWait = WaitTimer.activeWaiting(this@GuardService, now)
-                val activeSiteWait = SiteTracker.activeWaiting(this@GuardService, now)
+                val activeSiteWait = SiteTracker.activeWait(this@GuardService, now)
                 when {
                     activeAppWait != null -> {
                         val label = try {
