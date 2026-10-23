@@ -32,12 +32,12 @@ import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.Switch
 import android.widget.TextView
-import android.widget.RadioButton
-import android.widget.RadioGroup
 import android.widget.Toast
 
 class MainActivity : Activity() {
@@ -1889,14 +1889,15 @@ class MainActivity : Activity() {
         val dInput = EditText(this).apply { hint = "Tambah situs, mis. contoh.com"; setSingleLine() }
         put(dInput)
         put(button("Tambah situs") {
-            val d = Rules.normalizeDomain(dInput.text.toString().trim())
-            if (d.isEmpty()) {
-                toast("Masukkan domain yang valid, mis. contoh.com")
-            } else if (Store.domains(this).contains(d)) {
-                toast("Situs sudah ada")
+            val d = Rules.normalizeDomain(dInput.text.toString())
+            if (d.isNotEmpty()) {
+                if (Store.domains(this).contains(d)) {
+                    editSiteDialog(d, strict)
+                } else {
+                    editSiteDialog(d, false, true)
+                }
             } else {
-                // Domain BELUM disimpan ke daftar. Pilih mode dan tekan Simpan dulu.
-                editSiteDialog(d, strict, true)
+                toast("Masukkan domain situs terlebih dahulu")
             }
         })
         val siteCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -1921,183 +1922,171 @@ class MainActivity : Activity() {
         put(if (siteCol.childCount == 0) text("Belum ada.", 12f, false, C_SUB) else scrollBox(220, siteCol))
     }
 
+    /**
+     * Dialog aturan situs.
+     *
+     * Untuk situs BARU, domain belum dimasukkan ke daftar sampai pengguna menekan Simpan.
+     * Karena itu pilihan mode selalu terbuka, termasuk ketika Mode Ketat sedang aktif.
+     * Untuk situs yang SUDAH ada, Mode Ketat dapat mengunci pilihan menjadi Blokir penuh.
+     */
     private fun editSiteDialog(domain: String, strict: Boolean, isNew: Boolean = false) {
-        val cfg = if (isNew) SiteCfg() else Store.siteCfg(this, domain)
+        val existing = Store.siteCfgOrNull(this, domain)
+        val cfg = existing ?: SiteCfg()
         var start = cfg.start
         var end = cfg.end
 
-        // Pilihan mode utama. Untuk situs baru, tidak ada aturan yang tersimpan
-        // sebelum pengguna memilih mode dan menekan Simpan.
+        // Mode UI: 0 = penuh, 1 = jadwal, 2 = batas penggunaan, 3 = timer tunggu.
+        // Penyimpanan tetap kompatibel dengan SiteCfg lama: mode 0 = penuh, mode 1 = aturan khusus.
         val initialMode = when {
             cfg.mode == 0 -> 0
             cfg.twUse > 0 && cfg.twWait > 0 -> 3
             cfg.limitMin > 0 || cfg.hourLimit > 0 -> 2
             cfg.schOn -> 1
-            else -> 0
+            else -> 1
         }
 
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(8), dp(20), dp(8))
         }
-
         box.addView(text(
             if (isNew) "Pilih dulu mode pemblokiran untuk $domain." else "Aturan khusus untuk $domain",
             13f, true
         ))
 
-        val modeGroup = RadioGroup(this).apply {
-            orientation = RadioGroup.VERTICAL
+        val modes = RadioGroup(this).apply { orientation = RadioGroup.VERTICAL }
+        val rbFull = RadioButton(this).apply { text = "Blokir penuh"; id = View.generateViewId() }
+        val rbSchedule = RadioButton(this).apply { text = "Blokir sesuai jadwal"; id = View.generateViewId() }
+        val rbLimit = RadioButton(this).apply { text = "Batas penggunaan"; id = View.generateViewId() }
+        val rbTimer = RadioButton(this).apply { text = "Timer tunggu"; id = View.generateViewId() }
+        modes.addView(rbFull); modes.addView(rbSchedule); modes.addView(rbLimit); modes.addView(rbTimer)
+        when (initialMode) {
+            0 -> rbFull.isChecked = true
+            1 -> rbSchedule.isChecked = true
+            2 -> rbLimit.isChecked = true
+            else -> rbTimer.isChecked = true
         }
-        val modeLabels = listOf(
-            "Blokir penuh",
-            "Blokir sesuai jadwal",
-            "Batas penggunaan",
-            "Timer tunggu"
-        )
-        val modeButtons = ArrayList<RadioButton>()
-        for ((idx, label) in modeLabels.withIndex()) {
-            val rb = RadioButton(this).apply {
-                text = label
-                textSize = 15f
-                isChecked = idx == initialMode
-                isEnabled = !strict || idx == 0
-                setPadding(0, dp(4), 0, dp(4))
-            }
-            modeButtons.add(rb)
-            modeGroup.addView(rb)
-        }
-        box.addView(modeGroup)
+        box.addView(modes)
 
+        // Pada situs lama saat Mode Ketat aktif, pertahankan aturan lama: hanya Blokir penuh.
+        // Situs baru tidak dikunci karena pengguna belum memasukkannya ke daftar.
+        if (strict && !isNew && existing != null) {
+            rbFull.isChecked = true
+            rbSchedule.isEnabled = false
+            rbLimit.isEnabled = false
+            rbTimer.isEnabled = false
+            box.addView(text("Mode Ketat aktif: situs yang sudah ada di daftar hanya dapat dipertahankan sebagai Blokir penuh.", 11f, false, C_SUB))
+        }
+
+        val detailBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(6), 0, 0)
+        }
+
+        // Jadwal
         val scheduleBody = vbox()
-        scheduleBody.addView(text("Situs aktif hanya pada interval waktu berikut.", 12f))
         val startBtn = Button(this).apply { text = "Mulai: ${fmt(start)}" }
         val endBtn = Button(this).apply { text = "Selesai: ${fmt(end)}" }
         startBtn.setOnClickListener {
-            TimePickerDialog(this, { _, h, m ->
-                start = h * 60 + m
-                startBtn.text = "Mulai: ${fmt(start)}"
-            }, start / 60, start % 60, true).show()
+            TimePickerDialog(this, { _, h, m -> start = h * 60 + m; startBtn.text = "Mulai: ${fmt(start)}" }, start / 60, start % 60, true).show()
         }
         endBtn.setOnClickListener {
-            TimePickerDialog(this, { _, h, m ->
-                end = h * 60 + m
-                endBtn.text = "Selesai: ${fmt(end)}"
-            }, end / 60, end % 60, true).show()
+            TimePickerDialog(this, { _, h, m -> end = h * 60 + m; endBtn.text = "Selesai: ${fmt(end)}" }, end / 60, end % 60, true).show()
         }
+        scheduleBody.addView(text("Situs diblokir hanya pada jam berikut:", 12f))
         scheduleBody.addView(startBtn)
         scheduleBody.addView(endBtn)
-        box.addView(scheduleBody)
+        detailBox.addView(scheduleBody)
 
+        // Batas penggunaan
         val limitBody = vbox()
-        limitBody.addView(text("Batas harian (menit, 0 = mati)", 12f))
         val limit = numberField(cfg.limitMin)
+        val hour = numberField(cfg.hourLimit)
+        limitBody.addView(text("Batas harian (menit, 0 = mati)", 12f))
         limitBody.addView(limit)
         limitBody.addView(text("Batas per jam (menit dalam 60 menit terakhir, 0 = mati)", 12f))
-        val hour = numberField(cfg.hourLimit)
         limitBody.addView(hour)
-        box.addView(limitBody)
+        detailBox.addView(limitBody)
 
+        // Timer tunggu
         val twBody = vbox()
-        twBody.addView(text("Timer tunggu: pakai selama (menit)", 12f))
         val twUse = numberField(if (cfg.twUse > 0) cfg.twUse else 5)
-        twBody.addView(twUse)
-        twBody.addView(text("Timer tunggu: blokir selama (menit)", 12f))
         val twWait = numberField(if (cfg.twWait > 0) cfg.twWait else 30)
+        twBody.addView(text("Pakai selama (menit)", 12f))
+        twBody.addView(twUse)
+        twBody.addView(text("Lalu blokir selama (menit)", 12f))
         twBody.addView(twWait)
         val adaptive = CheckBox(this).apply {
             text = "Timer adaptif"
             isChecked = cfg.twAdaptive
         }
         twBody.addView(adaptive)
-        twBody.addView(text(
-            "Saat digunakan, notifikasi akan menampilkan sisa waktu penggunaan. " +
-                "Setelah habis, situs masuk masa tunggu.",
-            11f, false, C_SUB
-        ))
-        box.addView(twBody)
+        detailBox.addView(twBody)
+        box.addView(detailBox)
 
-        fun refreshMode() {
-            val selected = modeButtons.indexOfFirst { it.isChecked }.coerceAtLeast(0)
-            scheduleBody.visibility = if (selected == 1) View.VISIBLE else View.GONE
-            limitBody.visibility = if (selected == 2) View.VISIBLE else View.GONE
-            twBody.visibility = if (selected == 3) View.VISIBLE else View.GONE
+        fun updateDetails(mode: Int) {
+            scheduleBody.visibility = if (mode == 1) View.VISIBLE else View.GONE
+            limitBody.visibility = if (mode == 2) View.VISIBLE else View.GONE
+            twBody.visibility = if (mode == 3) View.VISIBLE else View.GONE
         }
-        modeGroup.setOnCheckedChangeListener { _, _ -> refreshMode() }
-        refreshMode()
-
-        box.addView(text(
-            "Launch count/pass tidak diterapkan pada website karena website tidak memiliki konsep peluncuran aplikasi.",
-            11f, false, C_SUB
-        ))
+        updateDetails(if (rbFull.isChecked) 0 else if (rbSchedule.isChecked) 1 else if (rbLimit.isChecked) 2 else 3)
+        modes.setOnCheckedChangeListener { _, checkedId ->
+            val mode = when (checkedId) {
+                rbSchedule.id -> 1
+                rbLimit.id -> 2
+                rbTimer.id -> 3
+                else -> 0
+            }
+            updateDetails(mode)
+        }
+        box.addView(text("Launch count/pass tidak diterapkan pada website karena website tidak memiliki konsep peluncuran aplikasi.", 11f, false, C_SUB))
 
         android.app.AlertDialog.Builder(this)
             .setTitle(if (isNew) "Atur blokir situs" else "Atur blokir situs")
             .setView(ScrollView(this).apply { addView(box) })
             .setPositiveButton("Simpan") { _, _ ->
-                val selected = modeButtons.indexOfFirst { it.isChecked }.coerceAtLeast(0)
-                fun num(e: EditText, max: Int) =
-                    (e.text.toString().toIntOrNull() ?: 0).coerceIn(0, max)
-
-                val newCfg = when (selected) {
-                    0 -> SiteCfg(
-                        mode = 0,
-                        schOn = false,
-                        start = start,
-                        end = end,
-                        days = 127
-                    )
-                    1 -> SiteCfg(
-                        mode = 1,
-                        schOn = true,
-                        start = start,
-                        end = end,
-                        days = 127
-                    )
-                    2 -> SiteCfg(
-                        mode = 1,
-                        schOn = false,
-                        start = start,
-                        end = end,
-                        days = 127,
-                        limitMin = num(limit, 1440),
-                        hourLimit = num(hour, 60)
-                    )
-                    else -> SiteCfg(
-                        mode = 1,
-                        schOn = false,
-                        start = start,
-                        end = end,
-                        days = 127,
-                        twUse = num(twUse, 1440),
-                        twWait = num(twWait, 1440),
-                        twAdaptive = adaptive.isChecked
-                    )
+                fun num(e: EditText, max: Int) = (e.text.toString().toIntOrNull() ?: 0).coerceIn(0, max)
+                val selected = when {
+                    rbSchedule.isChecked -> 1
+                    rbLimit.isChecked -> 2
+                    rbTimer.isChecked -> 3
+                    else -> 0
                 }
-
-                if (strict && selected != 0) {
-                    toast("Mode Ketat aktif: situs baru/aturan ini harus diblokir penuh")
-                } else if (newCfg.mode == 1 && selected == 2 &&
-                    newCfg.limitMin <= 0 && newCfg.hourLimit <= 0
-                ) {
-                    toast("Isi minimal salah satu batas penggunaan")
-                } else if (newCfg.mode == 1 && selected == 3 &&
-                    (newCfg.twUse <= 0 || newCfg.twWait <= 0)
-                ) {
-                    toast("Isi waktu pakai dan waktu tunggu")
+                val full = selected == 0
+                val newCfg = SiteCfg(
+                    mode = if (full) 0 else 1,
+                    schOn = selected == 1,
+                    start = start,
+                    end = end,
+                    days = 127,
+                    limitMin = if (selected == 2) num(limit, 1440) else 0,
+                    hourLimit = if (selected == 2) num(hour, 60) else 0,
+                    twUse = if (selected == 3) num(twUse, 1440) else 0,
+                    twWait = if (selected == 3) num(twWait, 1440) else 0,
+                    twAdaptive = adaptive.isChecked
+                )
+                if (newCfg.mode != 0 && selected == 2 && newCfg.limitMin == 0 && newCfg.hourLimit == 0) {
+                    toast("Isi batas penggunaan terlebih dahulu")
+                    return@setPositiveButton
+                }
+                if (selected == 3 && (newCfg.twUse <= 0 || newCfg.twWait <= 0)) {
+                    toast("Isi timer penggunaan dan timer tunggu terlebih dahulu")
+                    return@setPositiveButton
+                }
+                if (strict && !isNew && existing != null) {
+                    // Situs lama di Mode Ketat harus tetap penuh.
+                    Store.setSiteCfg(this, domain, newCfg.copy(mode = 0, schOn = false, limitMin = 0, hourLimit = 0, twUse = 0, twWait = 0))
                 } else {
-                    // Untuk situs baru, penyimpanan domain dan konfigurasinya dilakukan
-                    // bersamaan setelah pengguna benar-benar menekan Simpan.
+                    // Situs baru baru masuk daftar setelah konfigurasi benar-benar disimpan.
                     Store.addDomain(this, domain)
                     Store.setSiteCfg(this, domain, newCfg)
-
-                    if (selected == 3 && Build.VERSION.SDK_INT >= 33 &&
-                        checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-                    ) {
-                        requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1003)
-                    }
-                    render()
                 }
+                if (newCfg.twUse > 0 && newCfg.twWait > 0 && Build.VERSION.SDK_INT >= 33 &&
+                    checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1003)
+                }
+                render()
             }
             .setNegativeButton("Batal", null)
             .show()

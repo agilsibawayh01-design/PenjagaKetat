@@ -125,32 +125,6 @@ object WaitTimer {
         return 0L
     }
 
-    /**
-     * Sisa waktu penggunaan pada siklus aktif (ms).
-     *
-     * Berbeda dengan remaining(): method ini TIDAK memulai masa tunggu.
-     * Dipakai hanya untuk countdown notifikasi ketika aplikasi masih boleh digunakan.
-     */
-    fun useRemainingMs(c: Context, pkg: String, g: AppCfg): Long {
-        if (g.twUse <= 0 || g.twWait <= 0) return 0L
-        if (!Rules.dayActive(c, g.days)) return 0L
-
-        val p = sp(c)
-        var base = ensureInitialized(c, pkg)
-        val used = UsageTracker.todayMs(c, pkg)
-        val until = p.getLong(key(pkg, "until"), 0L)
-
-        // Sedang menunggu: tidak ada "sisa waktu penggunaan".
-        if (until > System.currentTimeMillis()) return 0L
-
-        if (used < base) {
-            base = used
-            p.edit().putLong(key(pkg, "base"), base).apply()
-        }
-
-        return (g.twUse * 60000L - (used - base)).coerceAtLeast(0L)
-    }
-
     /** Paket yang sedang berada dalam masa tunggu, jika ada. */
     fun active(c: Context, now: Long): Pair<String, Long>? {
         val p = sp(c)
@@ -183,6 +157,17 @@ object WaitTimer {
             .remove(key(pkg, "att"))
             .remove("tw_active_pkg")
             .apply()
+    }
+
+    /** Sisa waktu penggunaan pada siklus aktif (ms). 0 bila sedang masa tunggu/timer mati. */
+    fun remainingUseMs(c: Context, pkg: String, g: AppCfg, now: Long): Long {
+        if (g.twUse <= 0 || g.twWait <= 0 || !Rules.dayActive(c, g.days)) return 0L
+        val p = sp(c)
+        val base = p.getLong(key(pkg, "base"), UsageTracker.todayMs(c, pkg))
+        val used = UsageTracker.todayMs(c, pkg)
+        if (p.getLong(key(pkg, "until"), 0L) > 0L) return 0L
+        val elapsed = Math.max(0L, used - Math.min(base, used))
+        return Math.max(0L, g.twUse * 60000L - elapsed)
     }
 
     /** Sisa pemakaian dalam siklus aktif (menit), untuk tampilan. */

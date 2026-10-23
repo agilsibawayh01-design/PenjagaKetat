@@ -86,6 +86,18 @@ object SiteTracker {
     fun clearCycle(c: Context, domainRaw: String) {
         val d = norm(domainRaw); sp(c).edit().remove(baseKey(d)).remove(untilKey(d)).remove(startKey(d)).remove(attKey(d)).apply()
     }
+    /** Sisa waktu penggunaan pada siklus aktif (ms); 0 bila sedang masa tunggu/timer mati. */
+    fun remainingUseMs(c: Context, domainRaw: String, r: SiteCfg): Long {
+        val d = norm(domainRaw)
+        if (d.isEmpty() || r.twUse <= 0 || r.twWait <= 0 || !Rules.dayActive(c, r.days)) return 0L
+        val p = sp(c)
+        val base = p.getLong(baseKey(d), todayMs(c, d))
+        if (p.getLong(untilKey(d), 0L) > 0L) return 0L
+        val used = todayMs(c, d)
+        val elapsed = Math.max(0L, used - Math.min(base, used))
+        return Math.max(0L, r.twUse * 60000L - elapsed)
+    }
+
     fun activeWait(c: Context, now: Long): Pair<String, Long>? {
         for (d in Store.domains(c)) {
             val r = Store.siteCfgOrNull(c, d) ?: continue
