@@ -289,63 +289,6 @@ object Store {
         return out
     }
 
-    fun setStrictSchedules(c: Context, list: List<Sched>) {
-        sp(c).edit().putString("strict_sched", list.joinToString(";") { "${it.start},${it.end},${it.days}" }).commit()
-    }
-
-    // ---- Mode Off (jeda) ----
-    /** Menit jeda yang dipilih; 0 = sampai dinyalakan lagi. */
-    fun pauseMinutes(c: Context): Int = sp(c).getInt("pause_min", 0)
-
-    fun pausedNow(c: Context): Boolean {
-        if (!SafeTimer.isRunning(c, "pause")) return false
-        if (strictOn(c)) {
-            SafeTimer.cancel(c, "pause")
-            return false
-        }
-        val m = pauseMinutes(c)
-        if (m > 0 && SafeTimer.elapsed(c, "pause") >= m * 60000L) {
-            SafeTimer.cancel(c, "pause")
-            log(c, "Jeda selesai, blokir bekerja lagi")
-            return false
-        }
-        return true
-    }
-
-    fun pauseStart(c: Context, minutes: Int) {
-        sp(c).edit().putInt("pause_min", minutes).commit()
-        SafeTimer.start(c, "pause")
-        log(c, if (minutes > 0) "Mode Off (jeda $minutes menit)" else "Mode Off (sampai dinyalakan lagi)")
-    }
-
-    fun pauseStop(c: Context) {
-        if (SafeTimer.isRunning(c, "pause")) log(c, "Mode Off diakhiri, kembali ke Mode Normal")
-        SafeTimer.cancel(c, "pause")
-    }
-
-    fun pauseLeftMin(c: Context): Long {
-        val m = pauseMinutes(c)
-        if (m <= 0) return -1L
-        return Math.max(0L, m * 60000L - SafeTimer.elapsed(c, "pause")) / 60000L + 1L
-    }
-
-    // ---- Browser ----
-    fun blockOtherBrowsers(c: Context): Boolean = sp(c).getBoolean("block_browsers", true)
-    fun setBlockOtherBrowsers(c: Context, v: Boolean) { sp(c).edit().putBoolean("block_browsers", v).commit() }
-
-    /** Browser terpasang selain Chrome yang akan diblokir (bila aturannya aktif). */
-    fun unsupportedBrowsers(c: Context): Set<String> {
-        val out = HashSet<String>()
-        val pm = c.packageManager
-        for (p in Config.BROWSERS + extraBrowsers(c)) {
-            if (p == Config.ALLOWED_BROWSER || p in Config.BROWSER_NEVER_BLOCK) continue
-            if (p == c.packageName || p in Config.BANK_HINT || p in Config.PROTECTED || p in Config.EXCLUDED_FROM_LIST) continue
-            if (pm.getLaunchIntentForPackage(p) == null) continue
-            out.add(p)
-        }
-        return out
-    }
-
     fun setStrict(c: Context, v: Boolean) {
         sp(c).edit().putBoolean("strict", v).commit()
         if (v) {
