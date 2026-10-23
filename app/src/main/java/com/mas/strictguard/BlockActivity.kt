@@ -22,12 +22,14 @@ class BlockActivity : Activity() {
     private var pkg = ""
     private var passMin = 5
     private var modeName = ""
+    private var siteDomain = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val mode = intent.getStringExtra("mode") ?: "content"
         pkg = intent.getStringExtra("pkg") ?: ""
         modeName = mode
+        siteDomain = intent.getStringExtra("domain") ?: ""
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -86,6 +88,11 @@ class BlockActivity : Activity() {
                 WaitTimer.noteAttempt(this, pkg)
                 showWaitCountdown(g)
             }
+            "site" -> info.text = if (siteDomain.isNotEmpty()) "Situs ini sedang diblokir.\n$siteDomain" else "Situs ini sedang diblokir."
+            "site_wait" -> {
+                if (siteDomain.isNotEmpty()) SiteTracker.noteAttempt(this, siteDomain)
+                showSiteWaitCountdown()
+            }
             "browser" -> info.text = "Browser ini tidak didukung.\nGunakan Chrome saja."
             "hour" -> info.text = "Batas pemakaian per jam tercapai.\nCoba lagi nanti."
             "launch" -> info.text = "Batas jumlah peluncuran aplikasi ini tercapai."
@@ -93,6 +100,26 @@ class BlockActivity : Activity() {
         }
     }
 
+
+    private fun showSiteWaitCountdown() {
+        val g = Store.siteCfg(this, siteDomain)
+        val left = SiteTracker.remaining(this, siteDomain, g, System.currentTimeMillis())
+        if (left <= 0L) {
+            info.text = "Waktu tunggu selesai.\nKamu bisa mencoba membuka situs lagi."
+            openBtn.visibility = View.GONE
+            TimerNotifier.cancel(this)
+            return
+        }
+        val total = left / 1000L
+        val min = total / 60L
+        val sec = total % 60L
+        info.text = String.format(
+            java.util.Locale.getDefault(),
+            "%s\nTimer tunggu aktif.\nSisa waktu: %02d:%02d\n\nSitus akan tetap diblokir sampai timer selesai.",
+            siteDomain, min, sec
+        )
+        handler.postDelayed({ showSiteWaitCountdown() }, 1000L)
+    }
 
     private fun showWaitCountdown(g: AppCfg) {
         val left = WaitTimer.remaining(this, pkg, g, System.currentTimeMillis())

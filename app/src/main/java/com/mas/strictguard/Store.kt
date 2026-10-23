@@ -39,6 +39,41 @@ object Store {
     fun keywords(c: Context): Set<String> = getSet(c, "keywords")
     fun domains(c: Context): Set<String> = getSet(c, "domains")
 
+    fun siteCfgOrNull(c: Context, domain: String): SiteCfg? {
+        val d = Rules.normalizeDomain(domain)
+        if (d.isEmpty()) return null
+        val raw = sp(c).getString("sitecfg_$d", null) ?: return null
+        return try {
+            val p = raw.split('|')
+            fun i(k: Int, dflt: Int) = p.getOrNull(k)?.toIntOrNull() ?: dflt
+            SiteCfg(
+                mode = i(0, 0),
+                schOn = p.getOrNull(1) == "1",
+                start = i(2, 21 * 60),
+                end = i(3, 5 * 60),
+                days = i(4, 127),
+                limitMin = i(5, 0),
+                hourLimit = i(6, 0),
+                twUse = i(7, 0),
+                twWait = i(8, 0),
+                twAdaptive = p.getOrNull(9) != "0"
+            )
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    fun siteCfg(c: Context, domain: String): SiteCfg = siteCfgOrNull(c, domain) ?: SiteCfg()
+
+    fun setSiteCfg(c: Context, domain: String, g: SiteCfg) {
+        val d = Rules.normalizeDomain(domain)
+        if (d.isEmpty()) return
+        val raw = "${g.mode}|${if (g.schOn) "1" else "0"}|${g.start}|${g.end}|${g.days}|" +
+            "${g.limitMin}|${g.hourLimit}|${g.twUse}|${g.twWait}|${if (g.twAdaptive) "1" else "0"}"
+        sp(c).edit().putString("sitecfg_$d", raw).commit()
+        SiteTracker.startNewCycle(c, d)
+    }
+
     fun protectedApps(c: Context): Set<String> = getSet(c, "prot") + Config.SEED_PROTECTED
     fun addProtected(c: Context, p: String) = putSet(c, "prot", getSet(c, "prot") + p)
     fun removeProtected(c: Context, p: String) = putSet(c, "prot", getSet(c, "prot") - p)

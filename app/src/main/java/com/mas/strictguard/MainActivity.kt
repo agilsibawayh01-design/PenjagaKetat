@@ -1338,7 +1338,11 @@ class MainActivity : Activity() {
                     notif = notifCb.isChecked
                 )
                 Store.setAppCfg(this, pkg, newCfg)
-                WaitTimer.onConfigSaved(this, pkg, cfg, newCfg)
+                if (newCfg.twUse > 0 && newCfg.twWait > 0 && Build.VERSION.SDK_INT >= 33 &&
+                    checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1002)
+                }
                 if (strict) Store.lockApp(this, pkg)
                 if (newCfg.notif && !SelfProtector.notifListenerOn(this)) {
                     if (!SelfProtector.enableNotifListener(this)) {
@@ -1885,9 +1889,109 @@ class MainActivity : Activity() {
             val d = dInput.text.toString().trim()
             if (d.isNotEmpty()) { Store.addDomain(this, d); render() }
         })
-        put(chipList(Store.domains(this).sorted()) { d ->
-            if (strict) toast("Mode Ketat aktif: tidak bisa menghapus") else { Store.removeDomain(this, d); render() }
-        })
+        val siteCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        for (d in Store.domains(this).sorted()) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            row.addView(text(d, 13f).apply {
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            row.addView(smallButton("Atur") { editSiteDialog(d, strict) })
+            row.addView(text("✕", 15f, true, C_BAD).apply {
+                setPadding(dp(10), dp(8), dp(6), dp(8))
+                setOnClickListener {
+                    if (strict) toast("Mode Ketat aktif: tidak bisa menghapus")
+                    else { Store.removeDomain(this@MainActivity, d); render() }
+                }
+            })
+            siteCol.addView(row)
+        }
+        put(if (siteCol.childCount == 0) text("Belum ada.", 12f, false, C_SUB) else scrollBox(220, siteCol))
+    }
+
+    private fun editSiteDialog(domain: String, strict: Boolean) {
+        val cfg = Store.siteCfg(this, domain)
+        var start = cfg.start
+        var end = cfg.end
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), dp(8))
+        }
+        box.addView(text("Aturan khusus untuk $domain", 13f, true))
+
+        val fullCb = CheckBox(this).apply {
+            text = "Blokir penuh"
+            isChecked = cfg.mode == 0
+            isEnabled = !strict || cfg.mode != 0
+        }
+        box.addView(fullCb)
+
+        val scheduleCb = CheckBox(this).apply {
+            text = "Aktif hanya pada jadwal"
+            isChecked = cfg.schOn
+        }
+        box.addView(scheduleCb)
+        val startBtn = Button(this).apply { text = "Mulai: ${fmt(start)}" }
+        val endBtn = Button(this).apply { text = "Selesai: ${fmt(end)}" }
+        startBtn.setOnClickListener { TimePickerDialog(this, { _, h, m -> start = h * 60 + m; startBtn.text = "Mulai: ${fmt(start)}" }, start / 60, start % 60, true).show() }
+        endBtn.setOnClickListener { TimePickerDialog(this, { _, h, m -> end = h * 60 + m; endBtn.text = "Selesai: ${fmt(end)}" }, end / 60, end % 60, true).show() }
+        box.addView(startBtn)
+        box.addView(endBtn)
+
+        val limit = numberField(cfg.limitMin)
+        box.addView(text("Batas harian (menit, 0 = mati)", 12f))
+        box.addView(limit)
+        val hour = numberField(cfg.hourLimit)
+        box.addView(text("Batas per jam (menit dalam 60 menit terakhir, 0 = mati)", 12f))
+        box.addView(hour)
+
+        val twUse = numberField(cfg.twUse)
+        box.addView(text("Timer tunggu: pakai selama (menit)", 12f))
+        box.addView(twUse)
+        val twWait = numberField(cfg.twWait)
+        box.addView(text("Timer tunggu: blokir selama (menit)", 12f))
+        box.addView(twWait)
+        val adaptive = CheckBox(this).apply {
+            text = "Timer adaptif"
+            isChecked = cfg.twAdaptive
+        }
+        box.addView(adaptive)
+        box.addView(text("Launch count/pass tidak diterapkan pada website karena website tidak memiliki konsep peluncuran aplikasi.", 11f, false, C_SUB))
+
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Blokir situs")
+            .setView(ScrollView(this).apply { addView(box) })
+            .setPositiveButton("Simpan") { _, _ ->
+                fun num(e: EditText, max: Int) = (e.text.toString().toIntOrNull() ?: 0).coerceIn(0, max)
+                val full = fullCb.isChecked
+                val newCfg = SiteCfg(
+                    mode = if (full) 0 else 1,
+                    schOn = scheduleCb.isChecked,
+                    start = start,
+                    end = end,
+                    days = 127,
+                    limitMin = num(limit, 1440),
+                    hourLimit = num(hour, 60),
+                    twUse = num(twUse, 1440),
+                    twWait = num(twWait, 1440),
+                    twAdaptive = adaptive.isChecked
+                )
+                if (strict && cfg.mode == 0 && newCfg.mode != 0) {
+                    toast("Mode Ketat aktif: situs ini tetap harus diblokir penuh")
+                } else {
+                    Store.setSiteCfg(this, domain, newCfg)
+                    if (newCfg.twUse > 0 && newCfg.twWait > 0 && Build.VERSION.SDK_INT >= 33 &&
+                        checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1003)
+                    }
+                    render()
+                }
+            }
+            .setNegativeButton("Batal", null)
+            .show()
     }
 
     private fun renderFeeds(strict: Boolean) {

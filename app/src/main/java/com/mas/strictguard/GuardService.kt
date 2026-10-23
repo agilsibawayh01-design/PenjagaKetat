@@ -36,34 +36,44 @@ class GuardService : AccessibilityService() {
             try {
                 val now = System.currentTimeMillis()
                 refreshCache(now)
-                if (!backing && !pausedNow && Foreground.hasUsageAccess(this@GuardService)) {
-                    // Notifikasi Timer Tunggu harus tetap hidup saat BlockActivity sedang tampil.
-                    // Karena saat itu foreground package adalah PenjagaKetat, bukan aplikasi yang diblokir.
-                    val activeWait = WaitTimer.active(this@GuardService, now)
-                    if (activeWait != null) {
-                        val waitPkg = activeWait.first
-                        val left = activeWait.second
+                // Notifikasi timer harus tetap hidup walau BlockActivity/PenjagaKetat sedang menjadi foreground.
+                val activeAppWait = WaitTimer.activeWaiting(this@GuardService, now)
+                val activeSiteWait = SiteTracker.activeWaiting(this@GuardService, now)
+                when {
+                    activeAppWait != null -> {
                         val label = try {
-                            packageManager.getApplicationLabel(
-                                packageManager.getApplicationInfo(waitPkg, 0)
-                            ).toString()
-                        } catch (_: Exception) { waitPkg }
-                        TimerNotifier.show(this@GuardService, label, left)
-                    } else {
-                        TimerNotifier.cancel(this@GuardService)
+                            packageManager.getApplicationLabel(packageManager.getApplicationInfo(activeAppWait.first, 0)).toString()
+                        } catch (_: Exception) { activeAppWait.first }
+                        TimerNotifier.show(this@GuardService, label, activeAppWait.second)
                     }
+                    activeSiteWait != null -> TimerNotifier.show(this@GuardService, activeSiteWait.first, activeSiteWait.second)
+                    else -> TimerNotifier.cancel(this@GuardService)
+                }
 
+                if (!backing && !pausedNow && Foreground.hasUsageAccess(this@GuardService)) {
                     val p = Foreground.current(this@GuardService)
                     if (p.isNotEmpty() && p != packageName && p !in Config.IGNORED) {
+                        if (p in browsers) {
+                            if (checkWebsiteRule(p, rootInActiveWindow, now)) {
+                                handler.postDelayed(this, 2000L)
+                                return
+                            }
+                        }
                         if (p in blockedBrowsers) {
                             startBlock("browser", p)
                         } else {
                             val verdict = BlockEngine.check(this@GuardService, p, now, apps, profiles)
+                            val cfg = Store.appCfg(this@GuardService, p)
+                            val label = try {
+                                packageManager.getApplicationLabel(packageManager.getApplicationInfo(p, 0)).toString()
+                            } catch (_: Exception) { p }
+                            if (cfg.twUse > 0 && cfg.twWait > 0) {
+                                val left = WaitTimer.remaining(this@GuardService, p, cfg, now)
+                                if (left > 0L && activeAppWait == null) TimerNotifier.show(this@GuardService, label, left)
+                            }
                             if (verdict != null) startBlock(verdict, p)
                         }
                     }
-                } else {
-                    TimerNotifier.cancel(this@GuardService)
                 }
             } catch (_: Throwable) {
                 // Jangan pernah membuat AccessibilityService crash karena pemeriksaan timer.
@@ -199,10 +209,13 @@ class GuardService : AccessibilityService() {
         // 2. Kata kunci saat mengetik (kolom pencarian, URL, dll.)
         if (event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) {
             val typed = event.text?.joinToString(" ") ?: ""
-            if (typed.isNotEmpty() &&
-                (Rules.matchesKeyword(typed, keywords) != null || Rules.matchesDomain(typed, domains) != null)
-            ) {
-                startBlock("typed", "")
+            if (typed.isNotEmpty()) {
+                val kwHit = Rules.matchesKeyword(typed, keywords) != null
+                val dmHit = Rules.matchesDomain(typed, domains)
+                val domainBlocked = dmHit != null && SiteTracker.shouldDnsBlock(this, dmHit)
+                if (kwHit || domainBlocked) {
+                    startBlock("typed", "")
+                }
             }
             return
         }
@@ -217,7 +230,13 @@ class GuardService : AccessibilityService() {
             }
         }
 
-        // 4. Browser: periksa kolom alamat dan teks halaman
+        // 4. Website: aturan per-domain (timer tunggu, batas harian, jadwal, blokir penuh).
+        if (pkg in browsers) {
+            val root = rootInActiveWindow
+            if (checkWebsiteRule(pkg, root, now)) return
+        }
+
+        // 5. Browser: periksa kolom alamat dan teks halaman
         if (pkg in browsers && now - lastScanAt > 500L) {
             lastScanAt = now
             val root = rootInActiveWindow ?: return
@@ -312,13 +331,42 @@ class GuardService : AccessibilityService() {
         return false
     }
 
+    private fun checkWebsiteRule(pkg: String, root: AccessibilityNodeInfo?, now: Long): Boolean {
+        val configured = Store.domains(this) + ProfileStore.load(this).filter { ProfileEngine.isActive(this, it) }.flatMap { it.domains }
+        val domain = SiteTracker.currentDomain(root, configured) ?: run {
+            SiteTracker.stop(this)
+            return false
+        }
+        SiteTracker.tick(this, domain)
+        val cfg = Store.siteCfgOrNull(this, domain) ?: return false
+        if (cfg.schOn && !Rules.scheduleActive(cfg.start, cfg.end, cfg.days)) return false
+        if (cfg.mode == 0) {
+            startBlock("site", pkg)
+            return true
+        }
+        if (cfg.limitMin > 0 && SiteTracker.todayMs(this, domain) >= cfg.limitMin * 60000L) {
+            startBlock("site", pkg)
+            return true
+        }
+        val left = SiteTracker.remaining(this, domain, cfg, now)
+        if (left > 0L) {
+            TimerNotifier.show(this, domain, left)
+            startBlock("site_wait", pkg)
+            return true
+        }
+        return false
+    }
+
     private fun browserHasBlocked(root: AccessibilityNodeInfo): Boolean {
         for (n in collect(root, 400)) {
             val txt = n.text?.toString() ?: continue
             if (txt.isEmpty()) continue
             val id = (n.viewIdResourceName ?: "").lowercase()
             val isUrlBar = id.contains("url") || id.contains("location_bar") || id.contains("omnibox")
-            if (isUrlBar && Rules.matchesDomain(txt, domains) != null) return true
+            if (isUrlBar) {
+                val hit = Rules.matchesDomain(txt, domains)
+                if (hit != null && SiteTracker.shouldDnsBlock(this, hit)) return true
+            }
             if (Rules.matchesKeyword(txt, keywords) != null) return true
         }
         return false
@@ -376,10 +424,14 @@ class GuardService : AccessibilityService() {
             // lanjut menampilkan layar blokir
         }
         val shown = if (mode == "typed") "content" else mode
+        val domain = if (mode == "site" || mode == "site_wait") {
+            SiteTracker.currentDomain(rootInActiveWindow, Store.domains(this)) ?: ""
+        } else ""
         val i = Intent(this, BlockActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION)
             .putExtra("mode", shown)
             .putExtra("pkg", pkg)
+            .putExtra("domain", domain)
         handler.postDelayed({
             try {
                 startActivity(i)

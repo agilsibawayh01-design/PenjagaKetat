@@ -40,7 +40,14 @@ class DnsBlocklist(private val ctx: Context) {
         if (blockDoh) {
             for (d in DOH) if (name == d || name.endsWith(".$d")) hit = true
         }
-        if (!hit && Rules.matchesDomain(name, domains) != null) hit = true
+        if (!hit) {
+            val matched = Rules.matchesDomain(name, domains)
+            if (matched != null) {
+                // Domain yang punya aturan timer/batas tidak diblokir DNS sebelum aturannya benar-benar tercapai.
+                // Tanpa konfigurasi khusus, perilaku lama (blokir penuh) tetap dipertahankan.
+                hit = SiteTracker.shouldDnsBlock(ctx, matched)
+            }
+        }
         if (!hit && Rules.matchesKeyword(name, keywords) != null) hit = true
         if (hit) {
             val now = System.currentTimeMillis()

@@ -26,6 +26,10 @@ object TimerNotifier {
 
     fun show(c: Context, label: String, leftMs: Long) {
         if (leftMs <= 0L) { cancel(c); return }
+        if (!nm(c).areNotificationsEnabled()) return
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            c.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) return
         ensureChannel(c)
         val left = leftMs / 1000L
         val min = left / 60L
@@ -42,7 +46,10 @@ object TimerNotifier {
             .setStyle(NotificationCompat.BigTextStyle().bigText("$label sedang diblokir. Sisa waktu tunggu $time."))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .setShowWhen(false)
+            .setShowWhen(true)
+            .setWhen(System.currentTimeMillis() + leftMs)
+            .setUsesChronometer(true)
+            .setChronometerCountDown(true)
             .setContentIntent(pi)
             .build()
         nm(c).notify(ID, n)
