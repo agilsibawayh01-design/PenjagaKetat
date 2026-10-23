@@ -11,6 +11,7 @@ class GuardService : AccessibilityService() {
     private val handler = Handler(Looper.getMainLooper())
     private var lastBlockAt = 0L
     private var blockDomain = ""
+    private var locCheckAt = 0L
     private var lastScanAt = 0L
     private var lastFeedAt = 0L
     private var lastBackAt = 0L
@@ -37,6 +38,10 @@ class GuardService : AccessibilityService() {
             try {
                 val now = System.currentTimeMillis()
                 refreshCache(now)
+                if (now - locCheckAt > 60000L) {
+                    locCheckAt = now
+                    LocationTracker.ensure(this@GuardService)
+                }
                 // Notifikasi menunjukkan SISA WAKTU PENGGUNAAN, bukan sisa masa tunggu.
                 // Masa tunggu tetap dihitung oleh WaitTimer/SiteTracker dan dipakai untuk memblokir.
                 if (!backing && !pausedNow && Foreground.hasUsageAccess(this@GuardService)) {
@@ -208,6 +213,15 @@ class GuardService : AccessibilityService() {
         TimeGuard.check(this)
         if (backing || pausedNow) return
 
+        // Klik pada aplikasi terlindung di Pengaturan (mis. daftar layanan Aksesibilitas): langsung kembali,
+        // sebelum halaman detail dan tombol nonaktifkan sempat dipakai.
+        if (event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
+            if (strictNow && pkg in Config.PROTECTED && clickedProtected(event)) {
+                startBlock("protect_click", "")
+            }
+            return
+        }
+
         // 0. Browser selain Chrome tidak didukung
         if (pkg in blockedBrowsers) {
             startBlock("browser", pkg)
@@ -339,6 +353,29 @@ class GuardService : AccessibilityService() {
         return false
     }
 
+    /** True bila yang diklik adalah baris/tombol yang memuat nama aplikasi terlindung. */
+    private fun clickedProtected(event: AccessibilityEvent): Boolean {
+        fun hit(s: String?): Boolean {
+            val t = s?.lowercase()?.trim() ?: return false
+            if (t.isEmpty() || t.length > 80) return false
+            return protectedNames.any { it.length >= 4 && t.contains(it) }
+        }
+        for (x in event.text) if (hit(x?.toString())) return true
+        if (hit(event.contentDescription?.toString())) return true
+        val src = event.source ?: return false
+        var depth = 0
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(src)
+        var count = 0
+        while (queue.isNotEmpty() && count++ < 30 && depth < 4) {
+            val n = queue.removeFirst()
+            if (hit(n.text?.toString()) || hit(n.contentDescription?.toString())) return true
+            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
+            depth++
+        }
+        return false
+    }
+
     private fun isActionText(s: String): Boolean {
         if (s.isEmpty() || s.length > 60) return false
         for (w in Config.ACTION_WORDS) {
@@ -355,6 +392,11 @@ class GuardService : AccessibilityService() {
         }
         SiteTracker.tick(this, domain)
         val cfg = Store.siteCfgOrNull(this, domain) ?: return false
+        if (LocationRules.blocked(this, "site_" + Rules.normalizeDomain(domain))) {
+            blockDomain = domain
+            startBlock("site", pkg)
+            return true
+        }
         if (cfg.schOn && !Rules.scheduleActive(cfg.start, cfg.end, cfg.days)) return false
         if (cfg.blocksFully) {
             blockDomain = domain
@@ -403,6 +445,7 @@ class GuardService : AccessibilityService() {
 
     private fun maxSteps(mode: String): Int = when (mode) {
         "typed" -> 2
+        "protect_click" -> 2
         "content" -> 6
         "protect" -> 5
         else -> 4
@@ -417,13 +460,18 @@ class GuardService : AccessibilityService() {
         if (backing || now - lastBlockAt < 800L) return
         lastBlockAt = now
         backing = true
-        StatsDb.addBlock(this, if (mode == "typed") "content" else mode, pkg)
-        stepBack(mode, pkg, 0)
+        StatsDb.addBlock(this, if (mode == "typed") "content" else if (mode == "protect_click") "protect" else mode, pkg)
+        // Klik di Pengaturan: beri 120 ms agar halaman tujuan sempat terbuka, lalu kembali.
+        if (mode == "protect_click") handler.postDelayed({ stepBack(mode, pkg, 0) }, 120L) else stepBack(mode, pkg, 0)
     }
 
     private fun stepBack(mode: String, pkg: String, n: Int) {
         try {
-            val bad = if (mode == "typed") n < maxSteps(mode) else stillBad(mode, pkg)
+            val bad = when (mode) {
+                "typed" -> n < maxSteps(mode)
+                "protect_click" -> n == 0 || (n < maxSteps(mode) && stillBad("protect", pkg))
+                else -> stillBad(mode, pkg)
+            }
             if (!bad || n >= maxSteps(mode)) {
                 finishBack(mode, pkg)
                 return
@@ -437,11 +485,11 @@ class GuardService : AccessibilityService() {
 
     private fun finishBack(mode: String, pkg: String) {
         try {
-            if (mode != "typed" && stillBad(mode, pkg)) performGlobalAction(GLOBAL_ACTION_HOME)
+            if (mode != "typed" && mode != "protect_click" && stillBad(mode, pkg)) performGlobalAction(GLOBAL_ACTION_HOME)
         } catch (t: Throwable) {
             // lanjut menampilkan layar blokir
         }
-        val shown = if (mode == "typed") "content" else mode
+        val shown = if (mode == "typed") "content" else if (mode == "protect_click") "protect" else mode
         val domain = if (mode == "site" || mode == "site_wait") {
             blockDomain.ifEmpty { SiteTracker.currentDomain(rootInActiveWindow, Store.domains(this)) ?: "" }
         } else ""

@@ -131,6 +131,7 @@ object BlockEngine {
             val cfg = Store.appCfg(c, pkg)
             if (cfg.blockUntil > now) return "until"
             if (Rules.dayActive(c, cfg.days)) {
+                if (LocationRules.blocked(c, "app_$pkg")) return "location"
                 // kondisi keras: tidak bisa ditembus dengan pass
                 if (cfg.twUse > 0 && cfg.twWait > 0 && WaitTimer.remaining(c, pkg, cfg, now) > 0L) return "wait"
                 if (cfg.hourLimit > 0 && UsageTracker.hourMs(c, pkg) >= cfg.hourLimit * 60000L) return "hour"

@@ -1155,6 +1155,103 @@ class MainActivity : Activity() {
         return l
     }
 
+    private class LocUi(val cb: CheckBox, val read: () -> LocRule?)
+
+    /** Bagian "Lokasi" untuk aturan aplikasi ([key] = app_paket) atau situs ([key] = site_domain). */
+    private fun locationSection(box: LinearLayout, key: String, locked: Boolean): LocUi {
+        val old = LocationRules.get(this, key)
+        val body = vbox()
+        body.addView(text("Blokir hanya berlaku di sekitar titik yang kamu tetapkan. Tanpa peta: pakai lokasi saat ini atau isi koordinat (salin dari Google Maps).", 11f, false, C_SUB))
+        val inType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL or InputType.TYPE_NUMBER_FLAG_SIGNED
+        val latF = EditText(this).apply { hint = "Lintang, mis. -7.290500"; inputType = inType; setText(old?.lat?.toString() ?: "") }
+        val lonF = EditText(this).apply { hint = "Bujur, mis. 112.734000"; inputType = inType; setText(old?.lon?.toString() ?: "") }
+        val status = text(
+            if (LocationTracker.hasPermission(this)) "" else "Izin lokasi belum diberikan. Ketuk tombol di bawah untuk memberi izin.",
+            11f, false, C_SUB
+        )
+        val useBtn = Button(this).apply { text = "Pakai lokasi saya sekarang" }
+        useBtn.setOnClickListener {
+            if (!LocationTracker.hasPermission(this@MainActivity)) {
+                askLocationPermission()
+            } else {
+                status.text = "Mencari lokasi..."
+                LocationTracker.fetchNow(this@MainActivity) { l ->
+                    if (l == null) {
+                        status.text = "Lokasi belum didapat. Nyalakan GPS lalu coba lagi."
+                    } else {
+                        latF.setText(String.format(java.util.Locale.US, "%.6f", l.latitude))
+                        lonF.setText(String.format(java.util.Locale.US, "%.6f", l.longitude))
+                        status.text = "Lokasi didapat (akurasi sekitar ${l.accuracy.toInt()} m)."
+                    }
+                }
+            }
+        }
+        body.addView(useBtn)
+        body.addView(latF)
+        body.addView(lonF)
+        body.addView(status)
+        val rg = RadioGroup(this).apply { orientation = RadioGroup.VERTICAL }
+        val rbHere = RadioButton(this).apply { text = "Blokir saat saya di sini"; id = View.generateViewId() }
+        val rbAway = RadioButton(this).apply { text = "Blokir saat saya jauh"; id = View.generateViewId() }
+        rg.addView(rbHere)
+        rg.addView(rbAway)
+        if (old?.away == true) rbAway.isChecked = true else rbHere.isChecked = true
+        body.addView(rg)
+        val radiusLabel = text("", 12f)
+        val seek = android.widget.SeekBar(this).apply { max = 39 }
+        fun radiusOf(p: Int) = 50 + p * 50
+        seek.progress = ((old?.radius ?: 150) - 50).coerceIn(0, 1950) / 50
+        radiusLabel.text = "Radius: ${radiusOf(seek.progress)} m"
+        seek.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(s: android.widget.SeekBar?, p: Int, fromUser: Boolean) {
+                radiusLabel.text = "Radius: ${radiusOf(p)} m"
+            }
+
+            override fun onStartTrackingTouch(s: android.widget.SeekBar?) {}
+            override fun onStopTrackingTouch(s: android.widget.SeekBar?) {}
+        })
+        body.addView(radiusLabel)
+        body.addView(seek)
+        val unavail = CheckBox(this).apply {
+            text = "Blokir jika lokasi tidak tersedia (izin lokasi atau GPS dimatikan)"
+            isChecked = old?.blockUnavailable ?: true
+        }
+        body.addView(unavail)
+        val cb = conditionSection(box, "Berdasarkan lokasi", old != null, body)
+        if (locked) {
+            cb.isEnabled = false
+            for (v in listOf<View>(useBtn, latF, lonF, rbHere, rbAway, seek, unavail)) v.isEnabled = false
+        }
+        val read: () -> LocRule? = {
+            val lat = latF.text.toString().trim().toDoubleOrNull()
+            val lon = lonF.text.toString().trim().toDoubleOrNull()
+            if (lat == null || lon == null || lat !in -90.0..90.0 || lon !in -180.0..180.0) null
+            else LocRule(lat, lon, radiusOf(seek.progress), rbAway.isChecked, unavail.isChecked)
+        }
+        return LocUi(cb, read)
+    }
+
+    private fun askLocationPermission() {
+        if (!LocationTracker.hasPermission(this)) {
+            requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), 1010)
+        } else if (!LocationTracker.hasBackground(this)) {
+            toast("Pilih Izin lokasi > Izinkan sepanjang waktu, agar blokir lokasi tetap jalan saat aplikasi ditutup.")
+            try {
+                startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+            } catch (t: Throwable) {
+                if (Build.VERSION.SDK_INT >= 29) requestPermissions(arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION), 1011)
+            }
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 1010) {
+            LocationTracker.ensure(this)
+            if (LocationTracker.hasPermission(this)) askLocationPermission()
+        }
+    }
+
     private fun conditionSection(box: LinearLayout, title: String, on: Boolean, body: LinearLayout): CheckBox {
         val cb = CheckBox(this)
         cb.text = title
@@ -1281,7 +1378,8 @@ class MainActivity : Activity() {
         box.addView(notifCb)
 
         box.addView(text("Blok cepat: pakai tombol Blok cepat di bawah aplikasinya.", 12f))
-        box.addView(text("Berdasarkan tujuan dan Lokasi: belum tersedia.", 12f))
+        val locUi = locationSection(box, "app_$pkg", false)
+        box.addView(text("Berdasarkan tujuan: belum tersedia.", 12f))
 
         // Penghalang
         box.addView(text("Penghalang saat terblokir (blokir penuh dan batas harian)", 13f, true))
@@ -1339,7 +1437,14 @@ class MainActivity : Activity() {
                     twAdaptive = twAd.isChecked,
                     notif = notifCb.isChecked
                 )
+                val locRule = if (locUi.cb.isChecked) locUi.read() else null
+                if (locUi.cb.isChecked && locRule == null) {
+                    toast("Lokasi tidak valid: isi lintang dan bujur dengan benar (atau pakai lokasi saya sekarang).")
+                    return@setPositiveButton
+                }
                 Store.setAppCfg(this, pkg, newCfg)
+                LocationRules.set(this, "app_$pkg", locRule)
+                if (locRule != null && (!LocationTracker.hasPermission(this) || !LocationTracker.hasBackground(this))) askLocationPermission()
                 WaitTimer.onConfigSaved(this, pkg, cfg, newCfg)
                 if (newCfg.twUse > 0 && newCfg.twWait > 0 && Build.VERSION.SDK_INT >= 33 &&
                     checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -1352,7 +1457,7 @@ class MainActivity : Activity() {
                         toast("Nyalakan Akses Notifikasi untuk Penjaga Ketat di bagian Notifikasi di bawah.")
                     }
                 }
-                if (!full && !useCb.isChecked && !launchCb.isChecked && !twCb.isChecked) {
+                if (!full && !useCb.isChecked && !launchCb.isChecked && !twCb.isChecked && locRule == null) {
                     toast("Belum ada kondisi yang dipilih: aplikasi ini tidak akan terblokir.")
                 }
                 render()
@@ -1945,6 +2050,7 @@ class MainActivity : Activity() {
             cfg.limitMin > 0 || cfg.hourLimit > 0 -> 2
             cfg.schOn -> 1
             cfg.mode == 0 -> 0
+            LocationRules.get(this, "site_" + Rules.normalizeDomain(domain)) != null -> 4
             else -> 1
         }
 
@@ -1962,11 +2068,13 @@ class MainActivity : Activity() {
         val rbSchedule = RadioButton(this).apply { text = "Blokir sesuai jadwal"; id = View.generateViewId() }
         val rbLimit = RadioButton(this).apply { text = "Batas penggunaan"; id = View.generateViewId() }
         val rbTimer = RadioButton(this).apply { text = "Timer tunggu"; id = View.generateViewId() }
-        modes.addView(rbFull); modes.addView(rbSchedule); modes.addView(rbLimit); modes.addView(rbTimer)
+        val rbLoc = RadioButton(this).apply { text = "Hanya berdasarkan lokasi"; id = View.generateViewId() }
+        modes.addView(rbFull); modes.addView(rbSchedule); modes.addView(rbLimit); modes.addView(rbTimer); modes.addView(rbLoc)
         when (initialMode) {
             0 -> rbFull.isChecked = true
             1 -> rbSchedule.isChecked = true
             2 -> rbLimit.isChecked = true
+            4 -> rbLoc.isChecked = true
             else -> rbTimer.isChecked = true
         }
         box.addView(modes)
@@ -1978,6 +2086,7 @@ class MainActivity : Activity() {
             rbSchedule.isEnabled = false
             rbLimit.isEnabled = false
             rbTimer.isEnabled = false
+            rbLoc.isEnabled = false
             box.addView(text("Mode Ketat aktif: aturan situs ini terkunci dan tidak bisa diubah. Yang tampil adalah aturan yang tersimpan.", 11f, false, C_SUB))
         }
 
@@ -2026,6 +2135,7 @@ class MainActivity : Activity() {
         twBody.addView(adaptive)
         detailBox.addView(twBody)
         box.addView(detailBox)
+        val locUi = locationSection(box, "site_" + Rules.normalizeDomain(domain), locked)
 
         if (locked) {
             startBtn.isEnabled = false
@@ -2042,12 +2152,13 @@ class MainActivity : Activity() {
             limitBody.visibility = if (mode == 2) View.VISIBLE else View.GONE
             twBody.visibility = if (mode == 3) View.VISIBLE else View.GONE
         }
-        updateDetails(if (rbFull.isChecked) 0 else if (rbSchedule.isChecked) 1 else if (rbLimit.isChecked) 2 else 3)
+        updateDetails(if (rbFull.isChecked) 0 else if (rbSchedule.isChecked) 1 else if (rbLimit.isChecked) 2 else if (rbLoc.isChecked) 4 else 3)
         modes.setOnCheckedChangeListener { _, checkedId ->
             val mode = when (checkedId) {
                 rbSchedule.id -> 1
                 rbLimit.id -> 2
                 rbTimer.id -> 3
+                rbLoc.id -> 4
                 else -> 0
             }
             updateDetails(mode)
@@ -2064,6 +2175,7 @@ class MainActivity : Activity() {
                     rbSchedule.isChecked -> 1
                     rbLimit.isChecked -> 2
                     rbTimer.isChecked -> 3
+                    rbLoc.isChecked -> 4
                     else -> 0
                 }
                 val full = selected == 0
@@ -2087,7 +2199,18 @@ class MainActivity : Activity() {
                     toast("Isi timer penggunaan dan timer tunggu terlebih dahulu")
                     return@setPositiveButton
                 }
+                val locRule = if (locUi.cb.isChecked) locUi.read() else null
+                if (locUi.cb.isChecked && locRule == null) {
+                    toast("Lokasi tidak valid: isi lintang dan bujur dengan benar (atau pakai lokasi saya sekarang).")
+                    return@setPositiveButton
+                }
+                if (selected == 4 && locRule == null) {
+                    toast("Mode lokasi: aktifkan bagian lokasi dan isi titiknya.")
+                    return@setPositiveButton
+                }
                 // Simpan konfigurasi dulu, baru masukkan domain ke daftar (tanpa jeda blokir penuh sementara).
+                LocationRules.set(this, "site_" + Rules.normalizeDomain(domain), locRule)
+                if (locRule != null && (!LocationTracker.hasPermission(this) || !LocationTracker.hasBackground(this))) askLocationPermission()
                 Store.setSiteCfg(this, domain, newCfg)
                 Store.addDomain(this, domain)
                 if (newCfg.twUse > 0 && newCfg.twWait > 0 && Build.VERSION.SDK_INT >= 33 &&

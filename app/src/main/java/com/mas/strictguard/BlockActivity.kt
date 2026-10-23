@@ -93,6 +93,7 @@ class BlockActivity : Activity() {
                 if (siteDomain.isNotEmpty()) SiteTracker.noteAttempt(this, siteDomain)
                 showSiteWaitCountdown()
             }
+            "location" -> info.text = "Aplikasi ini diblokir berdasarkan lokasi kamu saat ini."
             "browser" -> info.text = "Browser ini tidak didukung.\nGunakan Chrome saja."
             "hour" -> info.text = "Batas pemakaian per jam tercapai.\nCoba lagi nanti."
             "launch" -> info.text = "Batas jumlah peluncuran aplikasi ini tercapai."

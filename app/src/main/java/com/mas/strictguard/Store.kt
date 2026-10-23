@@ -155,14 +155,20 @@ object Store {
     }
 
     fun addApp(c: Context, p: String) = putSet(c, "apps", apps(c) + p)
-    fun removeApp(c: Context, p: String) = putSet(c, "apps", apps(c) - p)
+    fun removeApp(c: Context, p: String) {
+        putSet(c, "apps", apps(c) - p)
+        LocationRules.set(c, "app_$p", null)
+    }
     fun addKeyword(c: Context, k: String) = putSet(c, "keywords", keywords(c) + k.trim().lowercase())
     fun removeKeyword(c: Context, k: String) = putSet(c, "keywords", keywords(c) - k)
     fun addDomain(c: Context, d: String) {
         val n = Rules.normalizeDomain(d)
         if (n.isNotEmpty()) putSet(c, "domains", domains(c) + n)
     }
-    fun removeDomain(c: Context, d: String) = putSet(c, "domains", domains(c) - d)
+    fun removeDomain(c: Context, d: String) {
+        putSet(c, "domains", domains(c) - d)
+        LocationRules.set(c, "site_" + Rules.normalizeDomain(d), null)
+    }
 
     fun seed(c: Context) {
         if (sp(c).getBoolean("seeded", false)) return
