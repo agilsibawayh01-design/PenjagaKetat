@@ -1,0 +1,54 @@
+package com.mas.strictguard
+
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
+import androidx.core.app.NotificationCompat
+
+/** Notifikasi sisa Timer Tunggu. Hanya aktif saat timer benar-benar sedang menunggu. */
+object TimerNotifier {
+    private const val CHANNEL = "wait_timer"
+    private const val ID = 4701
+
+    private fun nm(c: Context): NotificationManager =
+        c.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+    private fun ensureChannel(c: Context) {
+        nm(c).createNotificationChannel(
+            NotificationChannel(CHANNEL, "Timer tunggu", NotificationManager.IMPORTANCE_LOW).apply {
+                description = "Menampilkan sisa waktu Timer Tunggu Penjaga Ketat"
+                setShowBadge(false)
+            }
+        )
+    }
+
+    fun show(c: Context, label: String, leftMs: Long) {
+        if (leftMs <= 0L) { cancel(c); return }
+        ensureChannel(c)
+        val left = leftMs / 1000L
+        val min = left / 60L
+        val sec = left % 60L
+        val time = String.format(java.util.Locale.getDefault(), "%02d:%02d", min, sec)
+        val pi = PendingIntent.getActivity(
+            c, 4701, Intent(c, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val n = NotificationCompat.Builder(c, CHANNEL)
+            .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
+            .setContentTitle("Timer tunggu • $label")
+            .setContentText("Sisa waktu: $time")
+            .setStyle(NotificationCompat.BigTextStyle().bigText("$label sedang diblokir. Sisa waktu tunggu $time."))
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setShowWhen(false)
+            .setContentIntent(pi)
+            .build()
+        nm(c).notify(ID, n)
+    }
+
+    fun cancel(c: Context) {
+        nm(c).cancel(ID)
+    }
+}

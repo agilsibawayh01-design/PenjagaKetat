@@ -32,7 +32,7 @@ object UsageTracker {
     @Synchronized
     fun get(c: Context): DayUsage {
         val now = System.currentTimeMillis()
-        if (now - dayAt < 15000L) return dayV
+        if (now - dayAt < 3000L) return dayV
         dayAt = now
         dayV = try {
             compute(c, startOfDay(), startOfDay(), now)
@@ -53,7 +53,7 @@ object UsageTracker {
     @Synchronized
     fun hour(c: Context): DayUsage {
         val now = System.currentTimeMillis()
-        if (now - hourAt < 15000L) return hourV
+        if (now - hourAt < 3000L) return hourV
         hourAt = now
         hourV = try {
             compute(c, now - 3600000L, now - 3 * 3600000L, now)

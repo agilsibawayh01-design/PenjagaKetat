@@ -30,6 +30,45 @@ class GuardService : AccessibilityService() {
     private var blockedBrowsers: Set<String> = emptySet()
     private var browsersAt = 0L
 
+    /** Pemeriksaan berkala untuk batas pemakaian/timer tunggu. Tidak bergantung pada event Accessibility. */
+    private val timerRunnable = object : Runnable {
+        override fun run() {
+            try {
+                val now = System.currentTimeMillis()
+                refreshCache(now)
+                if (!backing && !pausedNow && Foreground.hasUsageAccess(this@GuardService)) {
+                    val p = Foreground.current(this@GuardService)
+                    if (p.isNotEmpty() && p != packageName && p !in Config.IGNORED) {
+                        if (p in blockedBrowsers) {
+                            startBlock("browser", p)
+                        } else {
+                            val verdict = BlockEngine.check(this@GuardService, p, now, apps, profiles)
+                            val cfg = Store.appCfg(this@GuardService, p)
+                            val label = try {
+                                packageManager.getApplicationLabel(packageManager.getApplicationInfo(p, 0)).toString()
+                            } catch (_: Exception) { p }
+                            if (cfg.twUse > 0 && cfg.twWait > 0) {
+                                val left = WaitTimer.remaining(this@GuardService, p, cfg, now)
+                                if (left > 0L) TimerNotifier.show(this@GuardService, label, left)
+                                else TimerNotifier.cancel(this@GuardService)
+                            } else {
+                                TimerNotifier.cancel(this@GuardService)
+                            }
+                            if (verdict != null) startBlock(verdict, p)
+                        }
+                    } else {
+                        TimerNotifier.cancel(this@GuardService)
+                    }
+                } else {
+                    TimerNotifier.cancel(this@GuardService)
+                }
+            } catch (_: Throwable) {
+                // Jangan pernah membuat AccessibilityService crash karena pemeriksaan timer.
+            }
+            handler.postDelayed(this, 2000L)
+        }
+    }
+
     private val limitRunnable = object : Runnable {
         override fun run() {
             val p = limitPkg
@@ -74,6 +113,8 @@ class GuardService : AccessibilityService() {
         BrowserScanner.scan(this)
         TimeGuard.check(this)
         if (Store.strictRaw(this)) WatchdogService.start(this)
+        handler.removeCallbacks(timerRunnable)
+        handler.post(timerRunnable)
         VpnManager.ensure(this)
     }
 
@@ -84,6 +125,9 @@ class GuardService : AccessibilityService() {
             // abaikan
         }
         watcher = null
+        handler.removeCallbacks(timerRunnable)
+        handler.removeCallbacks(limitRunnable)
+        TimerNotifier.cancel(this)
         super.onDestroy()
     }
 

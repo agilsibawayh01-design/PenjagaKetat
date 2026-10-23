@@ -84,14 +84,32 @@ class BlockActivity : Activity() {
             "wait" -> {
                 val g = Store.appCfg(this, pkg)
                 WaitTimer.noteAttempt(this, pkg)
-                val left = WaitTimer.remaining(this, pkg, g, System.currentTimeMillis())
-                info.text = "Timer tunggu aktif.\nAplikasi bisa dibuka lagi sekitar " + (left / 60000L + 1) + " menit lagi."
+                showWaitCountdown(g)
             }
             "browser" -> info.text = "Browser ini tidak didukung.\nGunakan Chrome saja."
             "hour" -> info.text = "Batas pemakaian per jam tercapai.\nCoba lagi nanti."
             "launch" -> info.text = "Batas jumlah peluncuran aplikasi ini tercapai."
             else -> startTimerFlow(mode)
         }
+    }
+
+
+    private fun showWaitCountdown(g: AppCfg) {
+        val left = WaitTimer.remaining(this, pkg, g, System.currentTimeMillis())
+        if (left <= 0L) {
+            info.text = "Waktu tunggu selesai.\nKamu bisa mencoba membuka aplikasi lagi."
+            openBtn.visibility = View.GONE
+            return
+        }
+        val total = left / 1000L
+        val min = total / 60L
+        val sec = total % 60L
+        info.text = String.format(
+            java.util.Locale.getDefault(),
+            "Timer tunggu aktif.\nSisa waktu: %02d:%02d\n\nAplikasi akan tetap diblokir sampai timer selesai.",
+            min, sec
+        )
+        handler.postDelayed({ showWaitCountdown(g) }, 1000L)
     }
 
     private fun startTimerFlow(mode: String) {
