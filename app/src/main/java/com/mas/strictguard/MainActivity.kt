@@ -1338,6 +1338,7 @@ class MainActivity : Activity() {
                     notif = notifCb.isChecked
                 )
                 Store.setAppCfg(this, pkg, newCfg)
+                WaitTimer.onConfigSaved(this, pkg, cfg, newCfg)
                 if (strict) Store.lockApp(this, pkg)
                 if (newCfg.notif && !SelfProtector.notifListenerOn(this)) {
                     if (!SelfProtector.enableNotifListener(this)) {

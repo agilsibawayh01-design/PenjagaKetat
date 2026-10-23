@@ -37,27 +37,30 @@ class GuardService : AccessibilityService() {
                 val now = System.currentTimeMillis()
                 refreshCache(now)
                 if (!backing && !pausedNow && Foreground.hasUsageAccess(this@GuardService)) {
+                    // Notifikasi Timer Tunggu harus tetap hidup saat BlockActivity sedang tampil.
+                    // Karena saat itu foreground package adalah PenjagaKetat, bukan aplikasi yang diblokir.
+                    val activeWait = WaitTimer.active(this@GuardService, now)
+                    if (activeWait != null) {
+                        val waitPkg = activeWait.first
+                        val left = activeWait.second
+                        val label = try {
+                            packageManager.getApplicationLabel(
+                                packageManager.getApplicationInfo(waitPkg, 0)
+                            ).toString()
+                        } catch (_: Exception) { waitPkg }
+                        TimerNotifier.show(this@GuardService, label, left)
+                    } else {
+                        TimerNotifier.cancel(this@GuardService)
+                    }
+
                     val p = Foreground.current(this@GuardService)
                     if (p.isNotEmpty() && p != packageName && p !in Config.IGNORED) {
                         if (p in blockedBrowsers) {
                             startBlock("browser", p)
                         } else {
                             val verdict = BlockEngine.check(this@GuardService, p, now, apps, profiles)
-                            val cfg = Store.appCfg(this@GuardService, p)
-                            val label = try {
-                                packageManager.getApplicationLabel(packageManager.getApplicationInfo(p, 0)).toString()
-                            } catch (_: Exception) { p }
-                            if (cfg.twUse > 0 && cfg.twWait > 0) {
-                                val left = WaitTimer.remaining(this@GuardService, p, cfg, now)
-                                if (left > 0L) TimerNotifier.show(this@GuardService, label, left)
-                                else TimerNotifier.cancel(this@GuardService)
-                            } else {
-                                TimerNotifier.cancel(this@GuardService)
-                            }
                             if (verdict != null) startBlock(verdict, p)
                         }
-                    } else {
-                        TimerNotifier.cancel(this@GuardService)
                     }
                 } else {
                     TimerNotifier.cancel(this@GuardService)
