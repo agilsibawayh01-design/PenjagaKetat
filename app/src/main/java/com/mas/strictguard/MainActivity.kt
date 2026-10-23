@@ -1338,6 +1338,7 @@ class MainActivity : Activity() {
                     notif = notifCb.isChecked
                 )
                 Store.setAppCfg(this, pkg, newCfg)
+                WaitTimer.onConfigSaved(this, pkg, cfg, newCfg)
                 if (newCfg.twUse > 0 && newCfg.twWait > 0 && Build.VERSION.SDK_INT >= 33 &&
                     checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
                 ) {
