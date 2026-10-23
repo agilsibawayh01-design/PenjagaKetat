@@ -276,7 +276,7 @@ class MainActivity : Activity() {
                     renderVpn(strict)
                     renderNotif()
                 }
-                "stats" -> renderStats(strict)
+                "stats" -> renderDashboard(strict)
                 else -> {
                     renderAppLock(strict)
                     renderFriend()
@@ -299,7 +299,7 @@ class MainActivity : Activity() {
         "words" -> "Situs dan kata kunci"
         "profiles" -> "Profil"
         "net" -> "VPN DNS dan notifikasi"
-        "stats" -> "Statistik"
+        "stats" -> "Dashboard"
         else -> "Lainnya"
     }
 
@@ -390,6 +390,8 @@ class MainActivity : Activity() {
             }
         }
 
+        renderTodayCard(acc && adm)
+
         val blocks = try {
             StatsDb.blocksByReason(this, UsageTracker.startOfDay()).sumOf { it.second }
         } catch (t: Throwable) {
@@ -405,7 +407,7 @@ class MainActivity : Activity() {
             tile("🌐", "Situs & kata", "$wordCount aturan • $cats kategori", Color.parseColor("#6A1B9A"), "words"),
             tile("🗂️", "Profil", "$activeP aktif dari ${profiles.size}", Color.parseColor("#00796B"), "profiles"),
             tile("🔌", "VPN & notifikasi", if (VpnStatus.running) "VPN DNS aktif" else if (Store.vpnOn(this)) "VPN DNS: " + VpnStatus.state.label else "VPN DNS mati", Color.parseColor("#2E7D32"), "net"),
-            tile("📊", "Statistik", "$blocks blokir hari ini", Color.parseColor("#EF6C00"), "stats"),
+            tile("📊", "Dashboard", "$blocks blokir hari ini", Color.parseColor("#EF6C00"), "stats"),
             tile("⚙️", "Lainnya", "Teman, log, deteksi", Color.parseColor("#455A64"), "more")
         )
         var i = 0
@@ -1721,6 +1723,125 @@ class MainActivity : Activity() {
         packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
     } catch (e: Exception) {
         pkg
+    }
+
+    /** Kartu ringkas "Hari ini" di beranda. */
+    private fun renderTodayCard(protectedOk: Boolean) {
+        header("Hari ini")
+        try {
+            val s = Dashboard.get(this)
+            if (!s.usageAccess) {
+                put(text("Aktifkan Akses Penggunaan agar pemakaian tercatat.", 12f, false, C_SUB))
+            } else {
+                put(text(Dashboard.dur(s.todayMs), 28f, true, C_PRIMARY))
+                put(text("penggunaan • ${s.blocksToday}x diblokir", 12f, false, C_SUB))
+                for (it in s.topAppsToday.take(3)) put(text("${it.label} — ${Dashboard.dur(it.ms)}", 13f))
+            }
+        } catch (t: Throwable) {
+            put(text("Ringkasan belum tersedia.", 12f, false, C_SUB))
+        }
+        status(protectedOk, if (protectedOk) "Perlindungan aktif" else "Perlindungan belum lengkap")
+        put(button("Lihat dashboard") { goScreen("stats") })
+    }
+
+    private fun barLine(label: String, ms: Long, maxMs: Long, suffix: String = ""): String {
+        val bars = (ms * 14L / Math.max(1L, maxMs)).toInt()
+        return label + "  " + "█".repeat(bars) + " " + Dashboard.dur(ms) + suffix
+    }
+
+    private fun showHistory(key: String, title: String, isSite: Boolean) {
+        val rows = Dashboard.history(this, key, isSite)
+        val maxMs = Math.max(1L, rows.maxOf { it.ms })
+        val sb = StringBuilder()
+        for (r in rows) sb.append(barLine(r.label, r.ms, maxMs, if (r.blocks > 0) " • ${r.blocks}x blokir" else "")).append('\n')
+        android.app.AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(sb.toString().trim())
+            .setPositiveButton("Tutup", null)
+            .show()
+    }
+
+    private fun renderDashboard(strict: Boolean) {
+        val s = Dashboard.get(this, true)
+        if (!s.usageAccess) {
+            header("Akses Penggunaan")
+            put(text("Aktifkan Akses Penggunaan agar pemakaian aplikasi tercatat. Angka pemakaian di bawah kosong sampai itu aktif.", 12f))
+        }
+
+        header("Hari ini")
+        put(text(Dashboard.dur(s.todayMs), 30f, true, C_PRIMARY))
+        val diff = if (s.yesterdayMs > 0L) {
+            val pct = ((s.todayMs - s.yesterdayMs) * 100L / s.yesterdayMs).toInt()
+            " • " + (if (pct >= 0) "naik $pct%" else "turun ${-pct}%") + " dari kemarin"
+        } else ""
+        put(text("penggunaan (aplikasi yang bisa dibuka, tanpa launcher dan Pengaturan)$diff", 11f, false, C_SUB))
+        put(text("${s.blocksToday}x diblokir • ${s.attemptsToday}x percobaan membuka aplikasi/situs terblokir", 13f))
+        if (s.reasonsToday.isNotEmpty()) {
+            put(text(s.reasonsToday.joinToString(", ") { reasonName(it.first) + " " + it.second }, 11f, false, C_SUB))
+        }
+
+        header("Penggunaan hari ini")
+        if (s.topAppsToday.isEmpty()) put(text("Belum ada data.", 12f, false, C_SUB))
+        val maxA = Math.max(1L, s.topAppsToday.maxOfOrNull { it.ms } ?: 1L)
+        for (it in s.topAppsToday) put(text(barLine(it.label, it.ms, maxA), 12f))
+        if (s.topSitesToday.isNotEmpty()) {
+            put(text("Situs (yang punya aturan; sudah termasuk dalam waktu Chrome)", 12f, true))
+            val maxS = Math.max(1L, s.topSitesToday.maxOf { it.ms })
+            for (it in s.topSitesToday) put(text(barLine(it.label, it.ms, maxS), 12f))
+        }
+
+        if (s.appCategories.isNotEmpty() || s.siteCategories.isNotEmpty()) {
+            header("Kategori hari ini")
+            for ((n, ms) in s.appCategories.take(6)) put(text("$n — ${Dashboard.dur(ms)}", 12f))
+            if (s.siteCategories.isNotEmpty()) {
+                put(text("Situs:", 12f, true))
+                for ((n, ms) in s.siteCategories) put(text("$n — ${Dashboard.dur(ms)}", 12f))
+            }
+        }
+
+        header("7 hari terakhir")
+        val maxD = Math.max(1L, s.days.maxOf { it.ms })
+        for (d in s.days) put(text(barLine(d.label, d.ms, maxD, if (d.blocks > 0) " • ${d.blocks}x blokir" else ""), 11f))
+        put(text("Total ${Dashboard.dur(s.weekMs)} • ${s.blocksWeek}x diblokir", 13f, true))
+        if (s.prevWeekMs > 0L) {
+            val pct = ((s.weekMs - s.prevWeekMs) * 100L / s.prevWeekMs).toInt()
+            put(text("Minggu lalu ${Dashboard.dur(s.prevWeekMs)}: " + (if (pct >= 0) "naik $pct%" else "turun ${-pct}%"), 12f, false, C_SUB))
+        } else {
+            put(text("Perbandingan dengan minggu lalu muncul setelah ada data 14 hari.", 11f, false, C_SUB))
+        }
+
+        header("Teratas 7 hari")
+        if (s.topAppsWeek.isEmpty()) put(text("Belum ada data.", 12f, false, C_SUB))
+        for (it in s.topAppsWeek) put(text("${it.label} — ${Dashboard.dur(it.ms)}", 12f))
+        if (s.topSitesWeek.isNotEmpty()) {
+            put(text("Situs:", 12f, true))
+            for (it in s.topSitesWeek) put(text("${it.label} — ${Dashboard.dur(it.ms)}", 12f))
+        }
+
+        header("Riwayat per aplikasi atau situs")
+        put(text("Pilih satu untuk melihat riwayat 14 hari dan jumlah blokirnya.", 12f, false, C_SUB))
+        val entries = ArrayList<Triple<String, String, Boolean>>()
+        for (it in s.topAppsWeek) entries.add(Triple(it.key, it.label, false))
+        for (it in s.topSitesWeek) entries.add(Triple(it.key, it.label, true))
+        for (d in Store.domains(this).sorted()) if (entries.none { it.first == d }) entries.add(Triple(d, d, true))
+        put(button("Pilih aplikasi/situs") {
+            if (entries.isEmpty()) {
+                toast("Belum ada data")
+            } else {
+                android.app.AlertDialog.Builder(this)
+                    .setTitle("Pilih")
+                    .setItems(entries.map { (if (it.third) "🌐 " else "") + it.second }.toTypedArray()) { _, i ->
+                        showHistory(entries[i].first, entries[i].second, entries[i].third)
+                    }
+                    .setNegativeButton("Batal", null)
+                    .show()
+            }
+        })
+        put(text("Catatan: pemakaian situs hanya tercatat untuk situs yang punya aturan dan saat kolom alamat Chrome terlihat.", 11f, false, C_SUB))
+
+        put(button("Hapus statistik") {
+            if (strict) toast("Mode Ketat aktif: statistik terkunci") else { StatsDb.clear(this); Dashboard.get(this, true); render() }
+        })
     }
 
     private fun renderStats(strict: Boolean) {

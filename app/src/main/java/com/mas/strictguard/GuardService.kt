@@ -465,7 +465,8 @@ class GuardService : AccessibilityService() {
         if (backing || now - lastBlockAt < 800L) return
         lastBlockAt = now
         backing = true
-        StatsDb.addBlock(this, if (mode == "typed") "content" else if (mode == "protect_click") "protect" else mode, pkg)
+        val statTarget = if ((mode == "site" || mode == "site_wait") && blockDomain.isNotEmpty()) blockDomain else pkg
+        StatsDb.addBlock(this, if (mode == "typed") "content" else if (mode == "protect_click") "protect" else mode, statTarget)
         // Klik di Pengaturan: beri 120 ms agar halaman tujuan sempat terbuka, lalu kembali.
         if (mode == "protect_click") handler.postDelayed({ stepBack(mode, pkg, 0) }, 120L) else stepBack(mode, pkg, 0)
     }

@@ -32,6 +32,36 @@ object SiteTracker {
         p.edit().putString("last_domain", domain).putLong("last_at", now).apply()
     }
     fun stop(c: Context) { c.getSharedPreferences(STATE, Context.MODE_PRIVATE).edit().remove("last_domain").remove("last_at").apply() }
+    /**
+     * Riwayat pemakaian situs [days] hari terakhir (baca saja): hari (yyyyMMdd) -> domain -> ms.
+     * Sekaligus membuang catatan yang lebih tua dari 35 hari.
+     */
+    fun dayTotals(c: Context, days: Int): Map<String, Map<String, Long>> {
+        val fmt = SimpleDateFormat("yyyyMMdd", Locale.US)
+        val now = System.currentTimeMillis()
+        val keep = HashSet<String>()
+        for (i in 0 until days) keep.add(fmt.format(Date(now - i * 86400000L)))
+        val cutoff = fmt.format(Date(now - 35L * 86400000L))
+        val out = HashMap<String, HashMap<String, Long>>()
+        val old = ArrayList<String>()
+        val p = sp(c)
+        for ((k, v) in p.all) {
+            if (!k.startsWith("u_") || k.length < 11 || k[10] != '_') continue
+            val d = k.substring(2, 10)
+            if (d < cutoff) {
+                old.add(k)
+            } else if (d in keep) {
+                out.getOrPut(d) { HashMap() }[k.substring(11)] = (v as? Long) ?: 0L
+            }
+        }
+        if (old.isNotEmpty()) {
+            val e = p.edit()
+            for (k in old) e.remove(k)
+            e.apply()
+        }
+        return out
+    }
+
     fun todayMs(c: Context, domain: String): Long = sp(c).getLong(usageKey(domain), 0L)
     fun onConfigSaved(c: Context, domainRaw: String, old: SiteCfg, new: SiteCfg) {
         val d = norm(domainRaw); if (d.isEmpty()) return

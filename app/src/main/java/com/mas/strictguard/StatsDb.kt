@@ -99,6 +99,26 @@ object StatsDb {
         return out
     }
 
+    /** Baris pemakaian [days] hari terakhir: (hari, paket, ms). */
+    fun usageRows(c: Context, days: Int): List<Triple<String, String, Long>> {
+        val from = dayKey(System.currentTimeMillis() - (days - 1).toLong() * 86400000L)
+        val out = ArrayList<Triple<String, String, Long>>()
+        val cur = db(c).rawQuery("SELECT day, pkg, ms FROM usage WHERE day >= ?", arrayOf(from))
+        cur.use { while (it.moveToNext()) out.add(Triple(it.getString(0), it.getString(1), it.getLong(2))) }
+        return out
+    }
+
+    /** Jumlah blokir per hari (kunci yyyy-MM-dd). [target] menyaring satu aplikasi/situs bila diisi. */
+    fun blocksPerDay(c: Context, days: Int, target: String? = null): Map<String, Int> {
+        val since = UsageTracker.startOfDay() - (days - 1).toLong() * 86400000L
+        val out = HashMap<String, Int>()
+        val sql = "SELECT strftime('%Y-%m-%d', ts / 1000, 'unixepoch', 'localtime'), COUNT(*) FROM blocks WHERE ts >= ?" +
+            (if (target != null) " AND target = ?" else "") + " GROUP BY 1"
+        val args = if (target != null) arrayOf(since.toString(), target) else arrayOf(since.toString())
+        db(c).rawQuery(sql, args).use { while (it.moveToNext()) out[it.getString(0)] = it.getInt(1) }
+        return out
+    }
+
     fun clear(c: Context) {
         val d = db(c)
         d.delete("usage", null, null)
