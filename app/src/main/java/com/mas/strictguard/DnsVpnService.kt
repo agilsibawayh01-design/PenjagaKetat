@@ -1,6 +1,15 @@
 package com.mas.strictguard
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
+import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.content.Intent
 import android.net.VpnService
 import android.os.ParcelFileDescriptor
@@ -39,9 +48,53 @@ class DnsVpnService : VpnService() {
     private var cacheAt = 0L
     private val lastLog = HashMap<String, Long>()
 
+    @Volatile
+    private var pausedNow = false
+    private val health = Any()
+    private val failCount = HashMap<String, Int>()
+    private val skipUntil = HashMap<String, Long>()
+    private var netDnsAt = 0L
+    private var netDns: List<String> = emptyList()
+    private var restartCount = 0
+    private var restartWindowStart = 0L
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        startAsForeground()
         if (!active) startVpn()
         return START_STICKY
+    }
+
+    private fun startAsForeground() {
+        try {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.createNotificationChannel(NotificationChannel("vpn", "VPN DNS", NotificationManager.IMPORTANCE_MIN))
+            val n = Notification.Builder(this, "vpn")
+                .setContentTitle("Penjaga Ketat")
+                .setContentText("VPN DNS aktif")
+                .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
+                .setOngoing(true)
+                .build()
+            startForeground(3, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } catch (t: Throwable) {
+            // tetap berjalan tanpa notifikasi latar depan
+        }
+    }
+
+    private fun scheduleRestart() {
+        if (!Store.vpnOn(this)) return
+        val now = SystemClock.elapsedRealtime()
+        if (now - restartWindowStart > 120000L) {
+            restartWindowStart = now
+            restartCount = 0
+        }
+        restartCount++
+        if (restartCount > 5) {
+            Store.log(this, "VPN DNS gagal menyala ulang berkali-kali, berhenti. Nyalakan manual.")
+            return
+        }
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (Store.vpnOn(this) && !active) startVpn()
+        }, 2000L)
     }
 
     private fun startVpn() {
@@ -58,6 +111,7 @@ class DnsVpnService : VpnService() {
                 .allowFamily(OsConstants.AF_INET6)
             val p = b.establish()
             if (p == null) {
+                Store.log(this, "VPN DNS gagal dibuat (izin VPN dicabut?)")
                 stopVpn()
                 return
             }
@@ -74,6 +128,7 @@ class DnsVpnService : VpnService() {
             Thread { readLoop(input) }.start()
             Store.log(this, "VPN DNS aktif")
         } catch (t: Throwable) {
+            Store.log(this, "VPN DNS gagal dibuat: ${t.message}")
             stopVpn()
         }
     }
@@ -109,10 +164,12 @@ class DnsVpnService : VpnService() {
 
     private fun readLoop(input: FileInputStream) {
         val buf = ByteArray(32767)
+        var cause = "terowongan ditutup"
         while (active) {
             val n = try {
                 input.read(buf)
             } catch (e: Exception) {
+                cause = "baca gagal: " + e.message
                 -1
             }
             if (n < 0) break
@@ -131,7 +188,11 @@ class DnsVpnService : VpnService() {
                 // lewati paket yang rusak
             }
         }
-        if (active) stopVpn()
+        if (active) {
+            Store.log(this, "VPN DNS berhenti tak terduga ($cause)")
+            stopVpn()
+            scheduleRestart()
+        }
     }
 
     private fun u16(b: ByteArray, o: Int): Int = ((b[o].toInt() and 0xFF) shl 8) or (b[o + 1].toInt() and 0xFF)
@@ -219,11 +280,70 @@ class DnsVpnService : VpnService() {
         return r
     }
 
+    private fun networkDns(): List<String> {
+        val now = System.currentTimeMillis()
+        if (now - netDnsAt < 30000L) return netDns
+        netDnsAt = now
+        val out = ArrayList<String>()
+        try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            for (n in cm.allNetworks) {
+                val caps = cm.getNetworkCapabilities(n) ?: continue
+                if (caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) continue
+                if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) continue
+                val lp = cm.getLinkProperties(n) ?: continue
+                for (a in lp.dnsServers) {
+                    val h = a.hostAddress ?: continue
+                    if (a is java.net.Inet4Address && h != DNS_IP) out.add(h)
+                }
+            }
+        } catch (t: Throwable) {
+            // pakai DNS publik saja
+        }
+        netDns = out.distinct()
+        return netDns
+    }
+
+    /** Urutan DNS upstream: pilihan, DNS bawaan jaringan (ISP/WiFi), lalu DNS publik lain. */
+    private fun chain(): List<String> {
+        val chosen = UPSTREAMS[Store.vpnUpstream(this).coerceIn(0, UPSTREAMS.size - 1)]
+        val list = ArrayList<String>()
+        list.add(chosen)
+        list.addAll(networkDns())
+        for (u in UPSTREAMS) list.add(u)
+        return list.distinct()
+    }
+
+    private fun noteResult(ip: String, ok: Boolean) {
+        var skipped = false
+        synchronized(health) {
+            if (ok) {
+                failCount[ip] = 0
+                skipUntil.remove(ip)
+            } else {
+                val f = (failCount[ip] ?: 0) + 1
+                if (f >= 3) {
+                    failCount[ip] = 0
+                    skipUntil[ip] = System.currentTimeMillis() + 60000L
+                    skipped = true
+                } else {
+                    failCount[ip] = f
+                }
+            }
+        }
+        if (skipped) Store.log(this, "DNS $ip gagal 3x berturut-turut, dilewati 60 detik")
+    }
+
     private fun forward(q: ByteArray): ByteArray? {
-        val first = Store.vpnUpstream(this).coerceIn(0, UPSTREAMS.size - 1)
-        val order = listOf(first) + (0 until UPSTREAMS.size).filter { it != first }
-        for (idx in order) {
-            val r = ask(q, UPSTREAMS[idx])
+        val all = chain()
+        val now = System.currentTimeMillis()
+        val usable = all.filter { ip -> synchronized(health) { (skipUntil[ip] ?: 0L) <= now } }
+        val order = (if (usable.isEmpty()) all else usable).take(4)
+        var first = true
+        for (ip in order) {
+            val r = ask(q, ip, if (first) 1500 else 2000)
+            first = false
+            noteResult(ip, r != null)
             if (r != null) {
                 qForwarded.incrementAndGet()
                 return r
@@ -233,11 +353,11 @@ class DnsVpnService : VpnService() {
         return null
     }
 
-    private fun ask(q: ByteArray, ip: String): ByteArray? {
+    private fun ask(q: ByteArray, ip: String, timeoutMs: Int): ByteArray? {
         val s = DatagramSocket()
         return try {
             protect(s)
-            s.soTimeout = 2500
+            s.soTimeout = timeoutMs
             val addr = InetAddress.getByName(ip)
             s.send(DatagramPacket(q, q.size, addr, 53))
             val rb = ByteArray(4096)
@@ -259,10 +379,12 @@ class DnsVpnService : VpnService() {
         domains = Store.domains(this) + Categories.domains(this) + act.flatMap { it.domains }
         keywords = Store.keywords(this) + Categories.keywords(this) + act.flatMap { it.keywords }
         blockDoh = Store.vpnDoh(this)
+        pausedNow = Store.pausedNow(this)
     }
 
     private fun blocked(name: String): Boolean {
         refresh()
+        if (pausedNow) return false
         var hit = false
         if (blockDoh) {
             for (d in DOH) if (name == d || name.endsWith(".$d")) hit = true

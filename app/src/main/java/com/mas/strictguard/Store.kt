@@ -150,13 +150,117 @@ object Store {
         sp(c).edit().putBoolean("seeded", true).commit()
     }
 
-    fun strictOn(c: Context): Boolean = sp(c).getBoolean("strict", false)
+    /** Bendera Mode Ketat mentah (tanpa memperhitungkan jadwal dan kedaluwarsa). */
+    fun strictRaw(c: Context): Boolean = sp(c).getBoolean("strict", false)
+
+    /** Mode Ketat yang BERLAKU sekarang: bendera aktif, belum kedaluwarsa, dan sedang dalam jadwal (bila ada). */
+    fun strictOn(c: Context): Boolean {
+        if (!strictRaw(c)) return false
+        val exp = expireMin(c)
+        if (exp > 0 && SafeTimer.isRunning(c, "expire") && SafeTimer.elapsed(c, "expire") >= exp * 60000L) {
+            setStrict(c, false)
+            log(c, "Mode Ketat berakhir otomatis (waktu kedaluwarsa)")
+            return false
+        }
+        val sch = strictSchedules(c)
+        if (sch.isNotEmpty() && !TimeGuard.penaltyActive(c) &&
+            sch.none { Rules.scheduleActive(it.start, it.end, it.days) }
+        ) return false
+        return true
+    }
+
+    // ---- Metode penonaktifan Mode Ketat ----
+    fun expireMin(c: Context): Int = sp(c).getInt("exp_min", 0)
+    fun setExpireMin(c: Context, v: Int) { sp(c).edit().putInt("exp_min", v).commit() }
+
+    fun exitWaitOn(c: Context): Boolean = sp(c).getBoolean("exit_wait_on", true)
+    fun setExitWaitOn(c: Context, v: Boolean) { sp(c).edit().putBoolean("exit_wait_on", v).commit() }
+
+    /** Panjang teks acak untuk keluar dari Mode Ketat; 0 = tidak dipakai. */
+    fun exitTextLen(c: Context): Int = sp(c).getInt("exit_text_len", 16)
+    fun setExitTextLen(c: Context, v: Int) { sp(c).edit().putInt("exit_text_len", v).commit() }
+
+    fun strictSchedules(c: Context): List<Sched> {
+        val raw = sp(c).getString("strict_sched", "") ?: ""
+        val out = ArrayList<Sched>()
+        for (part in raw.split(';')) {
+            val f = part.split(',')
+            if (f.size == 3) {
+                val st = f[0].toIntOrNull()
+                val en = f[1].toIntOrNull()
+                val dy = f[2].toIntOrNull()
+                if (st != null && en != null && dy != null) out.add(Sched(st, en, dy))
+            }
+        }
+        return out
+    }
+
+    fun setStrictSchedules(c: Context, list: List<Sched>) {
+        sp(c).edit().putString("strict_sched", list.joinToString(";") { "${it.start},${it.end},${it.days}" }).commit()
+    }
+
+    // ---- Mode Off (jeda) ----
+    /** Menit jeda yang dipilih; 0 = sampai dinyalakan lagi. */
+    fun pauseMinutes(c: Context): Int = sp(c).getInt("pause_min", 0)
+
+    fun pausedNow(c: Context): Boolean {
+        if (!SafeTimer.isRunning(c, "pause")) return false
+        if (strictOn(c)) {
+            SafeTimer.cancel(c, "pause")
+            return false
+        }
+        val m = pauseMinutes(c)
+        if (m > 0 && SafeTimer.elapsed(c, "pause") >= m * 60000L) {
+            SafeTimer.cancel(c, "pause")
+            log(c, "Jeda selesai, blokir bekerja lagi")
+            return false
+        }
+        return true
+    }
+
+    fun pauseStart(c: Context, minutes: Int) {
+        sp(c).edit().putInt("pause_min", minutes).commit()
+        SafeTimer.start(c, "pause")
+        log(c, if (minutes > 0) "Mode Off (jeda $minutes menit)" else "Mode Off (sampai dinyalakan lagi)")
+    }
+
+    fun pauseStop(c: Context) {
+        if (SafeTimer.isRunning(c, "pause")) log(c, "Mode Off diakhiri, kembali ke Mode Normal")
+        SafeTimer.cancel(c, "pause")
+    }
+
+    fun pauseLeftMin(c: Context): Long {
+        val m = pauseMinutes(c)
+        if (m <= 0) return -1L
+        return Math.max(0L, m * 60000L - SafeTimer.elapsed(c, "pause")) / 60000L + 1L
+    }
+
+    // ---- Browser ----
+    fun blockOtherBrowsers(c: Context): Boolean = sp(c).getBoolean("block_browsers", true)
+    fun setBlockOtherBrowsers(c: Context, v: Boolean) { sp(c).edit().putBoolean("block_browsers", v).commit() }
+
+    /** Browser terpasang selain Chrome yang akan diblokir (bila aturannya aktif). */
+    fun unsupportedBrowsers(c: Context): Set<String> {
+        val out = HashSet<String>()
+        val pm = c.packageManager
+        for (p in Config.BROWSERS + extraBrowsers(c)) {
+            if (p == Config.ALLOWED_BROWSER || p in Config.BROWSER_NEVER_BLOCK) continue
+            if (p == c.packageName || p in Config.BANK_HINT || p in Config.PROTECTED || p in Config.EXCLUDED_FROM_LIST) continue
+            if (pm.getLaunchIntentForPackage(p) == null) continue
+            out.add(p)
+        }
+        return out
+    }
+
     fun setStrict(c: Context, v: Boolean) {
         sp(c).edit().putBoolean("strict", v).commit()
         if (v) {
             if (!sp(c).contains("locked")) putSet(c, "locked", apps(c))
+            SafeTimer.cancel(c, "pause")
+            if (expireMin(c) > 0) SafeTimer.start(c, "expire") else SafeTimer.cancel(c, "expire")
         } else {
             sp(c).edit().remove("locked").commit()
+            SafeTimer.cancel(c, "expire")
         }
     }
 

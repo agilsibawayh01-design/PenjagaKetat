@@ -54,9 +54,22 @@ object Config {
     const val YOUTUBE = "com.google.android.youtube"
     const val INSTAGRAM = "com.instagram.android"
 
-    val FEED_IDS: List<String> = listOf(
-        "reel_player", "shorts_player", "reel_viewer", "clips_viewer", "reels_viewer", "shorts_container"
-    )
+    /** ID tampilan Shorts YouTube. */
+    val YT_IDS: List<String> = listOf("reel_player", "shorts_player", "shorts_container", "reel_watch")
+
+    /** ID tampilan Reels Instagram. Stories memakai nama "reel_viewer", jadi TIDAK dipakai di sini. */
+    val IG_IDS: List<String> = listOf("clips_viewer", "clips_video_container", "clips_swipe_refresh")
+
+    /** ID tab Reels di bilah bawah Instagram: dianggap Reels bila tab itu sedang terpilih. */
+    const val IG_REELS_TAB = "clips_tab"
+
+    /** Satu-satunya browser yang didukung. */
+    const val ALLOWED_BROWSER = "com.android.chrome"
+
+    /** Paket yang tidak pernah diblokir walau terdeteksi sebagai browser. */
+    val BROWSER_NEVER_BLOCK: Set<String> = setOf("com.google.android.googlequicksearchbox")
+
+    val EXIT_TEXT_LENGTHS = listOf(10, 50, 100, 200, 500, 600, 2000)
 
     val EXCLUDED_FROM_LIST: Set<String> = setOf(
         "com.android.settings", "com.android.systemui", "com.sec.android.app.launcher",

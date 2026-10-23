@@ -87,6 +87,7 @@ class BlockActivity : Activity() {
                 val left = WaitTimer.remaining(this, pkg, g, System.currentTimeMillis())
                 info.text = "Timer tunggu aktif.\nAplikasi bisa dibuka lagi sekitar " + (left / 60000L + 1) + " menit lagi."
             }
+            "browser" -> info.text = "Browser ini tidak didukung.\nGunakan Chrome saja."
             "hour" -> info.text = "Batas pemakaian per jam tercapai.\nCoba lagi nanti."
             "launch" -> info.text = "Batas jumlah peluncuran aplikasi ini tercapai."
             else -> startTimerFlow(mode)

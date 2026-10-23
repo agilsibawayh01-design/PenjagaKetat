@@ -36,7 +36,7 @@ class WatchdogService : Service() {
 
     private val tick = object : Runnable {
         override fun run() {
-            if (!Store.strictOn(this@WatchdogService)) {
+            if (!Store.strictRaw(this@WatchdogService)) {
                 stopSelf()
                 return
             }

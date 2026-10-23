@@ -67,7 +67,7 @@ object BrowserScanner {
     /** Mencari semua aplikasi yang bisa membuka tautan web (browser) dan mencatatnya. */
     fun scan(c: Context) {
         try {
-            val i = Intent(Intent.ACTION_VIEW, Uri.parse("https://example.com"))
+            val i = Intent(Intent.ACTION_VIEW, Uri.parse("http://"))
                 .addCategory(Intent.CATEGORY_BROWSABLE)
             for (r in c.packageManager.queryIntentActivities(i, 0)) {
                 val p = r.activityInfo.packageName

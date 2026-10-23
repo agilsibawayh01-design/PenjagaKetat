@@ -2,6 +2,7 @@ package com.mas.strictguard
 
 import android.Manifest
 import android.app.Activity
+import android.app.KeyguardManager
 import android.app.TimePickerDialog
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
@@ -10,6 +11,10 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
+import android.net.Uri
+import android.os.PowerManager
+import android.text.Editable
+import android.text.TextWatcher
 import android.graphics.drawable.GradientDrawable
 import android.net.VpnService
 import android.os.Build
@@ -42,6 +47,9 @@ class MainActivity : Activity() {
     private var screen = "home"
     private var lastScreen = ""
     private var appQuery = ""
+    private var gateTyped = ""
+    private var credAsked = false
+    private var inCred = false
 
     private val C_BG = Color.parseColor("#F2F4F8")
     private val C_PRIMARY = Color.parseColor("#1E3A5F")
@@ -69,11 +77,12 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         Store.seed(this)
-        if (Store.strictOn(this) && !WatchdogService.running) WatchdogService.start(this)
-        render()
+        if (Store.strictRaw(this) && !WatchdogService.running) WatchdogService.start(this)
+        if (AppLock.needsAuth(this)) showLockScreen() else render()
     }
 
     override fun onPause() {
+        if (!inCred) credAsked = false
         handler.removeCallbacksAndMessages(null)
         super.onPause()
     }
@@ -232,6 +241,10 @@ class MainActivity : Activity() {
     private fun fmt(min: Int): String = String.format("%02d:%02d", min / 60, min % 60)
 
     private fun render() {
+        if (AppLock.needsAuth(this)) {
+            showLockScreen()
+            return
+        }
         val keepY = scroll.scrollY
         root.removeAllViews()
         cur = null
@@ -250,6 +263,7 @@ class MainActivity : Activity() {
                 }
                 "apps" -> renderApps(strict)
                 "words" -> {
+                    renderBrowsers(strict)
                     renderCategories(strict)
                     renderWords(strict)
                     renderFeeds(strict)
@@ -261,6 +275,7 @@ class MainActivity : Activity() {
                 }
                 "stats" -> renderStats(strict)
                 else -> {
+                    renderAppLock(strict)
                     renderFriend()
                     renderDetection()
                     renderMotivation(strict)
@@ -351,11 +366,12 @@ class MainActivity : Activity() {
         col.orientation = LinearLayout.VERTICAL
         col.setPadding(dp(14), 0, 0, 0)
         col.addView(text("Penjaga Ketat", 22f, true, Color.WHITE))
-        val line = (if (strict) "Mode Ketat AKTIF" else "Mode Ketat mati") + " • " +
+        val line = modeLabel() + " • " +
             (if (acc && adm) "perlindungan lengkap" else "perlu tindakan")
         col.addView(text(line, 12f, false, Color.argb(225, 255, 255, 255)))
         banner.addView(col)
         root.addView(banner)
+        renderModeSwitch()
 
         if (!acc || !adm) {
             header("Perlu tindakan")
@@ -381,7 +397,7 @@ class MainActivity : Activity() {
         val wordCount = Store.keywords(this).size + Store.domains(this).size
         val cats = Categories.enabled(this).size
         val tiles = listOf(
-            tile("🛡️", "Mode Ketat", if (strict) "AKTIF" else "Mati", Color.parseColor("#C62828"), "strict"),
+            tile("🛡️", "Mode & Ketat", modeLabel(), Color.parseColor("#C62828"), "strict"),
             tile("📱", "Aplikasi", "${Store.apps(this).size} diblokir", Color.parseColor("#1565C0"), "apps"),
             tile("🌐", "Situs & kata", "$wordCount aturan • $cats kategori", Color.parseColor("#6A1B9A"), "words"),
             tile("🗂️", "Profil", "$activeP aktif dari ${profiles.size}", Color.parseColor("#00796B"), "profiles"),
@@ -424,43 +440,173 @@ class MainActivity : Activity() {
         if (!adm) put(button("Aktifkan perlindungan uninstall") { requestAdmin() })
     }
 
+    private fun modeLabel(): String {
+        val raw = Store.strictRaw(this)
+        return when {
+            Store.pausedNow(this) -> "Mode OFF (jeda)"
+            raw && Store.strictOn(this) -> "Mode KETAT aktif"
+            raw -> "Mode Ketat terjadwal"
+            else -> "Mode Normal"
+        }
+    }
+
+    private fun fmtDur(min: Int): String = when {
+        min <= 0 -> "-"
+        min < 60 -> "$min menit"
+        min < 1440 -> (min / 60).toString() + " jam" + (if (min % 60 != 0) " " + (min % 60) + " menit" else "")
+        else -> (min / 1440).toString() + " hari"
+    }
+
+    private fun pill(label: String, selected: Boolean, color: Int, onClick: () -> Unit): TextView {
+        val t = TextView(this)
+        t.text = label
+        t.textSize = 14f
+        t.setTypeface(null, Typeface.BOLD)
+        t.gravity = Gravity.CENTER
+        t.setTextColor(if (selected) Color.WHITE else C_SUB)
+        t.background = bg(if (selected) color else Color.parseColor("#E6E9EF"), dp(12))
+        t.setPadding(dp(8), dp(12), dp(8), dp(12))
+        t.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+            setMargins(dp(3), 0, dp(3), 0)
+        }
+        t.setOnClickListener { onClick() }
+        return t
+    }
+
+    private fun renderModeSwitch() {
+        val raw = Store.strictRaw(this)
+        val paused = Store.pausedNow(this)
+        header("Mode")
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.addView(pill("Off", paused, Color.parseColor("#78909C")) {
+            if (raw) toast("Mode Ketat aktif. Keluar dulu lewat metode penonaktifan.") else pauseDialog()
+        })
+        row.addView(pill("Normal", !paused && !raw, C_PRIMARY) {
+            if (raw) toast("Mode Ketat aktif. Keluar dulu lewat metode penonaktifan.") else {
+                Store.pauseStop(this)
+                render()
+            }
+        })
+        row.addView(pill("Ketat", raw, C_BAD) {
+            if (screen != "strict") goScreen("strict") else toast("Atur metode penonaktifan di bawah, lalu tekan Aktifkan Mode Ketat.")
+        })
+        put(row)
+        val desc = when {
+            paused -> {
+                val left = Store.pauseLeftMin(this)
+                "OFF: semua blokir dijeda. " + (if (left >= 0L) "Berakhir sekitar $left menit lagi." else "Berlaku sampai kamu memilih Normal.")
+            }
+            raw && Store.strictOn(this) -> "KETAT aktif: pengaturan terkunci dan sulit dimatikan."
+            raw -> "KETAT terjadwal: sedang di luar jadwal, berperilaku seperti Normal."
+            else -> "NORMAL: blokir bekerja, pengaturan masih bebas diubah."
+        }
+        put(text(desc, 12f, false, C_SUB))
+        if (paused && Store.pauseLeftMin(this) >= 0L) handler.postDelayed({ render() }, 30000L)
+    }
+
+    private fun pauseDialog() {
+        val labels = arrayOf("15 menit", "30 menit", "1 jam", "2 jam", "4 jam", "Sampai saya nyalakan lagi")
+        val mins = intArrayOf(15, 30, 60, 120, 240, 0)
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Mode Off: jeda blokir")
+            .setItems(labels) { _, i ->
+                Store.pauseStart(this, mins[i])
+                render()
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    private fun methodRow(title: String, summary: String, enabled: Boolean, onClick: () -> Unit) {
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.gravity = Gravity.CENTER_VERTICAL
+        row.setPadding(0, dp(8), 0, dp(8))
+        val col = LinearLayout(this)
+        col.orientation = LinearLayout.VERTICAL
+        col.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        col.addView(text(title, 14f, true, if (enabled) C_TEXT else C_SUB))
+        col.addView(text(summary, 12f, false, C_SUB))
+        row.addView(col)
+        row.addView(text("›", 22f, true, C_SUB))
+        if (enabled) row.setOnClickListener { onClick() }
+        put(row)
+        put(View(this).apply {
+            setBackgroundColor(Color.parseColor("#E6E9EF"))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
+        })
+    }
+
     private fun renderStrict(strict: Boolean, ready: Boolean) {
+        val raw = Store.strictRaw(this)
+        renderModeSwitch()
+        header("Metode penonaktifan")
+        put(text(
+            if (raw) "Metode di bawah berlaku untuk keluar dari Mode Ketat dan terkunci selama Mode Ketat aktif."
+            else "Pilih bagaimana Mode Ketat dapat dinonaktifkan. Semua metode yang dipilih harus dipenuhi.",
+            12f, false, C_SUB
+        ))
+        val editable = !raw
+        val exp = Store.expireMin(this)
+        methodRow("Waktu kedaluwarsa", if (exp > 0) "Nonaktif otomatis setelah " + fmtDur(exp) else "Tidak ada", editable) { dialogExpire() }
+        methodRow("Kode QR", "Belum tersedia", false) {}
+        val sch = Store.strictSchedules(this)
+        methodRow(
+            "Dijadwalkan",
+            if (sch.isEmpty()) "Tidak ada (aktif terus)" else "Aktif hanya: " + sch.joinToString("; ") { "${fmt(it.start)}-${fmt(it.end)} ${dayNames(it.days)}" },
+            editable
+        ) { dialogStrictSchedule() }
+        val tl = Store.exitTextLen(this)
+        methodRow("Teks acak", if (tl > 0) "$tl huruf" else "Mati", editable) { dialogTextLen() }
+        methodRow(
+            "Jeda",
+            if (Store.exitWaitOn(this)) "Tunggu " + fmtDur(Store.exitDelayMin(this)) else "Mati",
+            editable
+        ) { dialogWait() }
+        methodRow(
+            "Persetujuan teman",
+            if (FriendApproval.isSet(this)) "Kode teman sudah diatur" else "Belum diatur (atur di Lainnya atau ketuk di sini)",
+            true
+        ) { friendDialog() }
+
         header("Mode Ketat")
-        if (!strict) {
+        if (!raw) {
             put(text("Mati. Semua pengaturan bisa diubah bebas.", 13f))
-            put(text("Waktu tunggu untuk keluar dari Mode Ketat (menit, 10 sampai 1440)", 12f))
-            val delay = EditText(this)
-            delay.inputType = InputType.TYPE_CLASS_NUMBER
-            delay.setText(Store.exitDelayMin(this).toString())
-            put(delay)
             put(button("Aktifkan Mode Ketat") {
                 if (!ready) {
                     toast("Aktifkan Aksesibilitas dan perlindungan uninstall dulu")
+                } else if (!Store.exitWaitOn(this) && Store.exitTextLen(this) == 0 && !FriendApproval.isSet(this)) {
+                    toast("Pilih minimal satu metode keluar: Jeda, Teks acak, atau Persetujuan teman")
                 } else {
-                    val d = (delay.text.toString().toIntOrNull() ?: 60).coerceIn(10, 1440)
-                    Store.setExitDelayMin(this, d)
                     Store.setStrict(this, true)
                     SafeTimer.cancel(this, "exit")
-                    Store.log(this, "Mode Ketat diaktifkan (tunggu keluar $d menit)")
+                    Store.log(this, "Mode Ketat diaktifkan")
                     WatchdogService.start(this)
                     render()
                 }
             })
             return
         }
-        put(text("AKTIF. Daftar blokir hanya bisa ditambah, tidak bisa dikurangi. Pengaturan lain terkunci. Aplikasi tidak bisa dicopot, dan halaman Pengaturan yang menyebut Penjaga Ketat diblokir.", 13f, true, Color.rgb(180, 0, 0)))
+        put(text(
+            if (strict) "AKTIF. Daftar blokir hanya bisa ditambah, tidak bisa dikurangi. Pengaturan lain terkunci. Aplikasi tidak bisa dicopot, dan halaman Pengaturan yang menyebut Penjaga Ketat diblokir."
+            else "Terjadwal: sedang di luar jadwal, jadi pengaturan bebas diubah sementara.",
+            13f, true, C_BAD
+        ))
+        val waitMin = if (Store.exitWaitOn(this)) Store.exitDelayMin(this) else 0
+        val textLen = Store.exitTextLen(this)
+        val friend = FriendApproval.isSet(this)
         if (!SafeTimer.isRunning(this, "exit")) {
-            val delay = Store.exitDelayMin(this)
-            put(button("Minta nonaktifkan (tunggu $delay menit)") {
+            put(button("Minta nonaktifkan" + (if (waitMin > 0) " (tunggu " + fmtDur(waitMin) + ")" else "")) {
                 SafeTimer.start(this, "exit")
                 Store.log(this, "Permintaan keluar Mode Ketat dimulai")
                 gateText = null
+                gateTyped = ""
                 render()
             })
             return
         }
-        val totalMs = Store.exitDelayMin(this) * 60000L
-        val left = totalMs - SafeTimer.elapsed(this, "exit")
+        val left = waitMin * 60000L - SafeTimer.elapsed(this, "exit")
         if (left > 0) {
             put(text("Permintaan nonaktif berjalan. Sisa ${left / 60000L + 1} menit. Waktu dihitung dari jam internal, jadi mengubah jam HP tidak mempercepatnya.", 14f, true))
             put(button("Batalkan permintaan") {
@@ -468,42 +614,305 @@ class MainActivity : Activity() {
                 render()
             })
             handler.postDelayed({ render() }, 30000L)
-        } else {
-            val code = gateText ?: Rules.randomText().also { gateText = it }
-            put(text("Waktu tunggu selesai. Ketik teks ini persis untuk menonaktifkan:", 13f))
-            put(text(code, 20f, true))
-            val input = EditText(this)
-            input.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-            put(input)
-            val friendInput = EditText(this)
-            if (FriendApproval.isSet(this)) {
-                put(text("Masukkan juga kode teman (teman harus ada di dekatmu):", 13f))
-                friendInput.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-                put(friendInput)
-                val lk = FriendApproval.lockedMinutes(this)
-                if (lk > 0L) put(text("Terkunci karena salah 3 kali. Coba lagi $lk menit lagi.", 12f, true, Color.rgb(180, 0, 0)))
+            return
+        }
+        var code = ""
+        var input: EditText? = null
+        if (textLen > 0) {
+            if (gateText == null || gateText!!.length != textLen) {
+                gateText = Rules.randomText(textLen)
+                gateTyped = ""
             }
-            put(button("Konfirmasi nonaktifkan") {
-                if (input.text.toString() == code) {
-                    if (FriendApproval.isSet(this) && !FriendApproval.verify(this, friendInput.text.toString())) {
-                        toast("Kode teman salah atau terkunci")
-                        render()
-                        return@button
-                    }
-                    Store.setStrict(this, false)
-                    SafeTimer.cancel(this, "exit")
-                    Store.log(this, "Mode Ketat dinonaktifkan")
-                    gateText = null
-                    render()
-                } else {
-                    toast("Teks tidak cocok")
+            code = gateText!!
+            put(text("Ketik teks ini persis ($textLen huruf, huruf besar dan kecil dibedakan):", 13f))
+            val shown = TextView(this)
+            shown.text = code
+            shown.textSize = 15f
+            shown.typeface = Typeface.MONOSPACE
+            shown.setTextColor(C_TEXT)
+            shown.setPadding(dp(10), dp(8), dp(10), dp(8))
+            put(scrollBox(if (textLen > 100) 170 else 90, shown))
+            val counter = text("0/$textLen", 12f, true, C_SUB)
+            put(counter)
+            val et = EditText(this)
+            et.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            et.minLines = 3
+            et.isLongClickable = false
+            et.setText(gateTyped)
+            counter.text = "${gateTyped.length}/$textLen"
+            et.addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}
+                override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
+                override fun afterTextChanged(s: Editable?) {
+                    gateTyped = s?.toString() ?: ""
+                    counter.text = "${gateTyped.length}/$textLen"
                 }
             })
-            put(button("Batalkan permintaan") {
-                SafeTimer.cancel(this, "exit")
-                gateText = null
+            put(et)
+            input = et
+        }
+        val friendInput = EditText(this)
+        if (friend) {
+            put(text("Masukkan juga kode teman (teman harus ada di dekatmu):", 13f))
+            friendInput.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            put(friendInput)
+            val lk = FriendApproval.lockedMinutes(this)
+            if (lk > 0L) put(text("Terkunci karena salah 3 kali. Coba lagi $lk menit lagi.", 12f, true, C_BAD))
+        }
+        if (textLen == 0 && !friend) put(text("Waktu tunggu selesai.", 13f))
+        put(button("Konfirmasi nonaktifkan") {
+            if (textLen > 0 && (input?.text?.toString() ?: "") != code) {
+                toast("Teks tidak cocok")
+                return@button
+            }
+            if (friend && !FriendApproval.verify(this, friendInput.text.toString())) {
+                toast("Kode teman salah atau terkunci")
+                return@button
+            }
+            Store.setStrict(this, false)
+            SafeTimer.cancel(this, "exit")
+            Store.log(this, "Mode Ketat dinonaktifkan")
+            gateText = null
+            gateTyped = ""
+            render()
+        })
+        put(button("Batalkan permintaan") {
+            SafeTimer.cancel(this, "exit")
+            gateText = null
+            gateTyped = ""
+            render()
+        })
+    }
+
+    private fun dialogExpire() {
+        val labels = arrayOf("Tidak ada (manual)", "1 jam", "3 jam", "6 jam", "12 jam", "1 hari", "3 hari", "7 hari", "14 hari", "30 hari")
+        val mins = intArrayOf(0, 60, 180, 360, 720, 1440, 4320, 10080, 20160, 43200)
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Waktu kedaluwarsa")
+            .setItems(labels) { _, i ->
+                Store.setExpireMin(this, mins[i])
                 render()
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    private fun dialogStrictSchedule() {
+        val sch = Store.strictSchedules(this)
+        val msg = if (sch.isEmpty()) "Belum ada jadwal: Mode Ketat aktif terus."
+        else sch.joinToString("\n") { "${fmt(it.start)}-${fmt(it.end)} ${dayNames(it.days)}" }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Jadwal Mode Ketat")
+            .setMessage(msg + "\n\nDi luar jadwal, Mode Ketat berperilaku seperti Normal.")
+            .setPositiveButton("Tambah jadwal") { _, _ ->
+                editSchedule { s ->
+                    Store.setStrictSchedules(this, Store.strictSchedules(this) + s)
+                    render()
+                }
+            }
+            .setNeutralButton("Hapus semua") { _, _ ->
+                Store.setStrictSchedules(this, emptyList())
+                render()
+            }
+            .setNegativeButton("Tutup", null)
+            .show()
+    }
+
+    private fun dialogTextLen() {
+        val lens = intArrayOf(0, 10, 50, 100, 200, 500, 600, 2000)
+        val labels = lens.map { if (it == 0) "Mati (tanpa teks acak)" else "$it huruf" }.toTypedArray()
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Panjang teks acak")
+            .setItems(labels) { _, i ->
+                Store.setExitTextLen(this, lens[i])
+                gateText = null
+                gateTyped = ""
+                render()
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    private fun dialogWait() {
+        val box = LinearLayout(this)
+        box.orientation = LinearLayout.VERTICAL
+        box.setPadding(dp(20), dp(8), dp(20), dp(8))
+        val cb = CheckBox(this)
+        cb.text = "Pakai waktu tunggu"
+        cb.isChecked = Store.exitWaitOn(this)
+        box.addView(cb)
+        box.addView(text("Menit tunggu (10 sampai 1440)", 12f))
+        val f = numberField(Store.exitDelayMin(this))
+        box.addView(f)
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Jeda")
+            .setView(box)
+            .setPositiveButton("Simpan") { _, _ ->
+                Store.setExitWaitOn(this, cb.isChecked)
+                Store.setExitDelayMin(this, (f.text.toString().toIntOrNull() ?: 60).coerceIn(10, 1440))
+                render()
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    // ---- Kunci aplikasi ----
+    private fun showLockScreen() {
+        root.removeAllViews()
+        cur = null
+        val logo = ImageView(this)
+        logo.setImageResource(R.drawable.ic_logo)
+        logo.layoutParams = LinearLayout.LayoutParams(dp(88), dp(88)).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+            topMargin = dp(60)
+        }
+        root.addView(logo)
+        root.addView(text("Penjaga Ketat terkunci", 20f, true).apply { gravity = Gravity.CENTER })
+        if (AppLock.mode(this) == 2) {
+            root.addView(text("Gunakan kunci layar HP untuk membuka.", 13f, false, C_SUB).apply { gravity = Gravity.CENTER })
+            root.addView(button("Buka dengan kunci layar") { askCredential() })
+            if (!credAsked) {
+                credAsked = true
+                askCredential()
+            }
+        } else {
+            root.addView(text("Masukkan PIN", 13f, false, C_SUB).apply { gravity = Gravity.CENTER })
+            val pin = EditText(this)
+            pin.inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
+            pin.gravity = Gravity.CENTER
+            pin.textSize = 22f
+            root.addView(pin)
+            val lk = AppLock.lockedMinutes(this)
+            if (lk > 0L) root.addView(text("Terkunci karena salah 5 kali. Coba lagi $lk menit lagi.", 12f, true, C_BAD).apply { gravity = Gravity.CENTER })
+            root.addView(button("Buka") {
+                if (AppLock.verifyPin(this, pin.text.toString())) {
+                    render()
+                } else {
+                    toast(if (AppLock.lockedMinutes(this) > 0L) "Terkunci sementara" else "PIN salah")
+                    showLockScreen()
+                }
             })
+        }
+    }
+
+    private fun askCredential() {
+        val km = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+        val i = km.createConfirmDeviceCredentialIntent("Penjaga Ketat", "Masukkan kunci layar untuk membuka")
+        if (i == null) {
+            AppLock.setMode(this, 0)
+            toast("Kunci layar HP belum diatur, kunci aplikasi dimatikan")
+            render()
+        } else {
+            inCred = true
+            startActivityForResult(i, 88)
+        }
+    }
+
+    private fun renderAppLock(strict: Boolean) {
+        header("Kunci aplikasi")
+        put(text("Mencegah orang lain membuka Penjaga Ketat. Pilih PIN sendiri atau kunci layar HP (PIN, pola, sidik jari). Setelah dibuka, aplikasi tidak meminta lagi selama 1 menit.", 12f, false, C_SUB))
+        val mode = AppLock.mode(this)
+        status(mode != 0, when (mode) {
+            1 -> "Kunci aktif: PIN"
+            2 -> "Kunci aktif: kunci layar HP"
+            else -> "Kunci aplikasi mati"
+        })
+        put(button(if (AppLock.hasPin(this)) "Ganti PIN" else "Pakai PIN") { pinDialog() })
+        put(button("Pakai kunci layar HP") {
+            val km = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+            if (!km.isDeviceSecure) {
+                toast("HP belum punya kunci layar. Atur dulu di Pengaturan.")
+            } else {
+                AppLock.setMode(this, 2)
+                AppLock.markUnlocked()
+                render()
+            }
+        })
+        if (mode != 0) {
+            put(button("Matikan kunci aplikasi") {
+                if (strict) {
+                    toast("Mode Ketat aktif: kunci aplikasi tidak bisa dimatikan")
+                } else if (mode == 1) {
+                    val et = EditText(this)
+                    et.inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
+                    et.hint = "PIN saat ini"
+                    android.app.AlertDialog.Builder(this)
+                        .setTitle("Matikan kunci aplikasi")
+                        .setView(et)
+                        .setPositiveButton("Matikan") { _, _ ->
+                            if (AppLock.verifyPin(this, et.text.toString())) {
+                                AppLock.turnOff(this)
+                            } else {
+                                toast("PIN salah atau terkunci")
+                            }
+                            render()
+                        }
+                        .setNegativeButton("Batal", null)
+                        .show()
+                } else {
+                    AppLock.turnOff(this)
+                    render()
+                }
+            })
+        }
+    }
+
+    private fun pinDialog() {
+        val box = LinearLayout(this)
+        box.orientation = LinearLayout.VERTICAL
+        box.setPadding(dp(20), dp(8), dp(20), dp(8))
+        val pw = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
+        val old = EditText(this)
+        old.inputType = pw
+        old.hint = "PIN lama"
+        if (AppLock.hasPin(this)) box.addView(old)
+        val n1 = EditText(this)
+        n1.inputType = pw
+        n1.hint = "PIN baru (4 sampai 8 angka)"
+        box.addView(n1)
+        val n2 = EditText(this)
+        n2.inputType = pw
+        n2.hint = "Ulangi PIN baru"
+        box.addView(n2)
+        android.app.AlertDialog.Builder(this)
+            .setTitle("PIN aplikasi")
+            .setView(box)
+            .setPositiveButton("Simpan") { _, _ ->
+                if (AppLock.hasPin(this) && !AppLock.verifyPin(this, old.text.toString())) {
+                    toast("PIN lama salah atau terkunci")
+                } else if (n1.text.toString() != n2.text.toString()) {
+                    toast("PIN tidak sama")
+                } else {
+                    val err = AppLock.setPin(this, n1.text.toString())
+                    if (err == null) AppLock.markUnlocked()
+                    toast(err ?: "PIN tersimpan")
+                }
+                render()
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    private fun renderBrowsers(strict: Boolean) {
+        header("Browser")
+        put(text("Hanya Chrome yang didukung. Browser lain, termasuk yang baru dipasang, otomatis diblokir.", 12f, false, C_SUB))
+        val cb = CheckBox(this)
+        cb.text = "Blokir browser selain Chrome"
+        cb.isChecked = Store.blockOtherBrowsers(this)
+        cb.setOnClickListener {
+            if (!cb.isChecked && strict) {
+                toast("Mode Ketat aktif: tidak bisa dimatikan")
+            } else {
+                Store.setBlockOtherBrowsers(this, cb.isChecked)
+            }
+            render()
+        }
+        put(cb)
+        val list = Store.unsupportedBrowsers(this)
+        if (list.isEmpty()) {
+            put(text("Tidak ada browser lain terdeteksi.", 12f, false, C_SUB))
+        } else {
+            for (p in list.sorted()) put(text("• " + appLabel(p), 12f, false, C_SUB))
         }
     }
 
@@ -1302,6 +1711,18 @@ class MainActivity : Activity() {
         if (pdns == "hostname") {
             put(text("Peringatan: Private DNS di HP diatur ke nama host tertentu, sehingga melewati filter ini. Ubah ke Otomatis atau Mati di Pengaturan.", 12f, true, Color.rgb(180, 0, 0)))
         }
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        val batteryOk = pm.isIgnoringBatteryOptimizations(packageName)
+        status(batteryOk, "Boleh berjalan di latar belakang tanpa dibatasi baterai")
+        if (!batteryOk) {
+            put(button("Izinkan berjalan di latar belakang") {
+                try {
+                    startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
+                } catch (t: Throwable) {
+                    startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                }
+            })
+        }
         put(text("Batasan: aplikasi yang memakai DNS terenkripsinya sendiri (mis. pengaturan DNS aman di Chrome ke penyedia lain) bisa lolos. Untuk menjaga VPN tidak dilepas, nyalakan juga VPN Selalu Aktif di Pengaturan > Jaringan > VPN.", 11f))
     }
 
@@ -1323,6 +1744,16 @@ class MainActivity : Activity() {
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 88) {
+            inCred = false
+            if (resultCode == RESULT_OK) {
+                AppLock.markUnlocked()
+                credAsked = false
+            } else {
+                credAsked = true
+            }
+            return
+        }
         if (requestCode == 77 && resultCode == RESULT_OK) {
             Store.setVpnOn(this, true)
             DnsVpnService.start(this)
@@ -1426,7 +1857,7 @@ class MainActivity : Activity() {
 
     private fun renderFeeds(strict: Boolean) {
         header("Feed video pendek")
-        put(text("Mencoba menutup Shorts YouTube dan Reels Instagram. Bergantung pada tampilan aplikasi, jadi bisa meleset setelah aplikasinya diperbarui.", 12f))
+        put(text("Mencoba menutup Shorts YouTube dan Reels Instagram (Stories Instagram tidak ikut diblokir). Bergantung pada tampilan aplikasi, jadi bisa meleset setelah aplikasinya diperbarui.", 12f))
         val s = Store.blockShorts(this)
         val r = Store.blockReels(this)
         fun change(sv: Boolean, rv: Boolean) {
@@ -1443,7 +1874,7 @@ class MainActivity : Activity() {
             setOnClickListener { change(isChecked, r) }
         })
         put(CheckBox(this).apply {
-            text = "Blokir Reels Instagram"
+            text = "Blokir Reels Instagram (bukan Stories)"
             isChecked = r
             setOnClickListener { change(s, isChecked) }
         })

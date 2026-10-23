@@ -25,11 +25,19 @@ class GuardService : AccessibilityService() {
     private var profiles: List<Profile> = emptyList()
     private var limitPkg = ""
     private var backing = false
+    private var strictNow = false
+    private var pausedNow = false
+    private var blockedBrowsers: Set<String> = emptySet()
+    private var browsersAt = 0L
 
     private val limitRunnable = object : Runnable {
         override fun run() {
             val p = limitPkg
             if (p.isEmpty()) return
+            if (pausedNow) {
+                limitPkg = ""
+                return
+            }
             try {
                 if (Foreground.hasUsageAccess(this@GuardService) && Foreground.current(this@GuardService) == p) {
                     val v = BlockEngine.check(this@GuardService, p, System.currentTimeMillis(), apps, profiles)
@@ -65,7 +73,7 @@ class GuardService : AccessibilityService() {
         }
         BrowserScanner.scan(this)
         TimeGuard.check(this)
-        if (Store.strictOn(this)) WatchdogService.start(this)
+        if (Store.strictRaw(this)) WatchdogService.start(this)
     }
 
     override fun onDestroy() {
@@ -83,6 +91,12 @@ class GuardService : AccessibilityService() {
     private fun refreshCache(now: Long) {
         if (now - cacheAt < 1500L) return
         cacheAt = now
+        strictNow = Store.strictOn(this)
+        pausedNow = Store.pausedNow(this)
+        if (now - browsersAt > 30000L) {
+            browsersAt = now
+            blockedBrowsers = if (Store.blockOtherBrowsers(this)) Store.unsupportedBrowsers(this) else emptySet()
+        }
         apps = Store.apps(this)
         profiles = ProfileStore.load(this)
         val active = profiles.filter { ProfileEngine.isActive(this, it) }
@@ -118,7 +132,13 @@ class GuardService : AccessibilityService() {
         val now = System.currentTimeMillis()
         refreshCache(now)
         TimeGuard.check(this)
-        if (backing) return
+        if (backing || pausedNow) return
+
+        // 0. Browser selain Chrome tidak didukung
+        if (pkg in blockedBrowsers) {
+            startBlock("browser", pkg)
+            return
+        }
 
         // 1. Blokir aplikasi
         val verdict = BlockEngine.check(this, pkg, now, apps, profiles)
@@ -140,7 +160,7 @@ class GuardService : AccessibilityService() {
         }
 
         // 3. Lindungi pengaturan saat Mode Ketat aktif
-        if (Store.strictOn(this) && pkg in Config.PROTECTED && now - lastProtectAt > 500L) {
+        if (strictNow && pkg in Config.PROTECTED && now - lastProtectAt > 500L) {
             lastProtectAt = now
             val root = rootInActiveWindow
             if (root != null && showsProtected(root)) {
@@ -157,22 +177,36 @@ class GuardService : AccessibilityService() {
             return
         }
 
-        // 5. Feed video pendek
-        val feedWanted = (pkg == Config.YOUTUBE && Store.blockShorts(this)) ||
-            (pkg == Config.INSTAGRAM && Store.blockReels(this))
-        if (feedWanted && now - lastFeedAt > 600L) {
+        // 5. Feed video pendek (Shorts YouTube, Reels Instagram tanpa Stories)
+        val ytWanted = pkg == Config.YOUTUBE && Store.blockShorts(this)
+        val igWanted = pkg == Config.INSTAGRAM && Store.blockReels(this)
+        if ((ytWanted || igWanted) && now - lastFeedAt > 600L) {
             lastFeedAt = now
             val root = rootInActiveWindow ?: return
+            var hit = false
             for (n in collect(root, 500)) {
                 val id = (n.viewIdResourceName ?: "").lowercase()
                 if (id.isEmpty()) continue
-                if (Config.FEED_IDS.any { id.contains(it) }) {
-                    if (now - lastBackAt > 800L) {
-                        lastBackAt = now
-                        performGlobalAction(GLOBAL_ACTION_BACK)
+                if (ytWanted) {
+                    if (Config.YT_IDS.any { id.contains(it) }) {
+                        hit = true
+                        break
                     }
-                    return
+                } else {
+                    if (id.contains("reel_viewer") || id.contains("story")) continue
+                    if (Config.IG_IDS.any { id.contains(it) }) {
+                        hit = true
+                        break
+                    }
+                    if (id.contains(Config.IG_REELS_TAB) && n.isSelected) {
+                        hit = true
+                        break
+                    }
                 }
+            }
+            if (hit && now - lastBackAt > 800L) {
+                lastBackAt = now
+                performGlobalAction(GLOBAL_ACTION_BACK)
             }
         }
     }
