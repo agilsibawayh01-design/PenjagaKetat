@@ -36,45 +36,63 @@ class GuardService : AccessibilityService() {
             try {
                 val now = System.currentTimeMillis()
                 refreshCache(now)
-                // Notifikasi timer harus tetap hidup walau BlockActivity/PenjagaKetat sedang menjadi foreground.
-                val activeAppWait = WaitTimer.active(this@GuardService, now)
-                val activeSiteWait = SiteTracker.activeWait(this@GuardService, now)
-                when {
-                    activeAppWait != null -> {
-                        val label = try {
-                            packageManager.getApplicationLabel(packageManager.getApplicationInfo(activeAppWait.first, 0)).toString()
-                        } catch (_: Exception) { activeAppWait.first }
-                        TimerNotifier.show(this@GuardService, label, activeAppWait.second)
-                    }
-                    activeSiteWait != null -> TimerNotifier.show(this@GuardService, activeSiteWait.first, activeSiteWait.second)
-                    else -> TimerNotifier.cancel(this@GuardService)
-                }
+
+                // Timer internal tetap diproses agar siklus 5 -> 30 tetap berjalan.
+                // Notifikasi hanya menampilkan SISA WAKTU PENGGUNAAN,
+                // bukan countdown masa tunggu.
+                WaitTimer.active(this@GuardService, now)
+                SiteTracker.activeWait(this@GuardService, now)
+
+                var usageTimerShown = false
 
                 if (!backing && !pausedNow && Foreground.hasUsageAccess(this@GuardService)) {
                     val p = Foreground.current(this@GuardService)
                     if (p.isNotEmpty() && p != packageName && p !in Config.IGNORED) {
                         if (p in browsers) {
                             if (checkWebsiteRule(p, rootInActiveWindow, now)) {
+                                TimerNotifier.cancel(this@GuardService)
                                 handler.postDelayed(this, 2000L)
                                 return
                             }
                         }
+
                         if (p in blockedBrowsers) {
                             startBlock("browser", p)
                         } else {
                             val verdict = BlockEngine.check(this@GuardService, p, now, apps, profiles)
                             val cfg = Store.appCfg(this@GuardService, p)
                             val label = try {
-                                packageManager.getApplicationLabel(packageManager.getApplicationInfo(p, 0)).toString()
+                                packageManager.getApplicationLabel(
+                                    packageManager.getApplicationInfo(p, 0)
+                                ).toString()
                             } catch (_: Exception) { p }
+
                             if (cfg.twUse > 0 && cfg.twWait > 0) {
-                                val left = WaitTimer.remaining(this@GuardService, p, cfg, now)
-                                if (left > 0L && activeAppWait == null) TimerNotifier.show(this@GuardService, label, left)
+                                // Mempertahankan logika siklus lama. Bila batas penggunaan
+                                // tercapai, remaining() akan memulai masa tunggu.
+                                val waitLeft = WaitTimer.remaining(
+                                    this@GuardService, p, cfg, now
+                                )
+
+                                if (waitLeft <= 0L) {
+                                    val useLeft = WaitTimer.useRemainingMs(
+                                        this@GuardService, p, cfg
+                                    )
+                                    if (useLeft > 0L) {
+                                        TimerNotifier.showUsage(
+                                            this@GuardService, label, useLeft
+                                        )
+                                        usageTimerShown = true
+                                    }
+                                }
                             }
+
                             if (verdict != null) startBlock(verdict, p)
                         }
                     }
                 }
+
+                if (!usageTimerShown) TimerNotifier.cancel(this@GuardService)
             } catch (_: Throwable) {
                 // Jangan pernah membuat AccessibilityService crash karena pemeriksaan timer.
             }
@@ -350,7 +368,9 @@ class GuardService : AccessibilityService() {
         }
         val left = SiteTracker.remaining(this, domain, cfg, now)
         if (left > 0L) {
-            TimerNotifier.show(this, domain, left)
+            // Masa tunggu website tetap berjalan, tetapi tidak ditampilkan sebagai
+            // "Timer tunggu" di notifikasi.
+            TimerNotifier.cancel(this)
             startBlock("site_wait", pkg)
             return true
         }
