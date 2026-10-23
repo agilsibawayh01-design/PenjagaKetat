@@ -11,4 +11,8 @@ data class SiteCfg(
     val twUse: Int = 0,
     val twWait: Int = 0,
     val twAdaptive: Boolean = true
-)
+) {
+    /** True bila situs diblokir penuh (mode 0), atau hanya dibatasi jadwal tanpa batas pemakaian/timer tunggu. */
+    val blocksFully: Boolean
+        get() = mode == 0 || (schOn && limitMin <= 0 && hourLimit <= 0 && (twUse <= 0 || twWait <= 0))
+}

@@ -1937,11 +1937,14 @@ class MainActivity : Activity() {
 
         // Mode UI: 0 = penuh, 1 = jadwal, 2 = batas penggunaan, 3 = timer tunggu.
         // Penyimpanan tetap kompatibel dengan SiteCfg lama: mode 0 = penuh, mode 1 = aturan khusus.
+        // Dikunci Mode Ketat: situs yang sudah ada tidak boleh diubah. Tampilan harus mencerminkan nilai tersimpan.
+        val locked = strict && !isNew
         val initialMode = when {
-            cfg.mode == 0 -> 0
             cfg.twUse > 0 && cfg.twWait > 0 -> 3
+            cfg.mode == 0 && !cfg.schOn -> 0
             cfg.limitMin > 0 || cfg.hourLimit > 0 -> 2
             cfg.schOn -> 1
+            cfg.mode == 0 -> 0
             else -> 1
         }
 
@@ -1970,12 +1973,12 @@ class MainActivity : Activity() {
 
         // Pada situs lama saat Mode Ketat aktif, pertahankan aturan lama: hanya Blokir penuh.
         // Situs baru tidak dikunci karena pengguna belum memasukkannya ke daftar.
-        if (strict && !isNew && existing != null) {
-            rbFull.isChecked = true
+        if (locked) {
+            rbFull.isEnabled = false
             rbSchedule.isEnabled = false
             rbLimit.isEnabled = false
             rbTimer.isEnabled = false
-            box.addView(text("Mode Ketat aktif: situs yang sudah ada di daftar hanya dapat dipertahankan sebagai Blokir penuh.", 11f, false, C_SUB))
+            box.addView(text("Mode Ketat aktif: aturan situs ini terkunci dan tidak bisa diubah. Yang tampil adalah aturan yang tersimpan.", 11f, false, C_SUB))
         }
 
         val detailBox = LinearLayout(this).apply {
@@ -2024,6 +2027,16 @@ class MainActivity : Activity() {
         detailBox.addView(twBody)
         box.addView(detailBox)
 
+        if (locked) {
+            startBtn.isEnabled = false
+            endBtn.isEnabled = false
+            limit.isEnabled = false
+            hour.isEnabled = false
+            twUse.isEnabled = false
+            twWait.isEnabled = false
+            adaptive.isEnabled = false
+        }
+
         fun updateDetails(mode: Int) {
             scheduleBody.visibility = if (mode == 1) View.VISIBLE else View.GONE
             limitBody.visibility = if (mode == 2) View.VISIBLE else View.GONE
@@ -2044,7 +2057,8 @@ class MainActivity : Activity() {
         android.app.AlertDialog.Builder(this)
             .setTitle(if (isNew) "Atur blokir situs" else "Atur blokir situs")
             .setView(ScrollView(this).apply { addView(box) })
-            .setPositiveButton("Simpan") { _, _ ->
+            .setPositiveButton(if (locked) "Tutup" else "Simpan") { _, _ ->
+                if (locked) return@setPositiveButton
                 fun num(e: EditText, max: Int) = (e.text.toString().toIntOrNull() ?: 0).coerceIn(0, max)
                 val selected = when {
                     rbSchedule.isChecked -> 1
@@ -2073,14 +2087,9 @@ class MainActivity : Activity() {
                     toast("Isi timer penggunaan dan timer tunggu terlebih dahulu")
                     return@setPositiveButton
                 }
-                if (strict && !isNew && existing != null) {
-                    // Situs lama di Mode Ketat harus tetap penuh.
-                    Store.setSiteCfg(this, domain, newCfg.copy(mode = 0, schOn = false, limitMin = 0, hourLimit = 0, twUse = 0, twWait = 0))
-                } else {
-                    // Situs baru baru masuk daftar setelah konfigurasi benar-benar disimpan.
-                    Store.addDomain(this, domain)
-                    Store.setSiteCfg(this, domain, newCfg)
-                }
+                // Simpan konfigurasi dulu, baru masukkan domain ke daftar (tanpa jeda blokir penuh sementara).
+                Store.setSiteCfg(this, domain, newCfg)
+                Store.addDomain(this, domain)
                 if (newCfg.twUse > 0 && newCfg.twWait > 0 && Build.VERSION.SDK_INT >= 33 &&
                     checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
                 ) {

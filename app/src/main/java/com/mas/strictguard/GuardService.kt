@@ -10,6 +10,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 class GuardService : AccessibilityService() {
     private val handler = Handler(Looper.getMainLooper())
     private var lastBlockAt = 0L
+    private var blockDomain = ""
     private var lastScanAt = 0L
     private var lastFeedAt = 0L
     private var lastBackAt = 0L
@@ -41,6 +42,7 @@ class GuardService : AccessibilityService() {
                 if (!backing && !pausedNow && Foreground.hasUsageAccess(this@GuardService)) {
                     val p = Foreground.current(this@GuardService)
                     if (p.isNotEmpty() && p != packageName && p !in Config.IGNORED) {
+                        var siteShown = false
                         if (p in browsers) {
                             if (checkWebsiteRule(p, rootInActiveWindow, now)) {
                                 TimerNotifier.cancel(this@GuardService)
@@ -57,6 +59,7 @@ class GuardService : AccessibilityService() {
                                     val leftUse = SiteTracker.remainingUseMs(this@GuardService, domain, scfg)
                                     if (leftUse > 0L) {
                                         TimerNotifier.show(this@GuardService, domain, leftUse)
+                                        siteShown = true
                                     } else {
                                         TimerNotifier.cancel(this@GuardService)
                                     }
@@ -81,8 +84,8 @@ class GuardService : AccessibilityService() {
                             } else if (cfg.twUse > 0 && cfg.twWait > 0) {
                                 val leftUse = WaitTimer.remainingUseMs(this@GuardService, p, cfg, now)
                                 if (leftUse > 0L) TimerNotifier.show(this@GuardService, label, leftUse)
-                                else TimerNotifier.cancel(this@GuardService)
-                            } else {
+                                else if (!siteShown) TimerNotifier.cancel(this@GuardService)
+                            } else if (!siteShown) {
                                 TimerNotifier.cancel(this@GuardService)
                             }
                         }
@@ -353,16 +356,19 @@ class GuardService : AccessibilityService() {
         SiteTracker.tick(this, domain)
         val cfg = Store.siteCfgOrNull(this, domain) ?: return false
         if (cfg.schOn && !Rules.scheduleActive(cfg.start, cfg.end, cfg.days)) return false
-        if (cfg.mode == 0) {
+        if (cfg.blocksFully) {
+            blockDomain = domain
             startBlock("site", pkg)
             return true
         }
         if (cfg.limitMin > 0 && SiteTracker.todayMs(this, domain) >= cfg.limitMin * 60000L) {
+            blockDomain = domain
             startBlock("site", pkg)
             return true
         }
         val left = SiteTracker.remaining(this, domain, cfg, now)
         if (left > 0L) {
+            blockDomain = domain
             startBlock("site_wait", pkg)
             return true
         }
@@ -437,7 +443,7 @@ class GuardService : AccessibilityService() {
         }
         val shown = if (mode == "typed") "content" else mode
         val domain = if (mode == "site" || mode == "site_wait") {
-            SiteTracker.currentDomain(rootInActiveWindow, Store.domains(this)) ?: ""
+            blockDomain.ifEmpty { SiteTracker.currentDomain(rootInActiveWindow, Store.domains(this)) ?: "" }
         } else ""
         val i = Intent(this, BlockActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION)

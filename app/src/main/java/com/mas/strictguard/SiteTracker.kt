@@ -44,7 +44,7 @@ object SiteTracker {
         if (d.isEmpty()) return
         sp(c).edit().putLong(baseKey(d), todayMs(c, d)).putLong(untilKey(d), 0L).putLong(startKey(d), 0L).putInt(attKey(d), 0).apply()
     }
-    fun remaining(c: Context, domainRaw: String, r: SiteCfg, now: Long): Long {
+    @Synchronized fun remaining(c: Context, domainRaw: String, r: SiteCfg, now: Long): Long {
         val d = norm(domainRaw)
         if (d.isEmpty() || r.twUse <= 0 || r.twWait <= 0 || !Rules.dayActive(c, r.days)) return 0L
         val p = sp(c); var base = p.getLong(baseKey(d), -1L); val used = todayMs(c, d)
@@ -70,7 +70,7 @@ object SiteTracker {
         if (r.schOn && !Rules.scheduleActive(r.start, r.end, r.days)) return null
         if (remaining(c, d, r, now) > 0L) return "site_wait"
         if (r.limitMin > 0 && todayMs(c, d) >= r.limitMin * 60000L) return "site_limit"
-        if (r.mode == 0) return "site_full"
+        if (r.blocksFully) return "site_full"
         return null
     }
     fun shouldDnsBlock(c: Context, domain: String): Boolean {
