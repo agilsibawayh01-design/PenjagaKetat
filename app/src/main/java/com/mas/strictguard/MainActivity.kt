@@ -118,9 +118,9 @@ class MainActivity : Activity() {
     private fun newCard(): LinearLayout {
         val c = LinearLayout(this)
         c.orientation = LinearLayout.VERTICAL
-        c.setPadding(dp(16), dp(12), dp(16), dp(14))
-        c.background = bg(C_CARD, dp(16))
-        c.elevation = dp(2).toFloat()
+        c.setPadding(dp(18), dp(14), dp(18), dp(16))
+        c.background = bg(C_CARD, dp(20)).apply { if (night) setStroke(dp(1), C_CHIP) }
+        c.elevation = if (night) 0f else dp(1).toFloat()
         val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         lp.bottomMargin = dp(12)
         c.layoutParams = lp
@@ -137,8 +137,48 @@ class MainActivity : Activity() {
         val card = newCard()
         root.addView(card)
         cur = card
-        card.addView(text(s, 16f, true, C_PRIMARY).apply { setPadding(0, 0, 0, dp(6)) })
+        val help = HELP[s]
+        card.addView(text(s, 16f, true, C_PRIMARY).apply { setPadding(0, 0, 0, if (help != null) dp(1) else dp(6)) })
+        if (help != null) card.addView(text(help, 12f, false, C_SUB).apply { setPadding(0, 0, 0, dp(8)) })
     }
+
+    private val HELP: Map<String, String> = mapOf(
+        "Mode" to "Pilih Off (jeda), Normal, atau Ketat (terkunci).",
+        "Mode Ketat" to "Mengunci pengaturan agar sulit dimatikan saat godaan datang.",
+        "Metode penonaktifan" to "Cara keluar dari Mode Ketat: menunggu, mengetik teks, atau kode teman.",
+        "Status perlindungan" to "Cek apakah semua perlindungan diri masih berfungsi.",
+        "Perlindungan diri" to "Pemulih otomatis aksesibilitas dan izin yang dibutuhkan.",
+        "Lindungi aplikasi lain dari uninstall" to "Aplikasi lain yang ikut dijaga agar tidak dicopot.",
+        "Kunci aplikasi" to "PIN atau kunci layar HP untuk membuka Penjaga Ketat.",
+        "Persetujuan teman" to "Kode teman sebagai syarat tambahan keluar dari Mode Ketat.",
+        "Teks motivasi" to "Kalimat yang muncul di layar blokir.",
+        "Aplikasi baru" to "Blokir otomatis aplikasi yang baru dipasang.",
+        "Browser" to "Pilih browser yang dipantau untuk blokir situs.",
+        "Kategori situs" to "Blokir satu kelompok topik, mis. dewasa dan judi.",
+        "Kata kunci" to "Blokir halaman yang memuat kata tertentu.",
+        "VPN DNS (filter situs untuk semua aplikasi)" to "Menyaring situs di semua aplikasi lewat DNS.",
+        "Kontrol notifikasi" to "Menghapus notifikasi aplikasi yang sedang diblokir.",
+        "Pengingat waktu hampir habis" to "Peringatan 1 menit sebelum waktu penggunaan habis.",
+        "Backup dan restore" to "Simpan atau pulihkan semua aturan, bisa ke Google Drive.",
+        "Blokir bagian aplikasi sosmed" to "Tutup Shorts, Reels, Cerita, dan Pencarian tanpa memblokir aplikasinya.",
+        "Rekam layar (untuk memperbaiki deteksi)" to "Membantu memperbaiki deteksi bagian aplikasi.",
+        "Sekarang" to "Profil berjadwal yang sedang berjalan dan jadwal berikutnya.",
+        "Per hari" to "Ringkasan jadwal Senin sampai Minggu.",
+        "Profil" to "Kelompok aturan yang bisa dijadwalkan (Kerja, Tidur, dll.).",
+        "Pemberitahuan" to "Notifikasi saat jadwal profil mulai dan selesai.",
+        "Hari ini" to "Ringkasan pemakaian dan blokir hari ini.",
+        "Mode Fokus" to "Sesi waktu tertentu yang menutup aplikasi dan situs pemicu.",
+        "Pengecualian (ALLOW)" to "Aplikasi atau situs yang tidak terkena aturan Fokus.",
+        "Diblokir saat Fokus" to "Daftar yang ditutup selama sesi Fokus.",
+        "Akses Penggunaan" to "Izin untuk mengenali aplikasi yang sedang dibuka.",
+        "Catatan perlindungan" to "Riwayat kejadian penting dan percobaan pembongkaran.",
+        "Riwayat pass" to "Pemakaian pass sementara belakangan ini.",
+        "Perlu tindakan" to "Perlindungan belum lengkap. Selesaikan agar Penjaga Ketat bekerja.",
+        "🛡️ Keyword Bawaan PenjagaKetat" to "Daftar kata bawaan; bisa dimatikan satu per satu.",
+        "🕘 Riwayat Situs" to "Situs yang baru dibuka di browser, bisa langsung diblokir.",
+        "🔗 Keyword URL" to "Kata yang diperiksa di alamat situs.",
+        "📱 Keyword Layar" to "Kata yang diperiksa di teks layar aplikasi."
+    )
 
     private fun status(ok: Boolean, label: String) {
         put(text((if (ok) "✔  " else "✘  ") + label, 13f, false, if (ok) C_OK else C_BAD))
@@ -148,12 +188,12 @@ class MainActivity : Activity() {
         Button(this).apply {
             text = label
             isAllCaps = false
-            textSize = 13f
+            textSize = 14f
             setTextColor(Color.WHITE)
-            background = bg(C_PRIMARY, dp(12))
+            background = bg(C_PRIMARY, dp(14))
             minHeight = 0
             minimumHeight = 0
-            setPadding(dp(14), dp(10), dp(14), dp(10))
+            setPadding(dp(16), dp(12), dp(16), dp(12))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { topMargin = dp(8) }
@@ -357,7 +397,7 @@ class MainActivity : Activity() {
         "apps" -> "Aplikasi diblokir"
         "words" -> "Situs dan kata kunci"
         "profiles" -> "Profil"
-        "sched" -> "Jadwal otomatis"
+        "sched" -> "Jadwal & profil"
         "net" -> "VPN DNS dan notifikasi"
         "stats" -> "Dashboard"
         "focus" -> "Mode Fokus"
@@ -377,9 +417,9 @@ class MainActivity : Activity() {
         val back = TextView(this)
         back.text = "←"
         back.textSize = 22f
-        back.setTextColor(Color.WHITE)
+        back.setTextColor(C_PRIMARY)
         back.gravity = Gravity.CENTER
-        back.background = bg(C_PRIMARY, dp(12))
+        back.background = bg(C_CHIP, dp(22))
         back.layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
         back.setOnClickListener { goScreen("home") }
         row.addView(back)
@@ -417,8 +457,12 @@ class MainActivity : Activity() {
         val banner = LinearLayout(this)
         banner.orientation = LinearLayout.HORIZONTAL
         banner.gravity = Gravity.CENTER_VERTICAL
-        banner.setPadding(dp(16), dp(16), dp(16), dp(16))
-        banner.background = bg(C_PRIMARY, dp(20))
+        banner.setPadding(dp(18), dp(18), dp(18), dp(18))
+        banner.background = GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            intArrayOf(Color.parseColor(if (night) "#274C80" else "#1E3A5F"), Color.parseColor(if (night) "#3B76C9" else "#2F6DB5"))
+        ).apply { cornerRadius = dp(24).toFloat() }
+        banner.elevation = if (night) 0f else dp(2).toFloat()
         val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         lp.bottomMargin = dp(12)
         banner.layoutParams = lp
@@ -432,7 +476,9 @@ class MainActivity : Activity() {
         col.addView(text("Penjaga Ketat", 22f, true, Color.WHITE))
         val line = modeLabel() + " • " +
             (if (acc && adm) "perlindungan lengkap" else "perlu tindakan")
-        col.addView(text(line, 12f, false, Color.argb(225, 255, 255, 255)))
+        col.addView(text(modeLabel(), 13f, false, Color.argb(235, 255, 255, 255)))
+        col.addView(text(if (acc && adm) "●  Perlindungan lengkap" else "●  Perlu tindakan", 12f, true,
+            if (acc && adm) Color.parseColor("#9BE7B8") else Color.parseColor("#FFD27A")))
         banner.addView(col)
         root.addView(banner)
         renderModeSwitch()
@@ -462,32 +508,54 @@ class MainActivity : Activity() {
         val activeP = profiles.count { ProfileEngine.isActive(this, it) }
         val wordCount = Store.keywords(this).size + Store.domains(this).size
         val cats = Categories.enabled(this).size
-        val tiles = listOf(
-            tile("🛡️", "Mode & Ketat", modeLabel(), Color.parseColor("#C62828"), "strict"),
-            tile("📱", "Aplikasi", "${Store.apps(this).size} diblokir", Color.parseColor("#1565C0"), "apps"),
-            tile("🌐", "Situs & kata", "$wordCount aturan • $cats kategori", Color.parseColor("#6A1B9A"), "words"),
-            tile("🗂️", "Profil", "$activeP aktif dari ${profiles.size}", Color.parseColor("#00796B"), "profiles"),
-            tile("🔌", "VPN & notifikasi", if (VpnStatus.running) "VPN DNS aktif" else if (Store.vpnOn(this)) "VPN DNS: " + VpnStatus.state.label else "VPN DNS mati", Color.parseColor("#2E7D32"), "net"),
-            tile("🎯", "Mode Fokus", focusTileLabel(), Color.parseColor("#AD1457"), "focus"),
-            tile("🗓️", "Jadwal", scheduleTileLabel(), Color.parseColor("#5D4037"), "sched"),
-            tile("📊", "Dashboard", "$blocks blokir hari ini", Color.parseColor("#EF6C00"), "stats"),
-            tile("⚙️", "Lainnya", "Teman, log, deteksi", Color.parseColor("#455A64"), "more")
-        )
-        var i = 0
-        while (i < tiles.size) {
-            val row = LinearLayout(this)
-            row.orientation = LinearLayout.HORIZONTAL
-            row.addView(tiles[i])
-            if (i + 1 < tiles.size) {
-                row.addView(tiles[i + 1])
-            } else {
-                row.addView(View(this).apply {
-                    layoutParams = LinearLayout.LayoutParams(0, 1, 1f).apply { setMargins(dp(5), dp(5), dp(5), dp(5)) }
-                })
-            }
-            root.addView(row)
-            i += 2
-        }
+        homeGroup("ATURAN BLOKIR")
+        homeRow("📱", "Aplikasi", "Blokir, batasi waktu, atau beri timer tunggu.", "${Store.apps(this).size} diblokir", Color.parseColor("#1565C0"), "apps")
+        homeRow("🌐", "Situs & kata", "Situs, kata kunci, kategori, dan bagian aplikasi sosmed.", "$wordCount aturan • $cats kategori", Color.parseColor("#6A1B9A"), "words")
+        homeRow("🗓️", "Jadwal & profil", "Aturan otomatis per hari dan jam (Kerja, Tidur, dll.).", scheduleTileLabel() + " • $activeP profil aktif", Color.parseColor("#00796B"), "sched")
+        homeGroup("MODE")
+        homeRow("🎯", "Mode Fokus", "Sesi waktu yang menutup aplikasi dan situs pemicu.", focusTileLabel(), Color.parseColor("#AD1457"), "focus")
+        homeRow("🛡️", "Mode Ketat & status", "Kunci pengaturan dan cek perlindungan diri.", modeLabel(), Color.parseColor("#C62828"), "strict")
+        homeGroup("PANTAU & SISTEM")
+        homeRow("📊", "Dashboard", "Pemakaian, blokir, dan riwayat 7 hari.", "$blocks blokir hari ini", Color.parseColor("#EF6C00"), "stats")
+        homeRow("🔌", "VPN & notifikasi", "Filter situs lewat DNS dan kontrol notifikasi.", if (VpnStatus.running) "VPN DNS aktif" else if (Store.vpnOn(this)) "VPN DNS: " + VpnStatus.state.label else "VPN DNS mati", Color.parseColor("#2E7D32"), "net")
+        homeRow("⚙️", "Lainnya", "Backup, kode teman, kunci aplikasi, dan log.", "Backup • Teman • Log", Color.parseColor("#455A64"), "more")
+    }
+
+    private fun homeGroup(label: String) {
+        root.addView(text(label, 11f, true, C_SUB).apply {
+            letterSpacing = 0.08f
+            setPadding(dp(6), dp(10), 0, dp(4))
+        })
+    }
+
+    private fun homeRow(icon: String, title: String, help: String, status: String, color: Int, target: String) {
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.gravity = Gravity.CENTER_VERTICAL
+        row.setPadding(dp(14), dp(12), dp(14), dp(12))
+        row.background = bg(C_CARD, dp(18)).apply { if (night) setStroke(dp(1), C_CHIP) }
+        row.elevation = if (night) 0f else dp(1).toFloat()
+        row.layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { bottomMargin = dp(8) }
+        row.addView(TextView(this).apply {
+            text = icon
+            textSize = 20f
+            gravity = Gravity.CENTER
+            background = bg(Color.argb(if (night) 70 else 38, Color.red(color), Color.green(color), Color.blue(color)), dp(14))
+            layoutParams = LinearLayout.LayoutParams(dp(46), dp(46))
+        })
+        val col = LinearLayout(this)
+        col.orientation = LinearLayout.VERTICAL
+        col.setPadding(dp(12), 0, dp(8), 0)
+        col.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        col.addView(text(title, 15f, true))
+        col.addView(text(help, 12f, false, C_SUB))
+        col.addView(text(status, 12f, true, if (night) Color.argb(255, Math.min(255, Color.red(color) + 70), Math.min(255, Color.green(color) + 70), Math.min(255, Color.blue(color) + 70)) else color))
+        row.addView(col)
+        row.addView(text("›", 22f, true, C_SUB))
+        row.setOnClickListener { goScreen(target) }
+        root.addView(row)
     }
 
     private fun requestAdmin() {
