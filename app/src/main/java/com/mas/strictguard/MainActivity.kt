@@ -50,6 +50,7 @@ class MainActivity : Activity() {
     private var lastScreen = ""
     private var appQuery = ""
     private var gateTyped = ""
+    private var gateShown = false
     private var credAsked = false
     private var inCred = false
 
@@ -347,6 +348,7 @@ class MainActivity : Activity() {
         val keepY = scroll.scrollY
         root.removeAllViews()
         cur = null
+        gateShown = false
         val strict = Store.strictOn(this)
         val acc = accessibilityOn()
         val adm = adminOn()
@@ -390,6 +392,13 @@ class MainActivity : Activity() {
         val same = lastScreen == screen
         lastScreen = screen
         scroll.post { scroll.scrollTo(0, if (same) keepY else 0) }
+        // Layar teks acak: blokir screenshot dan rekam layar (juga bantuan OCR/AI berbasis tangkapan layar).
+        try {
+            if (gateShown) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+            else window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+        } catch (t: Throwable) {
+            // abaikan
+        }
     }
 
     private fun screenTitle(s: String): String = when (s) {
@@ -760,28 +769,63 @@ class MainActivity : Activity() {
                 gateTyped = ""
             }
             code = gateText!!
-            put(text("Ketik teks ini persis ($textLen huruf, huruf besar dan kecil dibedakan):", 13f))
+            gateShown = true
+            put(text("Ketik teks ini persis ($textLen huruf, huruf besar dan kecil dibedakan). Hanya bagian yang perlu diketik berikutnya yang ditampilkan, ketik tanpa spasi. Layar ini tidak bisa di-screenshot.", 13f))
             val shown = TextView(this)
-            shown.text = code
-            shown.textSize = 15f
+            shown.textSize = 20f
             shown.typeface = Typeface.MONOSPACE
             shown.setTextColor(C_TEXT)
-            shown.setPadding(dp(10), dp(8), dp(10), dp(8))
-            put(scrollBox(if (textLen > 100) 170 else 90, shown))
+            shown.setPadding(dp(12), dp(12), dp(12), dp(12))
+            shown.background = bg(C_FIELD, dp(10))
+            shown.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+            put(shown)
             val counter = text("0/$textLen", 12f, true, C_SUB)
             put(counter)
+            val warn = text("", 12f, true, C_BAD)
+            put(warn)
             val et = EditText(this)
             et.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or InputType.TYPE_TEXT_FLAG_MULTI_LINE
             et.minLines = 3
             et.isLongClickable = false
+            et.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+            val noMenu = object : android.view.ActionMode.Callback {
+                override fun onCreateActionMode(mode: android.view.ActionMode?, menu: android.view.Menu?) = false
+                override fun onPrepareActionMode(mode: android.view.ActionMode?, menu: android.view.Menu?) = false
+                override fun onActionItemClicked(mode: android.view.ActionMode?, item: android.view.MenuItem?) = false
+                override fun onDestroyActionMode(mode: android.view.ActionMode?) {}
+            }
+            et.customSelectionActionModeCallback = noMenu
+            et.customInsertionActionModeCallback = noMenu
+            fun refresh() {
+                var cp = 0
+                while (cp < gateTyped.length && cp < code.length && gateTyped[cp] == code[cp]) cp++
+                val end = Math.min(code.length, cp + 24)
+                shown.text = code.substring(cp, end).chunked(4).joinToString(" ")
+                counter.text = "${gateTyped.length}/$textLen"
+                warn.text = if (gateTyped.length > cp) "Huruf ke-${cp + 1} salah. Hapus sampai huruf ke-$cp lalu ketik ulang." else ""
+            }
             et.setText(gateTyped)
-            counter.text = "${gateTyped.length}/$textLen"
+            refresh()
+            var prev = gateTyped
+            var guard = false
             et.addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}
                 override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
                 override fun afterTextChanged(s: Editable?) {
-                    gateTyped = s?.toString() ?: ""
-                    counter.text = "${gateTyped.length}/$textLen"
+                    if (guard) return
+                    val now = s?.toString() ?: ""
+                    // Tolak tempel/isi otomatis: lebih dari 3 huruf sekaligus.
+                    if (now.length - prev.length > 3) {
+                        guard = true
+                        et.setText(prev)
+                        et.setSelection(prev.length)
+                        guard = false
+                        toast("Ketik huruf satu per satu")
+                        return
+                    }
+                    prev = now
+                    gateTyped = now
+                    refresh()
                 }
             })
             put(et)

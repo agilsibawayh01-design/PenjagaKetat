@@ -23,6 +23,40 @@ object Categories {
             listOf("judi online", "slot gacor", "togel", "judol", "casino online", "situs slot")
         ),
         Cat(
+            "dewasa2", "Dewasa (tambahan)", "Tambahan kata kunci dan situs dewasa (aktif secara bawaan).",
+            listOf(
+                "youjizz.com", "thumbzilla.com", "pornone.com", "drtuber.com", "hclips.com", "4tube.com", "nuvid.com",
+                "spankwire.com", "camsoda.com", "bongacams.com", "livejasmin.com", "myfreecams.com", "cam4.com",
+                "fansly.com", "hanime.tv"
+            ),
+            listOf(
+                "bokep indo", "bokep viral", "nonton bokep", "download bokep", "link bokep", "video porno", "film porno",
+                "film semi", "video bugil", "sex video", "sex tape", "ngentot", "ngewe", "colmek", "tante girang",
+                "vcs telegram", "link 18+", "grup 18+"
+            )
+        ),
+        Cat(
+            "judi2", "Judi (tambahan)", "Tambahan kata kunci dan situs judi online (aktif secara bawaan).",
+            listOf(
+                "betway.com", "22bet.com", "melbet.com", "parimatch.com", "bwin.com", "unibet.com", "stake.com",
+                "188bet.com", "w88.com", "fun88.com", "dafabet.com", "m88.com"
+            ),
+            listOf(
+                "slot online", "slot maxwin", "slot88", "slot demo", "rtp slot", "bocoran slot", "pola slot",
+                "gacor hari ini", "togel online", "togel hongkong", "togel singapore", "toto macau", "judi bola",
+                "mix parlay", "taruhan bola", "poker online", "domino qq", "dominoqq", "sabung ayam", "live casino",
+                "baccarat", "situs judi", "agen judi", "bonus new member", "freebet", "daftar slot"
+            )
+        ),
+        Cat(
+            "bypass", "Celah bypass", "Proxy, VPN gratis, dan situs pembuka blokir (aktif secara bawaan).",
+            listOf(
+                "croxyproxy.com", "proxysite.com", "hidemy.name", "kproxy.com", "hide.me", "vpnbook.com",
+                "browsec.com", "hola.org", "psiphon.ca", "torproject.org", "translate.goog"
+            ),
+            listOf("vpn gratis", "free proxy", "web proxy", "proxy site", "unblock site", "buka blokir", "bypass blokir")
+        ),
+        Cat(
             "sosmed", "Media sosial", "Facebook, Instagram, TikTok, X/Twitter, Reddit, Snapchat (mati secara bawaan).",
             listOf("facebook.com", "instagram.com", "tiktok.com", "twitter.com", "x.com", "reddit.com", "snapchat.com"),
             emptyList()

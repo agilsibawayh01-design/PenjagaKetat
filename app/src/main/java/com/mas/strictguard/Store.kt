@@ -126,7 +126,8 @@ object Store {
         ?: "Ingat tujuanmu. Waktu yang kamu jaga hari ini adalah investasi untuk dirimu esok."
     fun setMotivation(c: Context, v: String) { sp(c).edit().putString("motivation", v.trim()).commit() }
 
-    fun categoryOn(c: Context, id: String): Boolean = sp(c).getBoolean("cat_$id", id == "dewasa" || id == "judi")
+    fun categoryOn(c: Context, id: String): Boolean =
+        sp(c).getBoolean("cat_$id", id == "dewasa" || id == "judi" || id == "dewasa2" || id == "judi2" || id == "bypass")
     fun setCategory(c: Context, id: String, v: Boolean) { sp(c).edit().putBoolean("cat_$id", v).commit() }
 
     fun exitDelayMin(c: Context): Int = sp(c).getInt("exit_delay", 60)
