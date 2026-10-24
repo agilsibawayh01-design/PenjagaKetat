@@ -48,6 +48,10 @@ object SelfProtector {
     fun reenableAccessibility(c: Context): Boolean {
         if (!canWriteSecure(c)) return false
         if (accessibilityOn(c)) return true
+        // Batasi percobaan agar tidak saling tulis terus-menerus bila ada yang melawan.
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (lastTry != 0L && now >= lastTry && now - lastTry < 10_000L) return false
+        lastTry = now
         return try {
             val list = entries(c).toMutableList()
             list.add(ComponentName(c, GuardService::class.java).flattenToString())
@@ -55,11 +59,15 @@ object SelfProtector {
                 c.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, list.joinToString(":")
             )
             Settings.Secure.putInt(c.contentResolver, Settings.Secure.ACCESSIBILITY_ENABLED, 1)
-            true
+            // Jangan percaya putString tanpa exception: baca ulang.
+            accessibilityOn(c)
         } catch (t: Throwable) {
             false
         }
     }
+
+    @Volatile
+    private var lastTry = 0L
 
     private const val NOTIF_KEY = "enabled_notification_listeners"
 
@@ -77,7 +85,7 @@ object SelfProtector {
             val list = raw.split(':').filter { it.isNotBlank() }.toMutableList()
             list.add(ComponentName(c, NotifGuard::class.java).flattenToString())
             Settings.Secure.putString(c.contentResolver, NOTIF_KEY, list.joinToString(":"))
-            true
+            notifListenerOn(c)
         } catch (t: Throwable) {
             false
         }

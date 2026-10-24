@@ -13,6 +13,8 @@ class BootReceiver : BroadcastReceiver() {
             a != "android.intent.action.QUICKBOOT_POWERON"
         ) return
         try {
+            AntiBypass.checkWiped(context)
+            AntiBypass.syncMarker(context)
             SafeTimer.elapsed(context, "exit")
             SafeTimer.elapsed(context, "tamper")
             VpnManager.ensure(context)

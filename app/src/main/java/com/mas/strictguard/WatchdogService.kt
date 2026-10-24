@@ -23,6 +23,7 @@ import android.provider.Settings
 class WatchdogService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private var lastAlertAt = 0L
+    private var lastMarkerAlert = 0L
 
     private val observer = object : ContentObserver(handler) {
         override fun onChange(selfChange: Boolean) {
@@ -37,6 +38,7 @@ class WatchdogService : Service() {
     private val tick = object : Runnable {
         override fun run() {
             if (!Store.strictRaw(this@WatchdogService)) {
+                AntiBypass.syncMarker(this@WatchdogService)
                 stopSelf()
                 return
             }
@@ -55,6 +57,7 @@ class WatchdogService : Service() {
     override fun onCreate() {
         super.onCreate()
         running = true
+        AntiBypass.serviceStarted(this)
         try {
             startAsForeground()
         } catch (t: Throwable) {
@@ -68,6 +71,11 @@ class WatchdogService : Service() {
         } catch (t: Throwable) {
             // tetap jalan dengan tick saja
         }
+        try {
+            contentResolver.registerContentObserver(AntiBypass.markerUri(), false, observer)
+        } catch (t: Throwable) {
+            // abaikan
+        }
         handler.post(tick)
     }
 
@@ -75,6 +83,7 @@ class WatchdogService : Service() {
 
     override fun onDestroy() {
         running = false
+        AntiBypass.serviceStopped(this)
         handler.removeCallbacksAndMessages(null)
         try {
             contentResolver.unregisterContentObserver(observer)
@@ -87,6 +96,14 @@ class WatchdogService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun guard() {
+        AntiBypass.syncMarker(this)
+        if (!AntiBypass.markerOk(this) && SelfProtector.canWriteSecure(this)) {
+            val t = SystemClock.elapsedRealtime()
+            if (lastMarkerAlert == 0L || t - lastMarkerAlert > 1_800_000L) {
+                lastMarkerAlert = t
+                alert("Penanda perlindungan gagal dipulihkan. Cek status perlindungan.")
+            }
+        }
         if (!Store.strictOn(this)) return
         if (SelfProtector.bankPaused(this)) return
         var problem: String? = null

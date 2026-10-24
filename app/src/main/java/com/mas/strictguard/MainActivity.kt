@@ -79,6 +79,8 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         Store.seed(this)
+        AntiBypass.checkWiped(this)
+        AntiBypass.syncMarker(this)
         if (Store.strictRaw(this) && !WatchdogService.running) WatchdogService.start(this)
         VpnManager.ensure(this)
         if (AppLock.needsAuth(this)) showLockScreen() else render()
@@ -976,6 +978,21 @@ class MainActivity : Activity() {
     }
 
     private fun renderProtection(strict: Boolean) {
+        header("Status perlindungan")
+        for (ch in AntiBypass.checks(this)) status(ch.first, ch.second)
+        val df = java.text.SimpleDateFormat("dd MMM HH:mm", java.util.Locale("id", "ID"))
+        if (AntiBypass.killCount(this) > 0) put(text("Pengawas pernah mati tidak wajar ${AntiBypass.killCount(this)} kali, terakhir " +
+            df.format(java.util.Date(AntiBypass.killAt(this))) + " (Force Stop, crash, atau update).", 12f, false, Color.rgb(180, 0, 0)))
+        if (AntiBypass.wipeAt(this) > 0L) put(text("Data aplikasi tampak terhapus/dipasang ulang saat Mode Ketat aktif (" +
+            df.format(java.util.Date(AntiBypass.wipeAt(this))) + "). Konfigurasi perlu dipulihkan.", 12f, true, Color.rgb(180, 0, 0)))
+        if (!AntiBypass.batteryExempt(this)) put(button("Kecualikan dari penghemat baterai") {
+            try {
+                startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).setData(android.net.Uri.parse("package:$packageName")))
+            } catch (t: Throwable) {
+                startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            }
+        })
+        put(text("Batas yang tidak bisa ditutup tanpa root/device-owner: Force Stop lewat ADB, pencabutan izin lewat ADB, Safe Mode, profil kerja, dan factory reset. Penjaga Ketat hanya bisa mendeteksi dan memberi tahu, bukan mencegahnya.", 11f, false, Color.rgb(90, 90, 90)))
         header("Perlindungan diri")
         val secure = SelfProtector.canWriteSecure(this)
         val usage = Foreground.hasUsageAccess(this)
