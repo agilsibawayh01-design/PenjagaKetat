@@ -218,8 +218,10 @@ object Store {
         if (prefs.getBoolean("keyword_split_v21", false)) return
         val legacy = getSet(c, "keywords")
         if (legacy.isNotEmpty()) {
-            putSet(c, "keywords_url", urlKeywords(c) + legacy)
-            putSet(c, "keywords_screen", screenKeywords(c) + legacy)
+            // Jangan memanggil urlKeywords/screenKeywords di sini karena keduanya
+            // memanggil ensureKeywordSplit() dan akan menyebabkan rekursi.
+            putSet(c, "keywords_url", getSet(c, "keywords_url") + legacy)
+            putSet(c, "keywords_screen", getSet(c, "keywords_screen") + legacy)
         }
         prefs.edit().putBoolean("keyword_split_v21", true).commit()
     }
