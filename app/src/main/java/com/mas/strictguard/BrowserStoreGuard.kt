@@ -59,33 +59,32 @@ object BrowserStoreGuard {
         }
         if (root == null) return false
         // Browser terlihat berdampingan dengan tombol Instal (halaman detail ATAU hasil pencarian):
-        // tutup sebelum tombol sempat ditekan.
-        val installY = ArrayList<Int>()
-        val nameY = ArrayList<Int>()
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(root)
-        var count = 0
+        // tutup sebelum tombol sempat ditekan. Memakai pencarian teks dari sisi aplikasi Play Store
+        // (cepat), bukan menelusuri ratusan node satu per satu.
         val r = Rect()
-        while (queue.isNotEmpty() && count < 500) {
-            val n = queue.removeFirst()
-            count++
-            val s = (n.text?.toString() ?: n.contentDescription?.toString() ?: "").lowercase().trim()
-            if (s.isNotEmpty()) {
-                if (s in INSTALL) {
+        val installY = ArrayList<Int>()
+        for (q in listOf("instal", "install", "pasang")) {
+            val found = root.findAccessibilityNodeInfosByText(q) ?: continue
+            for (n in found) {
+                val t = (n.text?.toString() ?: n.contentDescription?.toString() ?: "").lowercase().trim()
+                if (t in INSTALL) {
                     n.getBoundsInScreen(r)
                     installY.add(r.centerY())
-                } else if (isBrowserText(s, names)) {
-                    n.getBoundsInScreen(r)
-                    nameY.add(r.centerY())
                 }
             }
-            for (i in 0 until n.childCount) {
-                val ch = n.getChild(i) ?: continue
-                queue.add(ch)
+        }
+        if (installY.isEmpty()) return false
+        val gap = Math.max(160, (screenHeight * 0.08).toInt())
+        for (q in names + GENERIC) {
+            val found = root.findAccessibilityNodeInfosByText(q) ?: continue
+            for (n in found) {
+                val t = (n.text?.toString() ?: n.contentDescription?.toString() ?: "").lowercase().trim()
+                if (t.isEmpty() || !isBrowserText(t, names)) continue
+                n.getBoundsInScreen(r)
+                val cy = r.centerY()
+                if (installY.any { Math.abs(cy - it) <= gap }) return true
             }
         }
-        if (installY.isEmpty() || nameY.isEmpty()) return false
-        val gap = Math.max(160, (screenHeight * 0.08).toInt())
-        return installY.any { iy -> nameY.any { Math.abs(it - iy) <= gap } }
+        return false
     }
 }

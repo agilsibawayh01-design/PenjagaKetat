@@ -259,7 +259,7 @@ class GuardService : AccessibilityService() {
             now - lastStoreAt > 300L
         ) {
             lastStoreAt = now
-            val sroot = rootInActiveWindow
+            val sroot = foregroundRoot
             if (BrowserStoreGuard.shouldBack(this, event, sroot, resources.displayMetrics.heightPixels) && now - lastBackAt > 800L) {
                 lastBackAt = now
                 performGlobalAction(GLOBAL_ACTION_BACK)
