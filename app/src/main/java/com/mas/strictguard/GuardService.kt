@@ -237,11 +237,10 @@ class GuardService : AccessibilityService() {
         // Klik pada aplikasi terlindung di Pengaturan (mis. daftar layanan Aksesibilitas): langsung kembali,
         // sebelum halaman detail dan tombol nonaktifkan sempat dipakai.
         if (event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
-            // Pada Settings/installer maupun launcher, hanya klik yang benar-benar
-            // mengenai aplikasi terlindung yang boleh memicu proteksi.
-            // Jangan memindai seluruh layar launcher: notification shade yang ditutup
-            // dapat menghasilkan event launcher tanpa ada halaman uninstall yang dibuka.
-            if (strictNow && isProtectedNavigationSurface(pkg) && clickedProtected(event)) {
+            // Hanya klik pada halaman sistem pengaturan/installer yang memicu proteksi.
+            // Jangan memblokir klik launcher: menu Sembunyikan/Tampilkan aplikasi juga
+            // mengirim nama aplikasi terlindung, tetapi bukan tindakan uninstall/disable.
+            if (strictNow && isSettingsLike(pkg) && clickedProtected(event)) {
                 startBlock("protect_click", "")
             }
             return
@@ -413,17 +412,6 @@ class GuardService : AccessibilityService() {
     private fun isSettingsLike(pkg: String): Boolean =
         pkg in Config.PROTECTED && (pkg.contains("settings") || pkg.contains("packageinstaller") ||
             pkg.contains("permissioncontroller") || pkg.contains("vending"))
-
-    /** Launcher hanya dipantau pada event klik, bukan dengan memindai seluruh layarnya. */
-    private fun isProtectedNavigationSurface(pkg: String): Boolean =
-        isSettingsLike(pkg) || pkg in setOf(
-            "com.sec.android.app.launcher",
-            "com.google.android.apps.nexuslauncher",
-            "com.android.launcher3",
-            "com.miui.home",
-            "com.oppo.launcher",
-            "com.transsion.hilauncher"
-        )
 
     /** True bila yang diklik adalah baris/tombol yang memuat nama aplikasi terlindung. */
     private fun clickedProtected(event: AccessibilityEvent): Boolean {
