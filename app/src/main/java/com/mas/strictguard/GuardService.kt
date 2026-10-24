@@ -50,7 +50,21 @@ class GuardService : AccessibilityService() {
                 // Masa tunggu tetap dihitung oleh WaitTimer/SiteTracker dan dipakai untuk memblokir.
                 if (!backing && !pausedNow && Foreground.hasUsageAccess(this@GuardService)) {
                     val p = Foreground.current(this@GuardService)
-                    if (p.isNotEmpty() && p != packageName && p !in Config.IGNORED) {
+                    // UsageStats.current() menyimpan aplikasi terakhir yang RESUMED.
+                    // Saat panel notifikasi / quick settings ditarik, aplikasi terakhir
+                    // masih bisa terbaca sebagai foreground meskipun layar sebenarnya
+                    // sedang berada di System UI. Jangan menjalankan enforcement terhadap
+                    // aplikasi lama dalam kondisi ini.
+                    val activeRootPkg = rootInActiveWindow?.packageName?.toString() ?: ""
+                    if (activeRootPkg == "com.android.systemui") {
+                        handler.postDelayed(this, 2000L)
+                        return
+                    }
+                    // Untuk pemeriksaan berkala, hanya tindak aplikasi yang benar-benar
+                    // sedang menjadi root Accessibility aktif. Ini mencegah aplikasi lama
+                    // diblokir ketika notification shade, dialog sistem, atau layar lain
+                    // berada di atasnya.
+                    if (p.isNotEmpty() && p != packageName && p !in Config.IGNORED && activeRootPkg == p) {
                         var siteShown = false
                         if (p in browsers) {
                             if (checkWebsiteRule(p, rootInActiveWindow, now)) {
