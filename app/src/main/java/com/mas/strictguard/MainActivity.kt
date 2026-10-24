@@ -2149,6 +2149,35 @@ class MainActivity : Activity() {
         header("Kata kunci")
         put(text("Pisahkan antara keyword yang hanya diperiksa di URL browser dan keyword yang diperiksa pada teks seluruh layar.", 12f, false, C_SUB))
 
+        header("🕘 Riwayat Situs")
+        put(text("Domain utama yang baru terdeteksi dari browser. Riwayat disimpan lokal di perangkat dan terus diperbarui saat situs dibuka.", 12f, false, C_SUB))
+        val history = SiteHistory.list(this, 30)
+        if (history.isEmpty()) {
+            put(text("Belum ada situs yang terdeteksi.", 12f, false, C_SUB))
+        } else {
+            val historyCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            for (entry in history) {
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(0, dp(5), 0, dp(5))
+                }
+                val col = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                }
+                val blocked = Store.domains(this).contains(entry.domain)
+                col.addView(text(entry.domain + if (blocked) "  • diblokir" else "", 13f, true, if (blocked) C_BAD else C_TEXT))
+                col.addView(text("Terakhir: ${SiteHistory.formatTime(entry.lastOpened)} • ${entry.visits}x terdeteksi", 11f, false, C_SUB))
+                row.addView(col)
+                row.addView(smallButton(if (blocked) "Atur" else "Atur blokir") {
+                    editSiteDialog(entry.domain, strict, !Store.domains(this).contains(entry.domain))
+                })
+                historyCol.addView(row)
+            }
+            put(scrollBox(320, historyCol))
+        }
+
         header("🛡️ Keyword Bawaan PenjagaKetat")
         put(text("Daftar keyword bawaan yang dapat kamu ubah. Jika terlalu luas, tekan ✕ untuk mematikannya. Jika ingin mengaktifkan kembali, tekan Aktifkan.", 12f, false, C_SUB))
         put(builtinKeywordList())

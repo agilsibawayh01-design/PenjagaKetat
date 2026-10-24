@@ -256,7 +256,17 @@ class GuardService : AccessibilityService() {
         }
         if (BlockEngine.hasLimit(this, pkg, apps, profiles)) scheduleLimitCheck(pkg)
 
-        // 2. Keyword URL / layar saat teks berubah.
+        // 2. Riwayat situs browser.
+        // Ambil domain utama dari address bar sebelum pemeriksaan keyword.
+        // Tidak perlu situs tersebut sudah masuk daftar blokir.
+        if (pkg in browsers) {
+            val historyRoot = rootInActiveWindow
+            if (historyRoot?.packageName?.toString() == pkg) {
+                SiteHistory.recordFromRoot(this, historyRoot)
+            }
+        }
+
+        // 3. Keyword URL / layar saat teks berubah.
         // URL keyword hanya boleh dipakai pada address bar browser.
         // Screen keyword berlaku pada teks umum yang tersedia melalui Accessibility.
         if (event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) {
@@ -276,7 +286,7 @@ class GuardService : AccessibilityService() {
             return
         }
 
-        // 3. Lindungi pengaturan saat Mode Ketat aktif
+        // 4. Lindungi pengaturan saat Mode Ketat aktif
         if (strictNow && pkg in Config.PROTECTED && now - lastProtectAt > 500L) {
             lastProtectAt = now
             val root = rootInActiveWindow
@@ -286,13 +296,13 @@ class GuardService : AccessibilityService() {
             }
         }
 
-        // 4. Website: aturan per-domain (timer tunggu, batas harian, jadwal, blokir penuh).
+        // 5. Website: aturan per-domain (timer tunggu, batas harian, jadwal, blokir penuh).
         if (pkg in browsers) {
             val root = rootInActiveWindow
             if (checkWebsiteRule(pkg, root, now)) return
         }
 
-        // 5. Periksa URL browser dan seluruh layar secara terpisah.
+        // 6. Periksa URL browser dan seluruh layar secara terpisah.
         if (now - lastScanAt > 500L) {
             lastScanAt = now
             val root = rootInActiveWindow ?: return
@@ -310,7 +320,7 @@ class GuardService : AccessibilityService() {
             }
         }
 
-        // 5. Feed video pendek (Shorts YouTube, Reels Instagram tanpa Stories)
+        // 7. Feed video pendek (Shorts YouTube, Reels Instagram tanpa Stories)
         val ytWanted = pkg == Config.YOUTUBE && Store.blockShorts(this)
         val igWanted = pkg == Config.INSTAGRAM && Store.blockReels(this)
         if ((ytWanted || igWanted) && now - lastFeedAt > 600L) {
