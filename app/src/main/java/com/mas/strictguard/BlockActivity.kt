@@ -182,19 +182,55 @@ class BlockActivity : Activity() {
 
     private fun emergencyDialog() {
         val labels = arrayOf("Telepon atau pesan penting", "Pekerjaan mendesak", "Navigasi / transportasi", "Lainnya")
+        val pad = (16 * resources.displayMetrics.density).toInt()
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, 0)
+        }
+        box.addView(TextView(this).apply {
+            text = "Hanya 1 kali per hari, untuk 1 aplikasi, selama ${Emergency.MINUTES} menit. Alasannya dicatat."
+            textSize = 14f
+        })
+        val group = android.widget.RadioGroup(this)
+        for ((i, l) in labels.withIndex()) {
+            group.addView(android.widget.RadioButton(this).apply {
+                text = l
+                id = 7100 + i
+            })
+        }
+        box.addView(group)
+        val note = android.widget.EditText(this).apply {
+            hint = "Catatan (boleh dikosongkan)"
+            setSingleLine(true)
+        }
+        box.addView(note)
         android.app.AlertDialog.Builder(this)
             .setTitle("Darurat ${Emergency.MINUTES} menit")
-            .setMessage("Hanya 1 kali per hari, untuk 1 aplikasi, selama ${Emergency.MINUTES} menit. Alasannya dicatat. Pilih alasan:")
-            .setItems(labels) { _, i ->
-                if (Emergency.grant(this, pkg, labels[i])) {
-                    val intent = packageManager.getLaunchIntentForPackage(pkg)
-                    if (intent != null) startActivity(intent)
-                    finish()
-                } else {
-                    emgBtn.visibility = View.GONE
+            .setView(box)
+            .setPositiveButton("Oke", null)
+            .setNegativeButton("Batal", null)
+            .create()
+            .also { d ->
+                d.setOnShowListener {
+                    d.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                        val idx = group.checkedRadioButtonId - 7100
+                        if (idx < 0 || idx >= labels.size) {
+                            android.widget.Toast.makeText(this, "Pilih salah satu alasan", android.widget.Toast.LENGTH_SHORT).show()
+                        } else {
+                            val extra = note.text.toString().trim().take(60)
+                            val reason = labels[idx] + (if (extra.isNotEmpty()) " - $extra" else "")
+                            d.dismiss()
+                            if (Emergency.grant(this, pkg, reason)) {
+                                val intent = packageManager.getLaunchIntentForPackage(pkg)
+                                if (intent != null) startActivity(intent)
+                                finish()
+                            } else {
+                                emgBtn.visibility = View.GONE
+                            }
+                        }
+                    }
                 }
             }
-            .setNegativeButton("Batal", null)
             .show()
     }
 
