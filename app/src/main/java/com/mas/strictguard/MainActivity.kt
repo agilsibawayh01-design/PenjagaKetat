@@ -2099,15 +2099,38 @@ class MainActivity : Activity() {
 
     private fun renderWords(strict: Boolean) {
         header("Kata kunci")
-        put(text("Dicek di browser dan saat mengetik.", 12f, false, C_SUB))
-        val kwInput = EditText(this).apply { hint = "Tambah kata kunci"; setSingleLine() }
-        put(kwInput)
-        put(button("Tambah kata kunci") {
-            val k = kwInput.text.toString().trim()
-            if (k.isNotEmpty()) { Store.addKeyword(this, k); render() }
+        put(text("Pisahkan antara keyword yang hanya diperiksa di URL browser dan keyword yang diperiksa pada teks seluruh layar.", 12f, false, C_SUB))
+
+        header("🔗 Keyword URL")
+        put(text("Diperiksa hanya pada kolom alamat/URL semua browser yang dipantau. Tidak memblokir kata yang hanya muncul sebagai teks halaman.", 12f, false, C_SUB))
+        val urlInput = EditText(this).apply { hint = "Tambah keyword URL"; setSingleLine() }
+        put(urlInput)
+        put(button("Tambah keyword URL") {
+            val k = urlInput.text.toString().trim()
+            if (k.isNotEmpty()) {
+                Store.addUrlKeyword(this, k)
+                render()
+            }
         })
-        put(chipList(Store.keywords(this).sorted()) { k ->
-            if (strict) toast("Mode Ketat aktif: tidak bisa menghapus") else { Store.removeKeyword(this, k); render() }
+        put(chipList(Store.urlKeywords(this).sorted()) { k ->
+            if (strict) toast("Mode Ketat aktif: tidak bisa menghapus")
+            else { Store.removeUrlKeyword(this, k); render() }
+        })
+
+        header("📱 Keyword Layar")
+        put(text("Diperiksa pada teks dan contentDescription yang dapat dibaca Accessibility di seluruh layar/aplikasi, bukan hanya URL browser.", 12f, false, C_SUB))
+        val screenInput = EditText(this).apply { hint = "Tambah keyword layar"; setSingleLine() }
+        put(screenInput)
+        put(button("Tambah keyword layar") {
+            val k = screenInput.text.toString().trim()
+            if (k.isNotEmpty()) {
+                Store.addScreenKeyword(this, k)
+                render()
+            }
+        })
+        put(chipList(Store.screenKeywords(this).sorted()) { k ->
+            if (strict) toast("Mode Ketat aktif: tidak bisa menghapus")
+            else { Store.removeScreenKeyword(this, k); render() }
         })
 
         header("Situs")
@@ -2148,13 +2171,6 @@ class MainActivity : Activity() {
         put(if (siteCol.childCount == 0) text("Belum ada.", 12f, false, C_SUB) else scrollBox(220, siteCol))
     }
 
-    /**
-     * Dialog aturan situs.
-     *
-     * Untuk situs BARU, domain belum dimasukkan ke daftar sampai pengguna menekan Simpan.
-     * Karena itu pilihan mode selalu terbuka, termasuk ketika Mode Ketat sedang aktif.
-     * Untuk situs yang SUDAH ada, Mode Ketat dapat mengunci pilihan menjadi Blokir penuh.
-     */
     private fun editSiteDialog(domain: String, strict: Boolean, isNew: Boolean = false) {
         val existing = Store.siteCfgOrNull(this, domain)
         val cfg = existing ?: SiteCfg()

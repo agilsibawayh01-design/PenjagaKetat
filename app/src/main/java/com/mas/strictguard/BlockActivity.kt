@@ -77,6 +77,7 @@ class BlockActivity : Activity() {
         when (mode) {
             "protect" -> info.text = "Mode Ketat aktif.\nHalaman ini tidak bisa dibuka."
             "content" -> info.text = "Konten ini diblokir oleh Penjaga Ketat."
+            "screen_keyword" -> info.text = "Konten ini diblokir karena mengandung kata kunci layar yang dibatasi."
             "profile" -> info.text = "Aplikasi ini diblokir oleh profil yang sedang aktif."
             "until" -> {
                 val until = Store.appCfg(this, pkg).blockUntil

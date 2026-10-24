@@ -36,7 +36,21 @@ object Store {
     }
 
     fun apps(c: Context): Set<String> = getSet(c, "apps")
-    fun keywords(c: Context): Set<String> = getSet(c, "keywords")
+
+    /**
+     * Keyword URL: hanya dimaksudkan untuk pemeriksaan URL/address bar browser.
+     * Keyword lama tetap dimigrasikan ke sini agar tidak hilang saat upgrade.
+     */
+    fun urlKeywords(c: Context): Set<String> { ensureKeywordSplit(c); return getSet(c, "keywords_url") }
+
+    /**
+     * Keyword layar: diperiksa pada teks/contentDescription yang tersedia melalui Accessibility.
+     * Keyword lama juga dimigrasikan ke sini agar perilaku V20 tidak tiba-tiba melemah.
+     */
+    fun screenKeywords(c: Context): Set<String> { ensureKeywordSplit(c); return getSet(c, "keywords_screen") }
+
+    /** Union untuk kompatibilitas kode lama dan statistik. */
+    fun keywords(c: Context): Set<String> = urlKeywords(c) + screenKeywords(c)
     fun domains(c: Context): Set<String> = getSet(c, "domains")
 
     fun siteCfgOrNull(c: Context, domain: String): SiteCfg? {
@@ -159,8 +173,56 @@ object Store {
         putSet(c, "apps", apps(c) - p)
         LocationRules.set(c, "app_$p", null)
     }
-    fun addKeyword(c: Context, k: String) = putSet(c, "keywords", keywords(c) + k.trim().lowercase())
-    fun removeKeyword(c: Context, k: String) = putSet(c, "keywords", keywords(c) - k)
+    /** Kompatibilitas: keyword umum lama ditambahkan ke kedua jenis. */
+    fun addKeyword(c: Context, k: String) {
+        val v = k.trim().lowercase()
+        if (v.isEmpty()) return
+        putSet(c, "keywords", getSet(c, "keywords") + v)
+        putSet(c, "keywords_url", urlKeywords(c) + v)
+        putSet(c, "keywords_screen", screenKeywords(c) + v)
+    }
+
+    fun removeKeyword(c: Context, k: String) {
+        val v = k.trim().lowercase()
+        putSet(c, "keywords", getSet(c, "keywords") - v)
+        putSet(c, "keywords_url", urlKeywords(c) - v)
+        putSet(c, "keywords_screen", screenKeywords(c) - v)
+    }
+
+    fun addUrlKeyword(c: Context, k: String) {
+        val v = k.trim().lowercase()
+        if (v.isNotEmpty()) putSet(c, "keywords_url", urlKeywords(c) + v)
+    }
+
+    fun removeUrlKeyword(c: Context, k: String) {
+        val v = k.trim().lowercase()
+        putSet(c, "keywords_url", urlKeywords(c) - v)
+    }
+
+    fun addScreenKeyword(c: Context, k: String) {
+        val v = k.trim().lowercase()
+        if (v.isNotEmpty()) putSet(c, "keywords_screen", screenKeywords(c) + v)
+    }
+
+    fun removeScreenKeyword(c: Context, k: String) {
+        val v = k.trim().lowercase()
+        putSet(c, "keywords_screen", screenKeywords(c) - v)
+    }
+
+    /**
+     * Migrasi sekali dari storage keyword V20 lama ke dua kategori baru.
+     * Keyword lama dimasukkan ke KEDUA kategori agar upgrade tidak mengurangi perlindungan.
+     */
+    fun ensureKeywordSplit(c: Context) {
+        val prefs = sp(c)
+        if (prefs.getBoolean("keyword_split_v21", false)) return
+        val legacy = getSet(c, "keywords")
+        if (legacy.isNotEmpty()) {
+            putSet(c, "keywords_url", urlKeywords(c) + legacy)
+            putSet(c, "keywords_screen", screenKeywords(c) + legacy)
+        }
+        prefs.edit().putBoolean("keyword_split_v21", true).commit()
+    }
     fun addDomain(c: Context, d: String) {
         val n = Rules.normalizeDomain(d)
         if (n.isNotEmpty()) putSet(c, "domains", domains(c) + n)
@@ -171,6 +233,7 @@ object Store {
     }
 
     fun seed(c: Context) {
+        ensureKeywordSplit(c)
         if (sp(c).getBoolean("seeded", false)) return
         putSet(c, "keywords", keywords(c) + Config.SEED_KEYWORDS)
         putSet(c, "domains", domains(c) + Config.SEED_DOMAINS)

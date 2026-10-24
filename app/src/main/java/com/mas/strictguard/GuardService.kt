@@ -19,7 +19,8 @@ class GuardService : AccessibilityService() {
 
     private var cacheAt = 0L
     private var apps: Set<String> = emptySet()
-    private var keywords: Set<String> = emptySet()
+    private var urlKeywords: Set<String> = emptySet()
+    private var screenKeywords: Set<String> = emptySet()
     private var domains: Set<String> = emptySet()
     private var protectedNames: List<String> = emptyList()
     private var browsers: Set<String> = Config.BROWSERS
@@ -179,7 +180,10 @@ class GuardService : AccessibilityService() {
         apps = Store.apps(this)
         profiles = ProfileStore.load(this)
         val active = profiles.filter { ProfileEngine.isActive(this, it) }
-        keywords = Store.keywords(this) + Categories.keywords(this) + active.flatMap { it.keywords }
+        val profileKeywords = active.flatMap { it.keywords }.toSet()
+        val categoryKeywords = Categories.keywords(this)
+        urlKeywords = Store.urlKeywords(this) + categoryKeywords + profileKeywords
+        screenKeywords = Store.screenKeywords(this) + categoryKeywords + profileKeywords
         domains = Store.domains(this) + Categories.domains(this) + active.flatMap { it.domains }
         browsers = Config.BROWSERS + Store.extraBrowsers(this)
         val names = ArrayList<String>()
@@ -236,12 +240,18 @@ class GuardService : AccessibilityService() {
         }
         if (BlockEngine.hasLimit(this, pkg, apps, profiles)) scheduleLimitCheck(pkg)
 
-        // 2. Kata kunci saat mengetik (kolom pencarian, URL, dll.)
+        // 2. Keyword URL / layar saat teks berubah.
+        // URL keyword hanya boleh dipakai pada address bar browser.
+        // Screen keyword berlaku pada teks umum yang tersedia melalui Accessibility.
         if (event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) {
             val typed = event.text?.joinToString(" ") ?: ""
             if (typed.isNotEmpty()) {
-                val kwHit = Rules.matchesKeyword(typed, keywords) != null
-                val dmHit = Rules.matchesDomain(typed, domains)
+                val source = event.source
+                val isUrlBar = source != null && isUrlBarNode(source)
+                val urlKwHit = isUrlBar && pkg in browsers && Rules.matchesKeyword(typed, urlKeywords) != null
+                val screenKwHit = Rules.matchesKeyword(typed, screenKeywords) != null
+                val kwHit = urlKwHit || screenKwHit
+                val dmHit = if (isUrlBar && pkg in browsers) Rules.matchesDomain(typed, domains) else null
                 val domainBlocked = dmHit != null && SiteTracker.shouldDnsBlock(this, dmHit)
                 if (kwHit || domainBlocked) {
                     startBlock("typed", "")
@@ -266,12 +276,18 @@ class GuardService : AccessibilityService() {
             if (checkWebsiteRule(pkg, root, now)) return
         }
 
-        // 5. Browser: periksa kolom alamat dan teks halaman
-        if (pkg in browsers && now - lastScanAt > 500L) {
+        // 5. Periksa URL browser dan seluruh layar secara terpisah.
+        if (now - lastScanAt > 500L) {
             lastScanAt = now
             val root = rootInActiveWindow ?: return
-            if (browserHasBlocked(root)) startBlock("content", "")
-            return
+            if (pkg in browsers && browserHasBlocked(root)) {
+                startBlock("content", "")
+                return
+            }
+            if (screenHasBlocked(root)) {
+                startBlock("screen_keyword", "")
+                return
+            }
         }
 
         // 5. Feed video pendek (Shorts YouTube, Reels Instagram tanpa Stories)
@@ -422,17 +438,35 @@ class GuardService : AccessibilityService() {
         return false
     }
 
+    private fun isUrlBarNode(n: AccessibilityNodeInfo): Boolean {
+        val id = (n.viewIdResourceName ?: "").lowercase()
+        return id.contains("url") || id.contains("location_bar") || id.contains("omnibox") ||
+            id.contains("address_bar") || id.contains("url_bar")
+    }
+
+    /** Pemeriksaan khusus URL/address bar untuk semua browser yang dipantau. */
     private fun browserHasBlocked(root: AccessibilityNodeInfo): Boolean {
         for (n in collect(root, 400)) {
-            val txt = n.text?.toString() ?: continue
+            if (!isUrlBarNode(n)) continue
+            val txt = n.text?.toString() ?: n.contentDescription?.toString() ?: continue
             if (txt.isEmpty()) continue
-            val id = (n.viewIdResourceName ?: "").lowercase()
-            val isUrlBar = id.contains("url") || id.contains("location_bar") || id.contains("omnibox")
-            if (isUrlBar) {
-                val hit = Rules.matchesDomain(txt, domains)
-                if (hit != null && SiteTracker.shouldDnsBlock(this, hit)) return true
-            }
-            if (Rules.matchesKeyword(txt, keywords) != null) return true
+            val hit = Rules.matchesDomain(txt, domains)
+            if (hit != null && SiteTracker.shouldDnsBlock(this, hit)) return true
+            if (Rules.matchesKeyword(txt, urlKeywords) != null) return true
+        }
+        return false
+    }
+
+    /**
+     * Pemeriksaan keyword layar. Tidak dibatasi browser: semua aplikasi yang mengirim
+     * AccessibilityNodeInfo dapat diperiksa. URL keyword tidak ikut diperiksa di sini.
+     */
+    private fun screenHasBlocked(root: AccessibilityNodeInfo): Boolean {
+        for (n in collect(root, 600)) {
+            val txt = n.text?.toString()?.trim() ?: ""
+            val desc = n.contentDescription?.toString()?.trim() ?: ""
+            if (txt.isNotEmpty() && Rules.matchesKeyword(txt, screenKeywords) != null) return true
+            if (desc.isNotEmpty() && Rules.matchesKeyword(desc, screenKeywords) != null) return true
         }
         return false
     }
@@ -443,6 +477,7 @@ class GuardService : AccessibilityService() {
         val cur = root.packageName?.toString() ?: return false
         return when (mode) {
             "content" -> cur in browsers && browserHasBlocked(root)
+            "screen_keyword" -> screenHasBlocked(root)
             "protect" -> cur in Config.PROTECTED && showsProtected(root)
             else -> cur == pkg
         }
@@ -452,6 +487,7 @@ class GuardService : AccessibilityService() {
         "typed" -> 2
         "protect_click" -> 2
         "content" -> 6
+        "screen_keyword" -> 6
         "protect" -> 5
         else -> 4
     }
