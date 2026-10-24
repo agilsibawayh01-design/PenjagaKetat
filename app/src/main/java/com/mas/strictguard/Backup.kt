@@ -34,7 +34,7 @@ object Backup {
         "sch_on", "sch_days", "sch_start", "sch_end", "wait_s",
         "vpn_doh", "vpn_excl_bank", "vpn_on",
         "strict_sched", "exp_min", "exit_wait_on", "exit_delay", "exit_text_len",
-        "profiles", "keyword_split_v21", "seeded", "sched_notify"
+        "profiles", "keyword_split_v21", "seeded", "sched_notify", "warn_before"
     )
 
     private val PREFIXES = listOf("cfg_", "sitecfg_", "cat_", "loc_", "feat_")

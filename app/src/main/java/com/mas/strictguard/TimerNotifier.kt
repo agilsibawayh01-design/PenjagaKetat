@@ -24,8 +24,48 @@ object TimerNotifier {
         )
     }
 
+    private const val WARN_CHANNEL = "wait_warn"
+    private const val WARN_ID = 4702
+    private var warned = false
+
+    fun warnEnabled(c: Context): Boolean =
+        c.getSharedPreferences("strictguard", Context.MODE_PRIVATE).getBoolean("warn_before", true)
+
+    fun setWarnEnabled(c: Context, v: Boolean) {
+        c.getSharedPreferences("strictguard", Context.MODE_PRIVATE).edit().putBoolean("warn_before", v).commit()
+    }
+
+    /** Peringatan sekali saat tersisa 1 menit; aktif lagi setelah siklus baru (sisa > 90 detik). */
+    private fun warnIfNeeded(c: Context, label: String, leftMs: Long) {
+        if (leftMs > 90_000L) {
+            warned = false
+            return
+        }
+        if (leftMs > 60_000L || warned || !warnEnabled(c)) return
+        warned = true
+        try {
+            nm(c).createNotificationChannel(
+                NotificationChannel(WARN_CHANNEL, "Pengingat waktu hampir habis", NotificationManager.IMPORTANCE_HIGH)
+            )
+            val n = NotificationCompat.Builder(c, WARN_CHANNEL)
+                .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
+                .setContentTitle("1 menit lagi • $label")
+                .setContentText("Simpan dulu pekerjaanmu. Waktu penggunaan hampir habis.")
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .setTimeoutAfter(30_000L)
+                .build()
+            nm(c).notify(WARN_ID, n)
+        } catch (t: Throwable) {
+            // abaikan
+        }
+    }
+
     fun show(c: Context, label: String, leftMs: Long) {
         if (leftMs <= 0L) { cancel(c); return }
+        if (android.os.Build.VERSION.SDK_INT < 33 ||
+            c.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) warnIfNeeded(c, label, leftMs)
         if (!nm(c).areNotificationsEnabled()) return
         if (android.os.Build.VERSION.SDK_INT >= 33 &&
             c.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED

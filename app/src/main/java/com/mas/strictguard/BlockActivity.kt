@@ -2,6 +2,7 @@ package com.mas.strictguard
 
 import android.app.Activity
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Bundle
@@ -23,6 +24,8 @@ class BlockActivity : Activity() {
     private var passMin = 5
     private var modeName = ""
     private var siteDomain = ""
+    private lateinit var emgBtn: Button
+    private lateinit var why: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -31,28 +34,40 @@ class BlockActivity : Activity() {
         modeName = mode
         siteDomain = intent.getStringExtra("domain") ?: ""
 
+        val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        val cBg = if (night) Color.parseColor("#12161C") else Color.WHITE
+        val cFg = if (night) Color.parseColor("#E8EAED") else Color.BLACK
+        val cSub = if (night) Color.parseColor("#A0A9B5") else Color.rgb(70, 70, 70)
+        val cRed = if (night) Color.parseColor("#FF6B6B") else Color.rgb(180, 0, 0)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setBackgroundColor(Color.WHITE)
+            setBackgroundColor(cBg)
             setPadding(48, 48, 48, 48)
         }
         val title = TextView(this).apply {
             text = "Diblokir"
             textSize = 28f
-            setTextColor(Color.rgb(180, 0, 0))
+            setTextColor(cRed)
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
         }
+        why = TextView(this).apply {
+            textSize = 14f
+            setTextColor(cSub)
+            setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
+            setPadding(0, 8, 0, 0)
+        }
         info = TextView(this).apply {
             textSize = 16f
-            setTextColor(Color.BLACK)
+            setTextColor(cFg)
             gravity = Gravity.CENTER
             setPadding(0, 24, 0, 24)
         }
         motiv = TextView(this).apply {
             textSize = 14f
-            setTextColor(Color.rgb(70, 70, 70))
+            setTextColor(cSub)
             setTypeface(null, Typeface.ITALIC)
             gravity = Gravity.CENTER
             setPadding(0, 0, 0, 24)
@@ -63,14 +78,21 @@ class BlockActivity : Activity() {
             visibility = View.GONE
             setOnClickListener { openTarget() }
         }
+        emgBtn = Button(this).apply {
+            text = "Darurat ${Emergency.MINUTES} menit"
+            visibility = View.GONE
+            setOnClickListener { emergencyDialog() }
+        }
         val closeBtn = Button(this).apply {
             text = "Tutup"
             setOnClickListener { closeScreen() }
         }
         root.addView(title)
+        root.addView(why)
         root.addView(info)
         root.addView(motiv)
         root.addView(openBtn)
+        root.addView(emgBtn)
         root.addView(closeBtn)
         setContentView(root)
 
@@ -104,6 +126,76 @@ class BlockActivity : Activity() {
             "launch" -> info.text = "Batas jumlah peluncuran aplikasi ini tercapai."
             else -> startTimerFlow(mode)
         }
+        why.text = reasonText(mode)
+        setupEmergency(mode)
+    }
+
+    private fun appLabel(): String =
+        try {
+            packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
+        } catch (t: Throwable) {
+            pkg
+        }
+
+    /** Satu baris yang menyebut apa yang diblokir dan oleh aturan apa. */
+    private fun reasonText(mode: String): String {
+        val target = if (siteDomain.isNotEmpty()) siteDomain else if (pkg.isNotEmpty()) appLabel() else ""
+        val cause = when (mode) {
+            "until" -> "Blokir penuh sementara"
+            "app" -> "Aturan blokir aplikasi"
+            "limit" -> "Batas harian habis"
+            "wait" -> "Timer Tunggu"
+            "hour" -> "Batas pemakaian per jam"
+            "launch" -> "Batas jumlah buka aplikasi"
+            "location" -> "Aturan lokasi"
+            "focus" -> "Mode Fokus"
+            "profile" -> {
+                val names = try {
+                    ProfileStore.load(this).filter { pkg in it.apps && ProfileEngine.isActive(this, it) }.map { it.name }
+                } catch (t: Throwable) {
+                    emptyList()
+                }
+                if (names.isEmpty()) "Profil aktif" else "Profil " + names.joinToString(", ")
+            }
+            "site" -> "Aturan situs"
+            "site_wait" -> "Timer Tunggu situs"
+            "content" -> "Kata kunci atau kategori konten"
+            "screen_keyword" -> "Kata kunci layar"
+            "protect", "protect_click" -> "Perlindungan Mode Ketat"
+            "browser" -> "Browser tidak didukung"
+            else -> "Aturan Penjaga Ketat"
+        }
+        return (if (target.isNotEmpty()) target + "\n" else "") + "Diblokir oleh: " + cause
+    }
+
+    private fun setupEmergency(mode: String) {
+        val ok = setOf("until", "app", "limit", "wait", "hour", "launch", "profile", "focus", "location")
+        if (pkg.isEmpty() || mode !in ok) return
+        if (Emergency.canUse(this)) {
+            emgBtn.visibility = View.VISIBLE
+        } else if (Emergency.usedToday(this)) {
+            emgBtn.text = "Darurat hari ini sudah dipakai"
+            emgBtn.isEnabled = false
+            emgBtn.visibility = View.VISIBLE
+        }
+    }
+
+    private fun emergencyDialog() {
+        val labels = arrayOf("Telepon atau pesan penting", "Pekerjaan mendesak", "Navigasi / transportasi", "Lainnya")
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Darurat ${Emergency.MINUTES} menit")
+            .setMessage("Hanya 1 kali per hari, untuk 1 aplikasi, selama ${Emergency.MINUTES} menit. Alasannya dicatat. Pilih alasan:")
+            .setItems(labels) { _, i ->
+                if (Emergency.grant(this, pkg, labels[i])) {
+                    val intent = packageManager.getLaunchIntentForPackage(pkg)
+                    if (intent != null) startActivity(intent)
+                    finish()
+                } else {
+                    emgBtn.visibility = View.GONE
+                }
+            }
+            .setNegativeButton("Batal", null)
+            .show()
     }
 
 

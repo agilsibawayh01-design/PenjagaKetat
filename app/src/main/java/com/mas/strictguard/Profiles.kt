@@ -149,6 +149,7 @@ object BlockEngine {
      * Mengembalikan alasan blokir ("until", "app", "limit", "profile") atau null bila boleh dipakai.
      */
     fun check(c: Context, pkg: String, now: Long, apps: Set<String>, profiles: List<Profile>): String? {
+        if (Emergency.activeFor(c, pkg)) return null
         if (pkg in apps) {
             val cfg = Store.appCfg(c, pkg)
             if (cfg.blockUntil > now) return "until"

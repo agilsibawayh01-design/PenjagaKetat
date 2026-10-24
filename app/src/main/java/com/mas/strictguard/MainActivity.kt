@@ -53,12 +53,18 @@ class MainActivity : Activity() {
     private var credAsked = false
     private var inCred = false
 
-    private val C_BG = Color.parseColor("#F2F4F8")
-    private val C_PRIMARY = Color.parseColor("#1E3A5F")
-    private val C_TEXT = Color.parseColor("#1B1F27")
-    private val C_SUB = Color.parseColor("#5F6B7A")
-    private val C_OK = Color.parseColor("#1B7F4B")
-    private val C_BAD = Color.parseColor("#C62828")
+    private val night: Boolean
+        get() = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+    private val C_BG: Int get() = Color.parseColor(if (night) "#12161C" else "#F2F4F8")
+    private val C_CARD: Int get() = Color.parseColor(if (night) "#1E242C" else "#FFFFFF")
+    private val C_CHIP: Int get() = Color.parseColor(if (night) "#2A3340" else "#E6ECF5")
+    private val C_FIELD: Int get() = Color.parseColor(if (night) "#262D37" else "#F6F7FA")
+    private val C_PRIMARY: Int get() = Color.parseColor(if (night) "#5B8DEF" else "#1E3A5F")
+    private val C_TEXT: Int get() = Color.parseColor(if (night) "#E8EAED" else "#1B1F27")
+    private val C_SUB: Int get() = Color.parseColor(if (night) "#A0A9B5" else "#5F6B7A")
+    private val C_OK: Int get() = Color.parseColor(if (night) "#4CC38A" else "#1B7F4B")
+    private val C_BAD: Int get() = Color.parseColor(if (night) "#FF6B6B" else "#C62828")
 
     private class AppRow(val pkg: String, val label: String)
 
@@ -113,7 +119,7 @@ class MainActivity : Activity() {
         val c = LinearLayout(this)
         c.orientation = LinearLayout.VERTICAL
         c.setPadding(dp(16), dp(12), dp(16), dp(14))
-        c.background = bg(Color.WHITE, dp(16))
+        c.background = bg(C_CARD, dp(16))
         c.elevation = dp(2).toFloat()
         val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         lp.bottomMargin = dp(12)
@@ -160,7 +166,7 @@ class MainActivity : Activity() {
             isAllCaps = false
             textSize = 12f
             setTextColor(C_PRIMARY)
-            background = bg(Color.parseColor("#E6ECF5"), dp(10))
+            background = bg(C_CHIP, dp(10))
             minHeight = 0
             minimumHeight = 0
             setPadding(dp(8), dp(6), dp(8), dp(6))
@@ -175,7 +181,7 @@ class MainActivity : Activity() {
     private fun scrollBox(heightDp: Int, content: View): ScrollView {
         val sv = ScrollView(this)
         sv.addView(content)
-        sv.background = bg(Color.parseColor("#F6F7FA"), dp(10))
+        sv.background = bg(C_FIELD, dp(10))
         sv.layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(heightDp)).apply {
             topMargin = dp(6)
         }
@@ -526,7 +532,7 @@ class MainActivity : Activity() {
         t.setTypeface(null, Typeface.BOLD)
         t.gravity = Gravity.CENTER
         t.setTextColor(if (selected) Color.WHITE else C_SUB)
-        t.background = bg(if (selected) color else Color.parseColor("#E6E9EF"), dp(12))
+        t.background = bg(if (selected) color else C_CHIP, dp(12))
         t.setPadding(dp(8), dp(12), dp(8), dp(12))
         t.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
             setMargins(dp(3), 0, dp(3), 0)
@@ -595,7 +601,7 @@ class MainActivity : Activity() {
         if (enabled) row.setOnClickListener { onClick() }
         put(row)
         put(View(this).apply {
-            setBackgroundColor(Color.parseColor("#E6E9EF"))
+            setBackgroundColor(C_CHIP)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
         })
     }
@@ -983,9 +989,9 @@ class MainActivity : Activity() {
         for (ch in AntiBypass.checks(this)) status(ch.first, ch.second)
         val df = java.text.SimpleDateFormat("dd MMM HH:mm", java.util.Locale("id", "ID"))
         if (AntiBypass.killCount(this) > 0) put(text("Pengawas pernah mati tidak wajar ${AntiBypass.killCount(this)} kali, terakhir " +
-            df.format(java.util.Date(AntiBypass.killAt(this))) + " (Force Stop, crash, atau update).", 12f, false, Color.rgb(180, 0, 0)))
+            df.format(java.util.Date(AntiBypass.killAt(this))) + " (Force Stop, crash, atau update).", 12f, false, C_BAD))
         if (AntiBypass.wipeAt(this) > 0L) put(text("Data aplikasi tampak terhapus/dipasang ulang saat Mode Ketat aktif (" +
-            df.format(java.util.Date(AntiBypass.wipeAt(this))) + "). Konfigurasi perlu dipulihkan.", 12f, true, Color.rgb(180, 0, 0)))
+            df.format(java.util.Date(AntiBypass.wipeAt(this))) + "). Konfigurasi perlu dipulihkan.", 12f, true, C_BAD))
         if (!AntiBypass.batteryExempt(this)) put(button("Kecualikan dari penghemat baterai") {
             try {
                 startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).setData(android.net.Uri.parse("package:$packageName")))
@@ -993,7 +999,7 @@ class MainActivity : Activity() {
                 startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
             }
         })
-        put(text("Batas yang tidak bisa ditutup tanpa root/device-owner: Force Stop lewat ADB, pencabutan izin lewat ADB, Safe Mode, profil kerja, dan factory reset. Penjaga Ketat hanya bisa mendeteksi dan memberi tahu, bukan mencegahnya.", 11f, false, Color.rgb(90, 90, 90)))
+        put(text("Batas yang tidak bisa ditutup tanpa root/device-owner: Force Stop lewat ADB, pencabutan izin lewat ADB, Safe Mode, profil kerja, dan factory reset. Penjaga Ketat hanya bisa mendeteksi dan memberi tahu, bukan mencegahnya.", 11f, false, C_SUB))
         header("Perlindungan diri")
         val secure = SelfProtector.canWriteSecure(this)
         val usage = Foreground.hasUsageAccess(this)
@@ -1004,7 +1010,7 @@ class MainActivity : Activity() {
             put(text("Agar aksesibilitas yang dimatikan otomatis menyala lagi, jalankan SEKALI dari PC (USB debugging aktif):", 12f))
             put(text("adb shell pm grant $packageName android.permission.WRITE_SECURE_SETTINGS", 12f).apply {
                 setTextIsSelectable(true)
-                setBackgroundColor(Color.rgb(235, 235, 235))
+                setBackgroundColor(C_CHIP)
                 setPadding(dp(8), dp(8), dp(8), dp(8))
             })
             put(text("Tanpa izin ini, pengawas hanya memberi peringatan lewat notifikasi, tidak bisa menyalakan sendiri.", 12f))
@@ -1638,7 +1644,7 @@ class MainActivity : Activity() {
                 cal.get(java.util.Calendar.YEAR) == today.get(java.util.Calendar.YEAR)
             val dn = arrayOf("Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min")[(cal.get(java.util.Calendar.DAY_OF_WEEK) + 5) % 7]
             put(text("Berikutnya: " + nb.second + " • " + (if (same) "hari ini" else dn) + " " +
-                fmt(cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)), 12f, false, Color.rgb(90, 90, 90)))
+                fmt(cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)), 12f, false, C_SUB))
         }
         put(text("Jadwal berjalan otomatis tanpa membuka aplikasi dan tetap berlaku setelah restart. Profil mati tidak berjalan. Jadwal yang saling tumpang tindih digabung: diblokir bila salah satu aktif.", 12f))
 
@@ -1656,7 +1662,7 @@ class MainActivity : Activity() {
             }
             rows.sortBy { it.first }
             put(text(names[d] + (if (rows.isEmpty()) ": tidak ada" else ""), 13f, true))
-            for (r in rows) put(text("   " + r.second, 12f, false, Color.rgb(60, 60, 60)))
+            for (r in rows) put(text("   " + r.second, 12f, false, C_SUB))
         }
 
         header("Profil")
@@ -1664,7 +1670,7 @@ class MainActivity : Activity() {
             val sch = if (p.schedules.isEmpty()) "tanpa jadwal (aktif terus bila dinyalakan)" else
                 p.schedules.joinToString("; ") { "${fmt(it.start)}-${fmt(it.end)} ${dayNames(it.days)}" }
             put(text(p.name + (if (p.enabled) "" else " (mati)"), 13f, true))
-            put(text(sch, 12f, false, Color.rgb(90, 90, 90)))
+            put(text(sch, 12f, false, C_SUB))
             put(button("Atur jadwal & isi: " + p.name) { editProfile(p, strict) })
             put(button("Ganti nama") {
                 if (strict) toast("Mode Ketat aktif: tidak bisa mengubah profil") else
@@ -1703,7 +1709,7 @@ class MainActivity : Activity() {
             render()
         }
         put(cb)
-        put(text("Hanya pemberitahuan. Pemblokiran tidak bergantung padanya. Bila mati, tidak ada alarm sama sekali (hemat baterai). Waktu pemberitahuan bisa meleset beberapa menit karena mode hemat daya Android.", 12f, false, Color.rgb(90, 90, 90)))
+        put(text("Hanya pemberitahuan. Pemblokiran tidak bergantung padanya. Bila mati, tidak ada alarm sama sekali (hemat baterai). Waktu pemberitahuan bisa meleset beberapa menit karena mode hemat daya Android.", 12f, false, C_SUB))
     }
 
     private fun renderProfiles(strict: Boolean) {
@@ -1716,7 +1722,7 @@ class MainActivity : Activity() {
             val sch = if (p.schedules.isEmpty()) "tanpa jadwal" else
                 p.schedules.joinToString("; ") { "${fmt(it.start)}-${fmt(it.end)} ${dayNames(it.days)}" }
             put(text("${p.apps.size} aplikasi • ${p.keywords.size} kata kunci • ${p.domains.size} situs • $sch" +
-                (if (p.limitMin > 0) " • batas ${p.limitMin} mnt" else ""), 12f, false, Color.rgb(90, 90, 90)))
+                (if (p.limitMin > 0) " • batas ${p.limitMin} mnt" else ""), 12f, false, C_SUB))
             val cb = CheckBox(this)
             cb.text = "Aktifkan profil " + p.name
             cb.isChecked = p.enabled
@@ -1740,7 +1746,7 @@ class MainActivity : Activity() {
         val box = LinearLayout(this)
         box.orientation = LinearLayout.VERTICAL
         box.setPadding(dp(20), dp(8), dp(20), dp(8))
-        if (strict) box.addView(text("Mode Ketat aktif: perubahan hanya menambah, tidak mengurangi.", 12f, true, Color.rgb(180, 0, 0)))
+        if (strict) box.addView(text("Mode Ketat aktif: perubahan hanya menambah, tidak mengurangi.", 12f, true, C_BAD))
 
         box.addView(text("Batas harian per aplikasi (menit, 0 = blokir penuh)", 12f))
         val limit = numberField(p.limitMin)
@@ -2309,7 +2315,7 @@ class MainActivity : Activity() {
             ""
         }
         if (pdns == "hostname") {
-            put(text("Peringatan: Private DNS di HP diatur ke nama host tertentu, sehingga melewati filter ini. Ubah ke Otomatis atau Mati di Pengaturan.", 12f, true, Color.rgb(180, 0, 0)))
+            put(text("Peringatan: Private DNS di HP diatur ke nama host tertentu, sehingga melewati filter ini. Ubah ke Otomatis atau Mati di Pengaturan.", 12f, true, C_BAD))
         }
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         val batteryOk = pm.isIgnoringBatteryOptimizations(packageName)
@@ -2327,6 +2333,17 @@ class MainActivity : Activity() {
     }
 
     private fun renderNotif() {
+        header("Pengingat waktu hampir habis")
+        put(CheckBox(this).apply {
+            text = "Beri tahu 1 menit sebelum waktu penggunaan habis"
+            isChecked = TimerNotifier.warnEnabled(this@MainActivity)
+            setOnClickListener {
+                TimerNotifier.setWarnEnabled(this@MainActivity, isChecked)
+                if (isChecked && Build.VERSION.SDK_INT >= 33 &&
+                    checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                ) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1005)
+            }
+        })
         header("Kontrol notifikasi")
         put(text("Notifikasi aplikasi yang sedang diblokir dihapus bila opsi notifikasi dicentang di aturan aplikasinya (atau aplikasi diblokir profil aktif).", 12f))
         val on = SelfProtector.notifListenerOn(this)
@@ -2416,7 +2433,7 @@ class MainActivity : Activity() {
     private fun renderBackup(strict: Boolean) {
         header("Backup dan restore")
         put(text("Backup berisi aturan aplikasi dan website, Timer Tunggu, batas harian, jadwal, profil, kategori, Mode Fokus, lokasi, dan pengaturan metode keluar Mode Ketat. Tidak ikut: PIN dan kode teman, timer yang sedang berjalan, serta log. Saat menyimpan, pilih Google Drive di daftar lokasi agar tersimpan di akun Gmail-mu dan tetap ada walau Penjaga Ketat dihapus.", 12f))
-        if (strict) put(text("Mode Ketat aktif: restore hanya menambah aturan, tidak mengurangi atau melonggarkan.", 12f, true, Color.rgb(180, 0, 0)))
+        if (strict) put(text("Mode Ketat aktif: restore hanya menambah aturan, tidak mengurangi atau melonggarkan.", 12f, true, C_BAD))
         put(button("Ekspor backup (simpan ke file / Google Drive)") {
             val i = Intent(Intent.ACTION_CREATE_DOCUMENT)
             i.addCategory(Intent.CATEGORY_OPENABLE)
