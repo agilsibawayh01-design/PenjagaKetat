@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.inputmethod.InputMethodManager
 
 class GuardService : AccessibilityService() {
     private val handler = Handler(Looper.getMainLooper())
@@ -24,6 +25,7 @@ class GuardService : AccessibilityService() {
     private var domains: Set<String> = emptySet()
     private var protectedNames: List<String> = emptyList()
     private var browsers: Set<String> = Config.BROWSERS
+    private var inputMethodPackages: Set<String> = emptySet()
     private var watcher: PackageWatcher? = null
     private var profiles: List<Profile> = emptyList()
     private var limitPkg = ""
@@ -186,6 +188,12 @@ class GuardService : AccessibilityService() {
         screenKeywords = Store.screenKeywords(this) + categoryKeywords + profileKeywords
         domains = Store.domains(this) + Categories.domains(this) + active.flatMap { it.domains }
         browsers = Config.BROWSERS + Store.extraBrowsers(this)
+        inputMethodPackages = try {
+            val imm = getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager
+            imm?.enabledInputMethodList?.map { it.packageName }?.toSet() ?: emptySet()
+        } catch (_: Throwable) {
+            emptySet()
+        }
         val names = ArrayList<String>()
         names.add(Config.APP_LABEL)
         for (p in Store.protectedApps(this)) {
@@ -203,7 +211,9 @@ class GuardService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
         val pkg = event.packageName?.toString() ?: return
-        if (pkg == packageName || pkg in Config.IGNORED) return
+        // Keyboard/IME mengirim event saat pengguna mengetik. Jangan memindai UI keyboard
+        // sebagai layar aplikasi, supaya input keyword di PenjagaKetat tidak memicu blokir.
+        if (pkg == packageName || pkg in Config.IGNORED || pkg in inputMethodPackages) return
         try {
             handle(event, pkg)
         } catch (t: Throwable) {
@@ -216,6 +226,12 @@ class GuardService : AccessibilityService() {
         refreshCache(now)
         TimeGuard.check(this)
         if (backing || pausedNow) return
+
+        // Jangan pernah memindai layar internal PenjagaKetat sendiri.
+        // Event dari keyboard/IME saat mengetik di pengaturan bisa membuat service
+        // membaca kembali kolom input PenjagaKetat dan memblokirnya sendiri.
+        val foregroundRoot = rootInActiveWindow
+        if (foregroundRoot?.packageName?.toString() == packageName) return
 
         // Klik pada aplikasi terlindung di Pengaturan (mis. daftar layanan Aksesibilitas): langsung kembali,
         // sebelum halaman detail dan tombol nonaktifkan sempat dipakai.
@@ -280,6 +296,10 @@ class GuardService : AccessibilityService() {
         if (now - lastScanAt > 500L) {
             lastScanAt = now
             val root = rootInActiveWindow ?: return
+            val rootPkg = root.packageName?.toString() ?: return
+            // Abaikan event dari keyboard/IME bila root aktif bukan aplikasi sumber
+            // event. Selain itu, PenjagaKetat tidak boleh memeriksa layarnya sendiri.
+            if (rootPkg == packageName || rootPkg != pkg) return
             if (pkg in browsers && browserHasBlocked(root)) {
                 startBlock("content", "")
                 return
@@ -462,10 +482,22 @@ class GuardService : AccessibilityService() {
      * AccessibilityNodeInfo dapat diperiksa. URL keyword tidak ikut diperiksa di sini.
      */
     private fun screenHasBlocked(root: AccessibilityNodeInfo): Boolean {
+        // Pengaman tambahan: jangan pernah memblokir berdasarkan teks di UI PenjagaKetat.
+        if (root.packageName?.toString() == packageName) return false
         for (n in collect(root, 600)) {
+            // Jangan anggap kolom URL sebagai "layar". URL punya jalur pemeriksaan
+            // sendiri agar keyword URL tidak tercampur dengan keyword layar.
+            if (isUrlBarNode(n)) continue
+
+            // Accessibility tree kadang masih berisi node tersembunyi/off-screen
+            // (termasuk konten lama/placeholder). Node seperti ini tidak boleh
+            // menyebabkan blokir ketika pengguna baru membuka kolom input.
+            if (!n.isVisibleToUser) continue
+
             val txt = n.text?.toString()?.trim() ?: ""
-            val desc = n.contentDescription?.toString()?.trim() ?: ""
             if (txt.isNotEmpty() && Rules.matchesKeyword(txt, screenKeywords) != null) return true
+
+            val desc = n.contentDescription?.toString()?.trim() ?: ""
             if (desc.isNotEmpty() && Rules.matchesKeyword(desc, screenKeywords) != null) return true
         }
         return false
@@ -476,8 +508,8 @@ class GuardService : AccessibilityService() {
         val root = rootInActiveWindow ?: return false
         val cur = root.packageName?.toString() ?: return false
         return when (mode) {
-            "content" -> cur in browsers && browserHasBlocked(root)
-            "screen_keyword" -> screenHasBlocked(root)
+            "content" -> cur != packageName && cur in browsers && browserHasBlocked(root)
+            "screen_keyword" -> cur != packageName && screenHasBlocked(root)
             "protect" -> cur in Config.PROTECTED && showsProtected(root)
             else -> cur == pkg
         }
