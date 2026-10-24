@@ -20,7 +20,6 @@ object BrowserStoreGuard {
     )
     private val GENERIC = listOf("browser", "peramban")
     private val INSTALL = setOf("instal", "install", "pasang")
-    private val DETAIL_MARKERS = listOf("tentang aplikasi ini", "about this app", "keamanan data", "data safety")
 
     private fun sp(c: Context) = c.getSharedPreferences("strictguard", Context.MODE_PRIVATE)
 
@@ -53,28 +52,31 @@ object BrowserStoreGuard {
     fun shouldBack(c: Context, event: AccessibilityEvent, root: AccessibilityNodeInfo?, screenHeight: Int): Boolean {
         val names = names(c)
         if (event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) {
-            if (event.className?.toString()?.contains("EditText") != true) return false
             val typed = (event.text?.joinToString(" ") ?: "").lowercase().trim()
-            return typed.length >= 3 && !typed.contains("chrome") && (names.any { typed.contains(it) } || GENERIC.any { typed.contains(it) })
+            if (typed.length in 3..40 && !typed.contains("chrome") &&
+                (names.any { typed.contains(it) } || GENERIC.any { typed.contains(it) })
+            ) return true
         }
         if (root == null) return false
-        var marker = false
-        var install = false
-        var nameTop = false
+        // Browser terlihat berdampingan dengan tombol Instal (halaman detail ATAU hasil pencarian):
+        // tutup sebelum tombol sempat ditekan.
+        val installY = ArrayList<Int>()
+        val nameY = ArrayList<Int>()
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
         var count = 0
         val r = Rect()
-        while (queue.isNotEmpty() && count < 400) {
+        while (queue.isNotEmpty() && count < 500) {
             val n = queue.removeFirst()
             count++
             val s = (n.text?.toString() ?: n.contentDescription?.toString() ?: "").lowercase().trim()
             if (s.isNotEmpty()) {
-                if (s in INSTALL) install = true
-                else if (DETAIL_MARKERS.any { s.contains(it) }) marker = true
-                else if (!nameTop && isBrowserText(s, names)) {
+                if (s in INSTALL) {
                     n.getBoundsInScreen(r)
-                    if (screenHeight > 0 && r.top in 1 until (screenHeight * 0.35).toInt()) nameTop = true
+                    installY.add(r.centerY())
+                } else if (isBrowserText(s, names)) {
+                    n.getBoundsInScreen(r)
+                    nameY.add(r.centerY())
                 }
             }
             for (i in 0 until n.childCount) {
@@ -82,6 +84,8 @@ object BrowserStoreGuard {
                 queue.add(ch)
             }
         }
-        return marker && install && nameTop
+        if (installY.isEmpty() || nameY.isEmpty()) return false
+        val gap = Math.max(160, (screenHeight * 0.08).toInt())
+        return installY.any { iy -> nameY.any { Math.abs(it - iy) <= gap } }
     }
 }

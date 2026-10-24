@@ -256,7 +256,7 @@ class GuardService : AccessibilityService() {
 
         // 0b. Cegah memasang browser selain Chrome lewat Play Store
         if (pkg == BrowserStoreGuard.STORE && BrowserStoreGuard.enabled(this) && Store.blockOtherBrowsers(this) &&
-            now - lastStoreAt > 700L
+            now - lastStoreAt > 300L
         ) {
             lastStoreAt = now
             val sroot = rootInActiveWindow
