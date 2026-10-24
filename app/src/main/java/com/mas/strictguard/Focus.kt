@@ -49,6 +49,12 @@ object Focus {
         return x
     }
 
+    /** Buang cache konfigurasi (dipakai setelah restore backup). */
+    fun reload() {
+        cfgCache = null
+        effCache = null
+    }
+
     fun setCfg(c: Context, x: Cfg) {
         sp(c).edit()
             .putStringSet("focus_ba", HashSet(x.blockApps))

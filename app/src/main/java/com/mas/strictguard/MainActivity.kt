@@ -331,6 +331,7 @@ class MainActivity : Activity() {
                 "sched" -> renderSchedule(strict)
                 else -> {
                     renderAppLock(strict)
+                    renderBackup(strict)
                     renderFriend()
                     renderDetection()
                     renderMotivation(strict)
@@ -2353,10 +2354,109 @@ class MainActivity : Activity() {
             }
             return
         }
+        if (requestCode == 5101 && resultCode == RESULT_OK && data?.data != null) {
+            val uri = data.data!!
+            val json = Backup.export(this)
+            Thread {
+                val ok = try {
+                    contentResolver.openOutputStream(uri, "wt")!!.use { it.write(json.toByteArray(Charsets.UTF_8)) }
+                    true
+                } catch (t: Throwable) {
+                    false
+                }
+                runOnUiThread { toast(if (ok) "Backup tersimpan" else "Gagal menyimpan backup") }
+            }.start()
+            return
+        }
+        if (requestCode == 5102 && resultCode == RESULT_OK && data?.data != null) {
+            val uri = data.data!!
+            Thread {
+                var text: String? = null
+                try {
+                    contentResolver.openInputStream(uri)!!.use { ins ->
+                        val buf = java.io.ByteArrayOutputStream()
+                        val b = ByteArray(8192)
+                        var total = 0
+                        while (true) {
+                            val n = ins.read(b)
+                            if (n < 0) break
+                            total += n
+                            if (total > 4 * 1024 * 1024) throw java.io.IOException("terlalu besar")
+                            buf.write(b, 0, n)
+                        }
+                        text = buf.toString("UTF-8")
+                    }
+                } catch (t: Throwable) {
+                    text = null
+                }
+                runOnUiThread { confirmRestore(text) }
+            }.start()
+            return
+        }
         if (requestCode == 77 && resultCode == RESULT_OK) {
             VpnManager.start(this)
             handler.postDelayed({ render() }, 1000L)
         }
+    }
+
+    private fun renderBackup(strict: Boolean) {
+        header("Backup dan restore")
+        put(text("Backup berisi aturan aplikasi dan website, Timer Tunggu, batas harian, jadwal, profil, kategori, Mode Fokus, lokasi, dan pengaturan metode keluar Mode Ketat. Tidak ikut: PIN dan kode teman, timer yang sedang berjalan, serta log. Saat menyimpan, pilih Google Drive di daftar lokasi agar tersimpan di akun Gmail-mu dan tetap ada walau Penjaga Ketat dihapus.", 12f))
+        if (strict) put(text("Mode Ketat aktif: restore hanya menambah aturan, tidak mengurangi atau melonggarkan.", 12f, true, Color.rgb(180, 0, 0)))
+        put(button("Ekspor backup (simpan ke file / Google Drive)") {
+            val i = Intent(Intent.ACTION_CREATE_DOCUMENT)
+            i.addCategory(Intent.CATEGORY_OPENABLE)
+            i.type = "application/json"
+            i.putExtra(Intent.EXTRA_TITLE, Backup.fileName())
+            try {
+                startActivityForResult(i, 5101)
+            } catch (t: Throwable) {
+                toast("Tidak ada aplikasi penyimpan file")
+            }
+        })
+        put(button("Impor / restore dari file") {
+            val i = Intent(Intent.ACTION_OPEN_DOCUMENT)
+            i.addCategory(Intent.CATEGORY_OPENABLE)
+            i.type = "*/*"
+            try {
+                startActivityForResult(i, 5102)
+            } catch (t: Throwable) {
+                toast("Tidak ada aplikasi pemilih file")
+            }
+        })
+        val last = Backup.lastSafety(this)
+        if (last != null) put(button("Batalkan restore terakhir") {
+            val parsed = Backup.parse(try { last.readText() } catch (t: Throwable) { "" })
+            if (!parsed.ok) toast("Cadangan sebelum restore tidak bisa dibaca") else confirmRestore(last.readText(), "Kembalikan konfigurasi sebelum restore terakhir?")
+        })
+    }
+
+    private fun confirmRestore(text: String?, title: String = "Restore backup") {
+        if (text == null) {
+            toast("File tidak bisa dibaca")
+            return
+        }
+        val parsed = Backup.parse(text)
+        if (!parsed.ok) {
+            android.app.AlertDialog.Builder(this)
+                .setTitle("Backup tidak valid")
+                .setMessage(parsed.error + "\nKonfigurasi kamu tidak diubah.")
+                .setPositiveButton("OK", null)
+                .show()
+            return
+        }
+        val strict = Store.strictRaw(this)
+        android.app.AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(parsed.summary + "\n\n" +
+                (if (strict) "Mode Ketat aktif: hanya aturan baru yang ditambahkan." else "Konfigurasi sekarang diganti isi backup. Salinan konfigurasi sekarang disimpan dulu.") )
+            .setPositiveButton("Restore") { _, _ ->
+                val msg = try { Backup.apply(this, parsed.root!!) } catch (t: Throwable) { "Restore gagal. Konfigurasi lama tetap ada." }
+                toast(msg)
+                render()
+            }
+            .setNegativeButton("Batalkan", null)
+            .show()
     }
 
     private fun renderFriend() {
