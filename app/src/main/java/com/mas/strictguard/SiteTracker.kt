@@ -98,6 +98,7 @@ object SiteTracker {
     fun verdict(c: Context, domainRaw: String, r: SiteCfg, now: Long): String? {
         val d = norm(domainRaw); if (d.isEmpty()) return null
         if (LocationRules.blocked(c, "site_$d")) return "site_loc"
+        if (Focus.blocksDomain(c, d)) return "site_focus"
         if (r.schOn && !Rules.scheduleActive(r.start, r.end, r.days)) return null
         if (remaining(c, d, r, now) > 0L) return "site_wait"
         if (r.limitMin > 0 && todayMs(c, d) >= r.limitMin * 60000L) return "site_limit"

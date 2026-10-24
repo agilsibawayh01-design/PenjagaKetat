@@ -79,6 +79,10 @@ class BlockActivity : Activity() {
             "content" -> info.text = "Konten ini diblokir oleh Penjaga Ketat."
             "screen_keyword" -> info.text = "Konten ini diblokir karena mengandung kata kunci layar yang dibatasi."
             "profile" -> info.text = "Aplikasi ini diblokir oleh profil yang sedang aktif."
+            "focus" -> {
+                val left = Focus.leftMs(this) / 60000L + 1L
+                info.text = "Mode Fokus aktif.\nAplikasi ini diblokir selama Fokus.\nSisa sekitar $left menit."
+            }
             "until" -> {
                 val until = Store.appCfg(this, pkg).blockUntil
                 val f = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())

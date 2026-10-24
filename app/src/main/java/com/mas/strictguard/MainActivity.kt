@@ -325,6 +325,7 @@ class MainActivity : Activity() {
                     renderNotif()
                 }
                 "stats" -> renderDashboard(strict)
+                "focus" -> renderFocus(strict)
                 else -> {
                     renderAppLock(strict)
                     renderFriend()
@@ -348,6 +349,7 @@ class MainActivity : Activity() {
         "profiles" -> "Profil"
         "net" -> "VPN DNS dan notifikasi"
         "stats" -> "Dashboard"
+        "focus" -> "Mode Fokus"
         else -> "Lainnya"
     }
 
@@ -455,6 +457,7 @@ class MainActivity : Activity() {
             tile("🌐", "Situs & kata", "$wordCount aturan • $cats kategori", Color.parseColor("#6A1B9A"), "words"),
             tile("🗂️", "Profil", "$activeP aktif dari ${profiles.size}", Color.parseColor("#00796B"), "profiles"),
             tile("🔌", "VPN & notifikasi", if (VpnStatus.running) "VPN DNS aktif" else if (Store.vpnOn(this)) "VPN DNS: " + VpnStatus.state.label else "VPN DNS mati", Color.parseColor("#2E7D32"), "net"),
+            tile("🎯", "Mode Fokus", focusTileLabel(), Color.parseColor("#AD1457"), "focus"),
             tile("📊", "Dashboard", "$blocks blokir hari ini", Color.parseColor("#EF6C00"), "stats"),
             tile("⚙️", "Lainnya", "Teman, log, deteksi", Color.parseColor("#455A64"), "more")
         )
@@ -1764,6 +1767,7 @@ class MainActivity : Activity() {
         "content" -> "Konten/situs/kata kunci"
         "dns" -> "Situs diblokir (DNS)"
         "protect" -> "Perlindungan pengaturan"
+        "focus" -> "Mode Fokus"
         else -> r
     }
 
@@ -1788,8 +1792,163 @@ class MainActivity : Activity() {
         } catch (t: Throwable) {
             put(text("Ringkasan belum tersedia.", 12f, false, C_SUB))
         }
+        if (Focus.running(this)) {
+            val left = Focus.leftMs(this) / 60000L + 1L
+            put(text("🎯 Mode Fokus " + (if (Store.pausedNow(this)) "dijeda" else "aktif") + ": sisa sekitar $left menit", 13f, true, C_PRIMARY))
+        }
         status(protectedOk, if (protectedOk) "Perlindungan aktif" else "Perlindungan belum lengkap")
         put(button("Lihat dashboard") { goScreen("stats") })
+    }
+
+    private fun focusTileLabel(): String {
+        if (!Focus.running(this)) return "Belum aktif"
+        val left = Focus.leftMs(this) / 60000L + 1L
+        return (if (Store.pausedNow(this)) "dijeda • " else "") + "sisa $left menit"
+    }
+
+    /** Dialog daftar teks (satu item per baris). [normalize] menormalkan domain. */
+    private fun editListDialog(title: String, current: Set<String>, domain: Boolean, onSave: (Set<String>) -> Unit) {
+        val et = EditText(this).apply {
+            setText(current.sorted().joinToString("\n"))
+            hint = if (domain) "satu situs per baris, mis. contoh.com" else ""
+            minLines = 4
+            gravity = Gravity.TOP
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle(title)
+            .setView(et)
+            .setPositiveButton("Simpan") { _, _ ->
+                val out = HashSet<String>()
+                for (line in et.text.toString().split('\n', ',', ';')) {
+                    val v = if (domain) Rules.normalizeDomain(line) else line.trim()
+                    if (v.isNotEmpty()) out.add(v)
+                }
+                onSave(out)
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    private fun renderFocus(strict: Boolean) {
+        val running = Focus.running(this)
+        val locked = running && Store.strictOn(this)
+        header("Mode Fokus")
+        put(text("Fokus memblokir pilihanmu untuk sementara, di atas aturan yang sudah ada. Aturan permanen tidak diubah dan kembali normal saat Fokus selesai.", 12f, false, C_SUB))
+        if (running) {
+            val paused = Store.pausedNow(this)
+            val left = Focus.leftMs(this) / 60000L + 1L
+            put(text("Sisa sekitar $left menit", 24f, true, C_PRIMARY))
+            put(text(
+                if (paused) "Dijeda oleh Mode Off. Dilanjutkan otomatis dengan sisa waktu ini."
+                else "Fokus sedang berjalan.",
+                12f, false, C_SUB
+            ))
+            put(button("Tambah 15 menit") {
+                Focus.extend(this, 15)
+                render()
+            })
+            put(button("Hentikan Fokus") {
+                if (Store.strictOn(this)) {
+                    toast("Mode Ketat aktif: Fokus tidak bisa dihentikan sebelum waktunya")
+                } else {
+                    android.app.AlertDialog.Builder(this)
+                        .setTitle("Hentikan Mode Fokus?")
+                        .setPositiveButton("Hentikan") { _, _ ->
+                            Focus.stop(this)
+                            render()
+                        }
+                        .setNegativeButton("Batal", null)
+                        .show()
+                }
+            })
+            handler.postDelayed({ if (screen == "focus") render() }, 30000L)
+        } else {
+            put(text("Mulai Mode Fokus", 14f, true))
+            val row = LinearLayout(this)
+            row.orientation = LinearLayout.HORIZONTAL
+            fun startFor(min: Int) {
+                if (Focus.cfg(this).isEmpty) {
+                    toast("Pilih dulu aplikasi, situs, atau kategori yang diblokir di bawah.")
+                } else {
+                    Focus.start(this, min)
+                    render()
+                }
+            }
+            row.addView(pill("30 mnt", false, C_PRIMARY) { startFor(30) })
+            row.addView(pill("1 jam", false, C_PRIMARY) { startFor(60) })
+            row.addView(pill("2 jam", false, C_PRIMARY) { startFor(120) })
+            row.addView(pill("Custom", false, C_PRIMARY) {
+                val et = EditText(this).apply {
+                    inputType = InputType.TYPE_CLASS_NUMBER
+                    hint = "menit (1-1440)"
+                }
+                android.app.AlertDialog.Builder(this)
+                    .setTitle("Durasi Fokus")
+                    .setView(et)
+                    .setPositiveButton("Mulai") { _, _ ->
+                        val m = (et.text.toString().toIntOrNull() ?: 0).coerceIn(0, 1440)
+                        if (m > 0) startFor(m) else toast("Isi durasi dalam menit")
+                    }
+                    .setNegativeButton("Batal", null)
+                    .show()
+            })
+            put(row)
+        }
+
+        val x = Focus.cfg(this)
+        header("Diblokir saat Fokus")
+        if (locked) put(text("Mode Ketat aktif dan Fokus berjalan: daftar ini terkunci.", 11f, false, C_SUB))
+        put(button("Aplikasi (${x.blockApps.size})") {
+            if (locked) toast("Terkunci") else {
+                val chosen = x.blockApps.toMutableSet()
+                pickApps(chosen) {
+                    Focus.setCfg(this, Focus.Cfg(chosen, x.blockSites, x.blockCats, x.allowApps, x.allowSites))
+                    render()
+                }
+            }
+        })
+        put(button("Situs (${x.blockSites.size})") {
+            if (locked) toast("Terkunci") else editListDialog("Situs diblokir saat Fokus", x.blockSites, true) { s ->
+                Focus.setCfg(this, Focus.Cfg(x.blockApps, s, x.blockCats, x.allowApps, x.allowSites))
+                render()
+            }
+        })
+        put(button("Kategori (${x.blockCats.size})") {
+            if (locked) toast("Terkunci") else {
+                val labels = Focus.CATS.map { it.name }.toTypedArray()
+                val checked = BooleanArray(Focus.CATS.size) { Focus.CATS[it].key in x.blockCats }
+                android.app.AlertDialog.Builder(this)
+                    .setTitle("Kategori yang diblokir")
+                    .setMultiChoiceItems(labels, checked) { _, which, on -> checked[which] = on }
+                    .setPositiveButton("Simpan") { _, _ ->
+                        val cats = HashSet<String>()
+                        for (i in Focus.CATS.indices) if (checked[i]) cats.add(Focus.CATS[i].key)
+                        Focus.setCfg(this, Focus.Cfg(x.blockApps, x.blockSites, cats, x.allowApps, x.allowSites))
+                        render()
+                    }
+                    .setNegativeButton("Batal", null)
+                    .show()
+            }
+        })
+        put(text("Kategori aplikasi memakai kategori bawaan Android, jadi tidak semua aplikasi terdeteksi. Aplikasi bank, telepon, Pengaturan, dan Penjaga Ketat tidak pernah ikut diblokir Fokus.", 11f, false, C_SUB))
+
+        header("Pengecualian (ALLOW)")
+        put(text("Pengecualian hanya membebaskan dari aturan Fokus. Aturan permanen (blokir penuh, timer, jadwal, profil) tetap berlaku.", 12f, false, C_SUB))
+        put(button("Aplikasi diizinkan (${x.allowApps.size})") {
+            if (locked) toast("Terkunci") else {
+                val chosen = x.allowApps.toMutableSet()
+                pickApps(chosen) {
+                    Focus.setCfg(this, Focus.Cfg(x.blockApps, x.blockSites, x.blockCats, chosen, x.allowSites))
+                    render()
+                }
+            }
+        })
+        put(button("Situs diizinkan (${x.allowSites.size})") {
+            if (locked) toast("Terkunci") else editListDialog("Situs diizinkan saat Fokus", x.allowSites, true) { s ->
+                Focus.setCfg(this, Focus.Cfg(x.blockApps, x.blockSites, x.blockCats, x.allowApps, s))
+                render()
+            }
+        })
     }
 
     private fun barLine(label: String, ms: Long, maxMs: Long, suffix: String = ""): String {

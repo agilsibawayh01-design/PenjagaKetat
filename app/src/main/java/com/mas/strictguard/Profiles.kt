@@ -144,6 +144,8 @@ object BlockEngine {
                 }
             }
         }
+        // Mode Fokus: lapisan sementara setelah aturan permanen (aturan permanen selalu didahulukan).
+        if (Focus.blocksApp(c, pkg)) return "focus"
         for (p in profiles) {
             if (pkg !in p.apps || !ProfileEngine.isActive(c, p)) continue
             if (p.limitMin <= 0) return "profile"

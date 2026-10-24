@@ -41,6 +41,7 @@ class GuardService : AccessibilityService() {
             try {
                 val now = System.currentTimeMillis()
                 refreshCache(now)
+                Focus.active(this@GuardService)
                 if (now - locCheckAt > 60000L) {
                     locCheckAt = now
                     LocationTracker.ensure(this@GuardService)
@@ -57,7 +58,7 @@ class GuardService : AccessibilityService() {
                                 handler.postDelayed(this, 2000L)
                                 return
                             }
-                            val configured = Store.domains(this@GuardService) +
+                            val configured = Store.domains(this@GuardService) + Focus.activeDomains(this@GuardService) +
                                 ProfileStore.load(this@GuardService).filter { ProfileEngine.isActive(this@GuardService, it) }.flatMap { it.domains }
                             val domain = SiteTracker.currentDomain(rootInActiveWindow, configured)
                             if (domain != null) {
@@ -186,7 +187,7 @@ class GuardService : AccessibilityService() {
         val categoryKeywords = Categories.keywords(this)
         urlKeywords = Store.urlKeywords(this) + categoryKeywords + profileKeywords
         screenKeywords = Store.screenKeywords(this) + categoryKeywords + profileKeywords
-        domains = Store.domains(this) + Categories.domains(this) + active.flatMap { it.domains }
+        domains = Store.domains(this) + Categories.domains(this) + Focus.activeDomains(this) + active.flatMap { it.domains }
         browsers = Config.BROWSERS + Store.extraBrowsers(this)
         inputMethodPackages = try {
             val imm = getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager
@@ -436,12 +437,17 @@ class GuardService : AccessibilityService() {
     }
 
     private fun checkWebsiteRule(pkg: String, root: AccessibilityNodeInfo?, now: Long): Boolean {
-        val configured = Store.domains(this) + ProfileStore.load(this).filter { ProfileEngine.isActive(this, it) }.flatMap { it.domains }
+        val configured = Store.domains(this) + Focus.activeDomains(this) + ProfileStore.load(this).filter { ProfileEngine.isActive(this, it) }.flatMap { it.domains }
         val domain = SiteTracker.currentDomain(root, configured) ?: run {
             SiteTracker.stop(this)
             return false
         }
         SiteTracker.tick(this, domain)
+        if (Focus.blocksDomain(this, domain)) {
+            blockDomain = domain
+            startBlock("site", pkg)
+            return true
+        }
         val cfg = Store.siteCfgOrNull(this, domain) ?: return false
         if (LocationRules.blocked(this, "site_" + Rules.normalizeDomain(domain))) {
             blockDomain = domain
