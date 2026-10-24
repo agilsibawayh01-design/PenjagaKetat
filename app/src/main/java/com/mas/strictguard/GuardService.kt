@@ -50,21 +50,16 @@ class GuardService : AccessibilityService() {
                 // Masa tunggu tetap dihitung oleh WaitTimer/SiteTracker dan dipakai untuk memblokir.
                 if (!backing && !pausedNow && Foreground.hasUsageAccess(this@GuardService)) {
                     val p = Foreground.current(this@GuardService)
-                    // UsageStats.current() menyimpan aplikasi terakhir yang RESUMED.
-                    // Saat panel notifikasi / quick settings ditarik, aplikasi terakhir
-                    // masih bisa terbaca sebagai foreground meskipun layar sebenarnya
-                    // sedang berada di System UI. Jangan menjalankan enforcement terhadap
-                    // aplikasi lama dalam kondisi ini.
                     val activeRootPkg = rootInActiveWindow?.packageName?.toString() ?: ""
-                    if (activeRootPkg == "com.android.systemui") {
+                    // UsageStats bisa masih menunjuk ke aplikasi sebelumnya ketika panel notifikasi,
+                    // Quick Settings, atau launcher sedang tampil. Jangan pernah melakukan enforcement
+                    // berdasarkan paket yang sudah tidak menjadi root window aktif.
+                    if (activeRootPkg in Config.IGNORED || activeRootPkg.isEmpty() || activeRootPkg != p) {
+                        TimerNotifier.cancel(this@GuardService)
                         handler.postDelayed(this, 2000L)
                         return
                     }
-                    // Untuk pemeriksaan berkala, hanya tindak aplikasi yang benar-benar
-                    // sedang menjadi root Accessibility aktif. Ini mencegah aplikasi lama
-                    // diblokir ketika notification shade, dialog sistem, atau layar lain
-                    // berada di atasnya.
-                    if (p.isNotEmpty() && p != packageName && p !in Config.IGNORED && activeRootPkg == p) {
+                    if (p.isNotEmpty() && p != packageName && p !in Config.IGNORED) {
                         var siteShown = false
                         if (p in browsers) {
                             if (checkWebsiteRule(p, rootInActiveWindow, now)) {
@@ -130,7 +125,9 @@ class GuardService : AccessibilityService() {
                 return
             }
             try {
-                if (Foreground.hasUsageAccess(this@GuardService) && Foreground.current(this@GuardService) == p) {
+                val rootPkg = rootInActiveWindow?.packageName?.toString() ?: ""
+                if (Foreground.hasUsageAccess(this@GuardService) &&
+                    rootPkg == p && rootPkg !in Config.IGNORED && rootPkg != packageName) {
                     val v = BlockEngine.check(this@GuardService, p, System.currentTimeMillis(), apps, profiles)
                     if (v != null) {
                         limitPkg = ""
