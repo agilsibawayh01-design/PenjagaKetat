@@ -233,6 +233,7 @@ class GuardService : AccessibilityService() {
         // membaca kembali kolom input PenjagaKetat dan memblokirnya sendiri.
         val foregroundRoot = rootInActiveWindow
         if (foregroundRoot?.packageName?.toString() == packageName) return
+        if (FeatureDump.active()) FeatureDump.capture(pkg, foregroundRoot)
 
         // Klik pada aplikasi terlindung di Pengaturan (mis. daftar layanan Aksesibilitas): langsung kembali,
         // sebelum halaman detail dan tombol nonaktifkan sempat dipakai.
@@ -324,33 +325,13 @@ class GuardService : AccessibilityService() {
             }
         }
 
-        // 7. Feed video pendek (Shorts YouTube, Reels Instagram tanpa Stories)
-        val ytWanted = pkg == Config.YOUTUBE && Store.blockShorts(this)
-        val igWanted = pkg == Config.INSTAGRAM && Store.blockReels(this)
-        if ((ytWanted || igWanted) && now - lastFeedAt > 600L) {
+        // 7. Bagian dalam aplikasi sosmed (Shorts, Reels, Cerita, Pencarian, ...)
+        val feats = Features.activeFor(this, pkg)
+        if (feats.isNotEmpty() && now - lastFeedAt > 600L) {
             lastFeedAt = now
             val root = rootInActiveWindow ?: return
-            var hit = false
-            for (n in collect(root, 500)) {
-                val id = (n.viewIdResourceName ?: "").lowercase()
-                if (id.isEmpty()) continue
-                if (ytWanted) {
-                    if (Config.YT_IDS.any { id.contains(it) }) {
-                        hit = true
-                        break
-                    }
-                } else {
-                    if (id.contains("reel_viewer") || id.contains("story")) continue
-                    if (Config.IG_IDS.any { id.contains(it) }) {
-                        hit = true
-                        break
-                    }
-                    if (id.contains(Config.IG_REELS_TAB) && n.isSelected) {
-                        hit = true
-                        break
-                    }
-                }
-            }
+            val nodes = collect(root, 500)
+            val hit = feats.any { Features.hit(it, nodes) }
             if (hit && now - lastBackAt > 800L) {
                 lastBackAt = now
                 performGlobalAction(GLOBAL_ACTION_BACK)

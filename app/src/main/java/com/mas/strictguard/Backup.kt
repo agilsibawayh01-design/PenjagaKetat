@@ -37,7 +37,7 @@ object Backup {
         "profiles", "keyword_split_v21", "seeded", "sched_notify"
     )
 
-    private val PREFIXES = listOf("cfg_", "sitecfg_", "cat_", "loc_")
+    private val PREFIXES = listOf("cfg_", "sitecfg_", "cat_", "loc_", "feat_")
 
     fun allowed(key: String): Boolean =
         key in SET_KEYS || key in SCALAR_KEYS || PREFIXES.any { key.startsWith(it) && key.length > it.length }
@@ -202,7 +202,7 @@ object Backup {
                             added++
                         }
                     }
-                    k.startsWith("cat_") -> {
+                    k.startsWith("cat_") || k.startsWith("feat_") -> {
                         if (o.opt("v") == true && !p.getBoolean(k, false)) {
                             e.putBoolean(k, true)
                             added++

@@ -2368,6 +2368,20 @@ class MainActivity : Activity() {
             }.start()
             return
         }
+        if (requestCode == 5103 && resultCode == RESULT_OK && data?.data != null) {
+            val uri = data.data!!
+            val txt = FeatureDump.text()
+            Thread {
+                val ok = try {
+                    contentResolver.openOutputStream(uri, "wt")!!.use { it.write(txt.toByteArray(Charsets.UTF_8)) }
+                    true
+                } catch (t: Throwable) {
+                    false
+                }
+                runOnUiThread { toast(if (ok) "Rekaman tersimpan" else "Gagal menyimpan rekaman") }
+            }.start()
+            return
+        }
         if (requestCode == 5102 && resultCode == RESULT_OK && data?.data != null) {
             val uri = data.data!!
             Thread {
@@ -2825,27 +2839,49 @@ class MainActivity : Activity() {
     }
 
     private fun renderFeeds(strict: Boolean) {
-        header("Feed video pendek")
-        put(text("Mencoba menutup Shorts YouTube dan Reels Instagram (Stories Instagram tidak ikut diblokir). Bergantung pada tampilan aplikasi, jadi bisa meleset setelah aplikasinya diperbarui.", 12f))
-        val s = Store.blockShorts(this)
-        val r = Store.blockReels(this)
-        fun change(sv: Boolean, rv: Boolean) {
-            if (strict && (!sv || !rv) && (s || r)) {
-                toast("Mode Ketat aktif: pengaturan terkunci")
-            } else {
-                Store.setFeeds(this, sv, rv)
+        header("Blokir bagian aplikasi sosmed")
+        put(text("Aplikasinya tetap bisa dipakai, tetapi bagian pemicu kecanduan (Shorts, Reels, Cerita, Pencarian, tab Pembaruan) ditutup otomatis. Deteksi bergantung pada tampilan tiap aplikasi, jadi bisa meleset atau salah kena setelah aplikasinya diperbarui. Bila ada yang tidak terdeteksi atau salah blokir, pakai Rekam layar di bawah. Saat Mode Ketat aktif, fitur yang sudah menyala tidak bisa dimatikan.", 12f))
+        var lastGroup = ""
+        for (f in Features.ALL) {
+            if (f.group != lastGroup) {
+                lastGroup = f.group
+                put(text(f.group, 13f, true))
             }
-            render()
+            val on = Features.enabled(this, f)
+            put(CheckBox(this).apply {
+                text = f.label
+                isChecked = on
+                setOnClickListener {
+                    val v = isChecked
+                    if (strict && on && !v) {
+                        toast("Mode Ketat aktif: pengaturan terkunci")
+                    } else {
+                        Features.setEnabled(this@MainActivity, f, v)
+                    }
+                    render()
+                }
+            })
         }
-        put(CheckBox(this).apply {
-            text = "Blokir Shorts YouTube"
-            isChecked = s
-            setOnClickListener { change(isChecked, r) }
+        header("Rekam layar (untuk memperbaiki deteksi)")
+        put(text("Tekan Mulai, buka aplikasi sosmed, dan pindah ke bagian yang bermasalah (mis. tab Pembaruan WhatsApp, Reels, kolom pencarian). Rekaman 20 detik hanya menyimpan nama komponen dan teks pendek (maks 24 huruf), bukan isi pesan. Lalu simpan hasilnya dan kirim ke saya.", 12f))
+        put(button("Mulai rekam 20 detik") {
+            FeatureDump.start(20)
+            toast("Merekam 20 detik. Buka aplikasi sosmed sekarang.")
         })
-        put(CheckBox(this).apply {
-            text = "Blokir Reels Instagram (bukan Stories)"
-            isChecked = r
-            setOnClickListener { change(s, isChecked) }
+        put(button("Simpan hasil rekaman ke file") {
+            if (FeatureDump.isEmpty()) {
+                toast("Belum ada rekaman")
+            } else {
+                val i = Intent(Intent.ACTION_CREATE_DOCUMENT)
+                i.addCategory(Intent.CATEGORY_OPENABLE)
+                i.type = "text/plain"
+                i.putExtra(Intent.EXTRA_TITLE, "PenjagaKetat_Rekam_Layar.txt")
+                try {
+                    startActivityForResult(i, 5103)
+                } catch (t: Throwable) {
+                    toast("Tidak ada aplikasi penyimpan file")
+                }
+            }
         })
     }
 }
