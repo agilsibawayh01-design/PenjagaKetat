@@ -22,19 +22,19 @@ object Backup {
 
     private val SET_KEYS = setOf(
         "apps", "browsers", "domains", "keywords", "keywords_url", "keywords_screen",
-        "keywords_builtin_disabled", "newapps", "prot", "vpn_excl",
+        "keywords_builtin_disabled", "newapps", "prot", "vpn_excl", "store_names",
         "focus_ba", "focus_bs", "focus_bc", "focus_aa", "focus_as"
     )
 
     /** Himpunan yang aman digabung (union) saat Mode Ketat aktif: menambah = memperketat. */
-    private val TIGHTEN_SETS = setOf("apps", "browsers", "domains", "keywords", "keywords_url", "keywords_screen", "prot", "focus_ba", "focus_bs", "focus_bc")
+    private val TIGHTEN_SETS = setOf("apps", "browsers", "domains", "keywords", "keywords_url", "keywords_screen", "prot", "store_names", "focus_ba", "focus_bs", "focus_bc")
 
     private val SCALAR_KEYS = setOf(
         "auto_new", "block_browsers", "motivation", "reels", "shorts",
         "sch_on", "sch_days", "sch_start", "sch_end", "wait_s",
         "vpn_doh", "vpn_excl_bank", "vpn_on",
         "strict_sched", "exp_min", "exit_wait_on", "exit_delay", "exit_text_len",
-        "profiles", "keyword_split_v21", "seeded", "sched_notify", "warn_before"
+        "profiles", "keyword_split_v21", "seeded", "sched_notify", "warn_before", "store_block"
     )
 
     private val PREFIXES = listOf("cfg_", "sitecfg_", "cat_", "loc_", "feat_")

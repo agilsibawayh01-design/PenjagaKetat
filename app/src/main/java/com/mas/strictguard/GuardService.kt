@@ -15,6 +15,7 @@ class GuardService : AccessibilityService() {
     private var locCheckAt = 0L
     private var lastScanAt = 0L
     private var lastFeedAt = 0L
+    private var lastStoreAt = 0L
     private var lastBackAt = 0L
     private var lastProtectAt = 0L
 
@@ -251,6 +252,20 @@ class GuardService : AccessibilityService() {
         if (pkg in blockedBrowsers) {
             startBlock("browser", pkg)
             return
+        }
+
+        // 0b. Cegah memasang browser selain Chrome lewat Play Store
+        if (pkg == BrowserStoreGuard.STORE && BrowserStoreGuard.enabled(this) && Store.blockOtherBrowsers(this) &&
+            now - lastStoreAt > 700L
+        ) {
+            lastStoreAt = now
+            val sroot = rootInActiveWindow
+            if (BrowserStoreGuard.shouldBack(this, event, sroot, resources.displayMetrics.heightPixels) && now - lastBackAt > 800L) {
+                lastBackAt = now
+                performGlobalAction(GLOBAL_ACTION_BACK)
+                android.widget.Toast.makeText(this, "Browser selain Chrome tidak diizinkan", android.widget.Toast.LENGTH_SHORT).show()
+                return
+            }
         }
 
         // 1. Blokir aplikasi

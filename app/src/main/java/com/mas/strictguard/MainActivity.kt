@@ -1044,6 +1044,40 @@ class MainActivity : Activity() {
             render()
         }
         put(cb)
+        val sb = CheckBox(this)
+        sb.text = "Cegah memasang browser lain dari Play Store"
+        sb.isChecked = BrowserStoreGuard.enabled(this)
+        sb.setOnClickListener {
+            if (!sb.isChecked && strict) {
+                toast("Mode Ketat aktif: tidak bisa dimatikan")
+            } else {
+                BrowserStoreGuard.setEnabled(this, sb.isChecked)
+            }
+            render()
+        }
+        put(sb)
+        put(text("Halaman detail aplikasi browser di Play Store dan pencarian nama browser otomatis ditutup. Tidak mencegah APK langsung atau toko lain. Tambahkan nama browser tambahan di bawah bila ada yang lolos.", 11f, false, C_SUB))
+        val nameBox = EditText(this)
+        nameBox.hint = "Nama browser tambahan (mis. Opera GX)"
+        nameBox.setSingleLine(true)
+        put(nameBox)
+        put(button("Tambah nama") {
+            val v = nameBox.text.toString().trim()
+            if (v.length < 3) toast("Minimal 3 huruf") else {
+                BrowserStoreGuard.addName(this, v)
+                render()
+            }
+        })
+        for (n in BrowserStoreGuard.customNames(this).sorted()) {
+            put(text("• $n   ✕", 12f, false, C_SUB).apply {
+                setOnClickListener {
+                    if (strict) toast("Mode Ketat aktif: tidak bisa dihapus") else {
+                        BrowserStoreGuard.removeName(this@MainActivity, n)
+                        render()
+                    }
+                }
+            })
+        }
         val list = Store.unsupportedBrowsers(this)
         if (list.isEmpty()) {
             put(text("Tidak ada browser lain terdeteksi.", 12f, false, C_SUB))
