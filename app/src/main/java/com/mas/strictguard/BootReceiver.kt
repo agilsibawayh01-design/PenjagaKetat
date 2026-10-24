@@ -16,6 +16,10 @@ class BootReceiver : BroadcastReceiver() {
             SafeTimer.elapsed(context, "exit")
             SafeTimer.elapsed(context, "tamper")
             VpnManager.ensure(context)
+            if (ScheduleNotifier.enabled(context)) {
+                ScheduleNotifier.snapshot(context)
+                ScheduleNotifier.rearm(context)
+            }
             if (Store.strictRaw(context)) {
                 Store.log(context, "Pemulihan setelah boot/update")
                 SelfProtector.reenableAccessibility(context)

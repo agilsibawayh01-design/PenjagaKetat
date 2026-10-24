@@ -87,6 +87,28 @@ object ProfileStore {
             arr.put(o)
         }
         sp(c).edit().putString("profiles", arr.toString()).commit()
+        ScheduleNotifier.rearm(c)
+    }
+
+    /** Tambah profil baru (dinyalakan, belum berisi aturan). */
+    fun add(c: Context, name: String): Profile {
+        val p = Profile("p" + System.currentTimeMillis(), name.trim(), true, emptySet(), emptySet(), emptySet(), emptyList(), 0)
+        save(c, load(c) + p)
+        return p
+    }
+
+    fun rename(c: Context, id: String, name: String) {
+        val n = name.trim()
+        if (n.isEmpty()) return
+        save(c, load(c).map { if (it.id == id) it.copy(name = n) else it })
+    }
+
+    /** Hapus profil. Profil terakhir tidak boleh dihapus. */
+    fun remove(c: Context, id: String): Boolean {
+        val list = load(c)
+        if (list.size <= 1) return false
+        save(c, list.filter { it.id != id })
+        return true
     }
 
     fun replace(c: Context, p: Profile) {

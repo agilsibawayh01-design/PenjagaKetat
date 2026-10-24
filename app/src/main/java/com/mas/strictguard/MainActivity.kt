@@ -326,6 +326,7 @@ class MainActivity : Activity() {
                 }
                 "stats" -> renderDashboard(strict)
                 "focus" -> renderFocus(strict)
+                "sched" -> renderSchedule(strict)
                 else -> {
                     renderAppLock(strict)
                     renderFriend()
@@ -347,6 +348,7 @@ class MainActivity : Activity() {
         "apps" -> "Aplikasi diblokir"
         "words" -> "Situs dan kata kunci"
         "profiles" -> "Profil"
+        "sched" -> "Jadwal otomatis"
         "net" -> "VPN DNS dan notifikasi"
         "stats" -> "Dashboard"
         "focus" -> "Mode Fokus"
@@ -458,6 +460,7 @@ class MainActivity : Activity() {
             tile("🗂️", "Profil", "$activeP aktif dari ${profiles.size}", Color.parseColor("#00796B"), "profiles"),
             tile("🔌", "VPN & notifikasi", if (VpnStatus.running) "VPN DNS aktif" else if (Store.vpnOn(this)) "VPN DNS: " + VpnStatus.state.label else "VPN DNS mati", Color.parseColor("#2E7D32"), "net"),
             tile("🎯", "Mode Fokus", focusTileLabel(), Color.parseColor("#AD1457"), "focus"),
+            tile("🗓️", "Jadwal", scheduleTileLabel(), Color.parseColor("#5D4037"), "sched"),
             tile("📊", "Dashboard", "$blocks blokir hari ini", Color.parseColor("#EF6C00"), "stats"),
             tile("⚙️", "Lainnya", "Teman, log, deteksi", Color.parseColor("#455A64"), "more")
         )
@@ -1580,6 +1583,109 @@ class MainActivity : Activity() {
             }
             .setPositiveButton("OK") { _, _ -> onDone() }
             .show()
+    }
+
+    private fun scheduleTileLabel(): String {
+        val n = ScheduleNotifier.activeNow(this).size
+        return if (n > 0) "$n jadwal aktif" else "Atur per hari & jam"
+    }
+
+    private fun askName(title: String, initial: String, onOk: (String) -> Unit) {
+        val et = EditText(this)
+        et.setText(initial)
+        et.setSingleLine(true)
+        android.app.AlertDialog.Builder(this)
+            .setTitle(title)
+            .setView(et)
+            .setPositiveButton("Simpan") { _, _ ->
+                val v = et.text.toString().trim()
+                if (v.isNotEmpty()) onOk(v)
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    private fun renderSchedule(strict: Boolean) {
+        val profiles = ProfileStore.load(this)
+        header("Sekarang")
+        val act = ScheduleNotifier.activeNow(this)
+        put(text(if (act.isEmpty()) "Tidak ada profil berjadwal yang sedang berjalan." else
+            act.joinToString("\n") { "• " + it.name }, 13f, act.isNotEmpty()))
+        val nb = ScheduleNotifier.nextBoundary(this, System.currentTimeMillis())
+        if (nb != null) {
+            val cal = java.util.Calendar.getInstance()
+            cal.timeInMillis = nb.first
+            val today = java.util.Calendar.getInstance()
+            val same = cal.get(java.util.Calendar.DAY_OF_YEAR) == today.get(java.util.Calendar.DAY_OF_YEAR) &&
+                cal.get(java.util.Calendar.YEAR) == today.get(java.util.Calendar.YEAR)
+            val dn = arrayOf("Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min")[(cal.get(java.util.Calendar.DAY_OF_WEEK) + 5) % 7]
+            put(text("Berikutnya: " + nb.second + " • " + (if (same) "hari ini" else dn) + " " +
+                fmt(cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)), 12f, false, Color.rgb(90, 90, 90)))
+        }
+        put(text("Jadwal berjalan otomatis tanpa membuka aplikasi dan tetap berlaku setelah restart. Profil mati tidak berjalan. Jadwal yang saling tumpang tindih digabung: diblokir bila salah satu aktif.", 12f))
+
+        header("Per hari")
+        val names = arrayOf("Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu")
+        for (d in 0 until 7) {
+            val rows = ArrayList<Pair<Int, String>>()
+            for (p in profiles) {
+                if (!p.enabled) continue
+                for (sc in p.schedules) {
+                    if ((sc.days and (1 shl d)) == 0) continue
+                    val over = sc.start > sc.end
+                    rows.add(Pair(sc.start, fmt(sc.start) + "-" + fmt(sc.end) + (if (over) " (s/d esok)" else "") + "  " + p.name))
+                }
+            }
+            rows.sortBy { it.first }
+            put(text(names[d] + (if (rows.isEmpty()) ": tidak ada" else ""), 13f, true))
+            for (r in rows) put(text("   " + r.second, 12f, false, Color.rgb(60, 60, 60)))
+        }
+
+        header("Profil")
+        for (p in profiles) {
+            val sch = if (p.schedules.isEmpty()) "tanpa jadwal (aktif terus bila dinyalakan)" else
+                p.schedules.joinToString("; ") { "${fmt(it.start)}-${fmt(it.end)} ${dayNames(it.days)}" }
+            put(text(p.name + (if (p.enabled) "" else " (mati)"), 13f, true))
+            put(text(sch, 12f, false, Color.rgb(90, 90, 90)))
+            put(button("Atur jadwal & isi: " + p.name) { editProfile(p, strict) })
+            put(button("Ganti nama") {
+                if (strict) toast("Mode Ketat aktif: tidak bisa mengubah profil") else
+                    askName("Nama profil", p.name) { ProfileStore.rename(this, p.id, it); render() }
+            })
+            put(button("Hapus profil") {
+                if (strict) toast("Mode Ketat aktif: profil tidak bisa dihapus")
+                else android.app.AlertDialog.Builder(this)
+                    .setTitle("Hapus " + p.name + "?")
+                    .setPositiveButton("Hapus") { _, _ ->
+                        if (!ProfileStore.remove(this, p.id)) toast("Minimal harus ada satu profil")
+                        render()
+                    }
+                    .setNegativeButton("Batal", null)
+                    .show()
+            })
+        }
+        put(button("Tambah profil baru") {
+            askName("Nama profil baru", "") {
+                val np = ProfileStore.add(this, it)
+                render()
+                editProfile(np, strict)
+            }
+        })
+
+        header("Pemberitahuan")
+        val cb = CheckBox(this)
+        cb.text = "Beri tahu saat profil mulai dan selesai"
+        cb.isChecked = ScheduleNotifier.enabled(this)
+        cb.setOnClickListener {
+            val v = cb.isChecked
+            if (v && Build.VERSION.SDK_INT >= 33 &&
+                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+            ) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1004)
+            ScheduleNotifier.setEnabled(this, v)
+            render()
+        }
+        put(cb)
+        put(text("Hanya pemberitahuan. Pemblokiran tidak bergantung padanya. Bila mati, tidak ada alarm sama sekali (hemat baterai). Waktu pemberitahuan bisa meleset beberapa menit karena mode hemat daya Android.", 12f, false, Color.rgb(90, 90, 90)))
     }
 
     private fun renderProfiles(strict: Boolean) {
