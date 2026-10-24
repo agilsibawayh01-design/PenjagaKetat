@@ -184,6 +184,54 @@ class MainActivity : Activity() {
         return sv
     }
 
+    private fun builtinKeywordList(): View {
+        val all = Store.builtinKeywords(this).sorted()
+        if (all.isEmpty()) return text("Tidak ada keyword bawaan.", 12f, false, C_SUB)
+        val disabled = Store.disabledBuiltinKeywords(this)
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), dp(4), dp(10), dp(4))
+        }
+        for (item in all) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            val label = text(item, 13f).apply {
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            row.addView(label)
+            if (item in disabled) {
+                row.addView(text("Mati", 12f, false, C_SUB).apply {
+                    setPadding(dp(8), dp(6), dp(8), dp(6))
+                })
+                row.addView(button("Aktifkan") {
+                    Store.enableBuiltinKeyword(this, item)
+                    Store.addUrlKeyword(this, item)
+                    Store.addScreenKeyword(this, item)
+                    render()
+                })
+            } else {
+                row.addView(text("Aktif", 12f, true, C_OK).apply {
+                    setPadding(dp(8), dp(6), dp(8), dp(6))
+                })
+                row.addView(text("✕", 15f, true, C_BAD).apply {
+                    setPadding(dp(14), dp(8), dp(6), dp(8))
+                    setOnClickListener {
+                        if (Store.strictOn(this@MainActivity)) {
+                            toast("Mode Ketat aktif: tidak bisa mengubah keyword bawaan")
+                        } else {
+                            Store.disableBuiltinKeyword(this@MainActivity, item)
+                            render()
+                        }
+                    }
+                })
+            }
+            col.addView(row)
+        }
+        return scrollBox(240, col)
+    }
+
     private fun chipList(items: List<String>, onRemove: (String) -> Unit): View {
         if (items.isEmpty()) return text("Belum ada.", 12f, false, C_SUB)
         val col = LinearLayout(this)
@@ -2100,6 +2148,10 @@ class MainActivity : Activity() {
     private fun renderWords(strict: Boolean) {
         header("Kata kunci")
         put(text("Pisahkan antara keyword yang hanya diperiksa di URL browser dan keyword yang diperiksa pada teks seluruh layar.", 12f, false, C_SUB))
+
+        header("🛡️ Keyword Bawaan PenjagaKetat")
+        put(text("Daftar keyword bawaan yang dapat kamu ubah. Jika terlalu luas, tekan ✕ untuk mematikannya. Jika ingin mengaktifkan kembali, tekan Aktifkan.", 12f, false, C_SUB))
+        put(builtinKeywordList())
 
         header("🔗 Keyword URL")
         put(text("Diperiksa hanya pada kolom alamat/URL semua browser yang dipantau. Tidak memblokir kata yang hanya muncul sebagai teks halaman.", 12f, false, C_SUB))

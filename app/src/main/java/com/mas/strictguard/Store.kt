@@ -177,6 +177,7 @@ object Store {
     fun addKeyword(c: Context, k: String) {
         val v = k.trim().lowercase()
         if (v.isEmpty()) return
+        enableBuiltinKeyword(c, v)
         putSet(c, "keywords", getSet(c, "keywords") + v)
         putSet(c, "keywords_url", urlKeywords(c) + v)
         putSet(c, "keywords_screen", screenKeywords(c) + v)
@@ -185,13 +186,17 @@ object Store {
     fun removeKeyword(c: Context, k: String) {
         val v = k.trim().lowercase()
         putSet(c, "keywords", getSet(c, "keywords") - v)
+        if (isBuiltinKeyword(c, v)) disableBuiltinKeyword(c, v)
         putSet(c, "keywords_url", urlKeywords(c) - v)
         putSet(c, "keywords_screen", screenKeywords(c) - v)
     }
 
     fun addUrlKeyword(c: Context, k: String) {
         val v = k.trim().lowercase()
-        if (v.isNotEmpty()) putSet(c, "keywords_url", urlKeywords(c) + v)
+        if (v.isNotEmpty()) {
+            enableBuiltinKeyword(c, v)
+            putSet(c, "keywords_url", urlKeywords(c) + v)
+        }
     }
 
     fun removeUrlKeyword(c: Context, k: String) {
@@ -201,12 +206,39 @@ object Store {
 
     fun addScreenKeyword(c: Context, k: String) {
         val v = k.trim().lowercase()
-        if (v.isNotEmpty()) putSet(c, "keywords_screen", screenKeywords(c) + v)
+        if (v.isNotEmpty()) {
+            enableBuiltinKeyword(c, v)
+            putSet(c, "keywords_screen", screenKeywords(c) + v)
+        }
     }
 
     fun removeScreenKeyword(c: Context, k: String) {
         val v = k.trim().lowercase()
         putSet(c, "keywords_screen", screenKeywords(c) - v)
+    }
+
+    /** Keyword bawaan yang sengaja dimatikan pengguna. */
+    fun disabledBuiltinKeywords(c: Context): Set<String> = getSet(c, "keywords_builtin_disabled")
+
+    fun builtinKeywords(c: Context): Set<String> =
+        (Config.SEED_KEYWORDS + Categories.ALL.flatMap { it.keywords }).map { it.trim().lowercase() }
+            .filter { it.isNotEmpty() }.toSet()
+
+    fun isBuiltinKeyword(c: Context, keyword: String): Boolean =
+        keyword.trim().lowercase() in builtinKeywords(c)
+
+    fun disableBuiltinKeyword(c: Context, keyword: String) {
+        val v = keyword.trim().lowercase()
+        if (!isBuiltinKeyword(c, v)) return
+        putSet(c, "keywords_builtin_disabled", disabledBuiltinKeywords(c) + v)
+        putSet(c, "keywords_url", urlKeywords(c) - v)
+        putSet(c, "keywords_screen", screenKeywords(c) - v)
+    }
+
+    fun enableBuiltinKeyword(c: Context, keyword: String) {
+        val v = keyword.trim().lowercase()
+        if (!isBuiltinKeyword(c, v)) return
+        putSet(c, "keywords_builtin_disabled", disabledBuiltinKeywords(c) - v)
     }
 
     /**
@@ -218,8 +250,6 @@ object Store {
         if (prefs.getBoolean("keyword_split_v21", false)) return
         val legacy = getSet(c, "keywords")
         if (legacy.isNotEmpty()) {
-            // Jangan memanggil urlKeywords/screenKeywords di sini karena keduanya
-            // memanggil ensureKeywordSplit() dan akan menyebabkan rekursi.
             putSet(c, "keywords_url", getSet(c, "keywords_url") + legacy)
             putSet(c, "keywords_screen", getSet(c, "keywords_screen") + legacy)
         }
@@ -237,7 +267,10 @@ object Store {
     fun seed(c: Context) {
         ensureKeywordSplit(c)
         if (sp(c).getBoolean("seeded", false)) return
-        putSet(c, "keywords", keywords(c) + Config.SEED_KEYWORDS)
+        val seedKeywords = Config.SEED_KEYWORDS.map { it.lowercase() }.toSet()
+        putSet(c, "keywords", getSet(c, "keywords") + seedKeywords)
+        putSet(c, "keywords_url", urlKeywords(c) + seedKeywords)
+        putSet(c, "keywords_screen", screenKeywords(c) + seedKeywords)
         putSet(c, "domains", domains(c) + Config.SEED_DOMAINS)
         putSet(c, "apps", apps(c) + Config.SEED_APPS)
         sp(c).edit().putBoolean("seeded", true).commit()

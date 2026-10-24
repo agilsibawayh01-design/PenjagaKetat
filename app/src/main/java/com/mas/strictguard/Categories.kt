@@ -36,5 +36,5 @@ object Categories {
 
     fun enabled(c: Context): List<Cat> = ALL.filter { Store.categoryOn(c, it.id) }
     fun domains(c: Context): Set<String> = enabled(c).flatMap { it.domains }.toSet()
-    fun keywords(c: Context): Set<String> = enabled(c).flatMap { it.keywords }.toSet()
+    fun keywords(c: Context): Set<String> = enabled(c).flatMap { it.keywords }.map { it.lowercase() }.filter { it !in Store.disabledBuiltinKeywords(c) }.toSet()
 }
