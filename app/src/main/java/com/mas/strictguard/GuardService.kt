@@ -50,15 +50,6 @@ class GuardService : AccessibilityService() {
                 // Masa tunggu tetap dihitung oleh WaitTimer/SiteTracker dan dipakai untuk memblokir.
                 if (!backing && !pausedNow && Foreground.hasUsageAccess(this@GuardService)) {
                     val p = Foreground.current(this@GuardService)
-                    val activeRootPkg = rootInActiveWindow?.packageName?.toString() ?: ""
-                    // UsageStats bisa masih menunjuk ke aplikasi sebelumnya ketika panel notifikasi,
-                    // Quick Settings, atau launcher sedang tampil. Jangan pernah melakukan enforcement
-                    // berdasarkan paket yang sudah tidak menjadi root window aktif.
-                    if (activeRootPkg in Config.IGNORED || activeRootPkg.isEmpty() || activeRootPkg != p) {
-                        TimerNotifier.cancel(this@GuardService)
-                        handler.postDelayed(this, 2000L)
-                        return
-                    }
                     if (p.isNotEmpty() && p != packageName && p !in Config.IGNORED) {
                         var siteShown = false
                         if (p in browsers) {
@@ -125,9 +116,7 @@ class GuardService : AccessibilityService() {
                 return
             }
             try {
-                val rootPkg = rootInActiveWindow?.packageName?.toString() ?: ""
-                if (Foreground.hasUsageAccess(this@GuardService) &&
-                    rootPkg == p && rootPkg !in Config.IGNORED && rootPkg != packageName) {
+                if (Foreground.hasUsageAccess(this@GuardService) && Foreground.current(this@GuardService) == p) {
                     val v = BlockEngine.check(this@GuardService, p, System.currentTimeMillis(), apps, profiles)
                     if (v != null) {
                         limitPkg = ""
@@ -248,7 +237,11 @@ class GuardService : AccessibilityService() {
         // Klik pada aplikasi terlindung di Pengaturan (mis. daftar layanan Aksesibilitas): langsung kembali,
         // sebelum halaman detail dan tombol nonaktifkan sempat dipakai.
         if (event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
-            if (strictNow && isSettingsLike(pkg) && clickedProtected(event)) {
+            // Pada Settings/installer maupun launcher, hanya klik yang benar-benar
+            // mengenai aplikasi terlindung yang boleh memicu proteksi.
+            // Jangan memindai seluruh layar launcher: notification shade yang ditutup
+            // dapat menghasilkan event launcher tanpa ada halaman uninstall yang dibuka.
+            if (strictNow && isProtectedNavigationSurface(pkg) && clickedProtected(event)) {
                 startBlock("protect_click", "")
             }
             return
@@ -299,7 +292,7 @@ class GuardService : AccessibilityService() {
         }
 
         // 4. Lindungi pengaturan saat Mode Ketat aktif
-        if (strictNow && pkg in Config.PROTECTED && now - lastProtectAt > 500L) {
+        if (strictNow && isSettingsLike(pkg) && now - lastProtectAt > 500L) {
             lastProtectAt = now
             val root = rootInActiveWindow
             if (root != null && showsProtected(root)) {
@@ -411,10 +404,26 @@ class GuardService : AccessibilityService() {
         return false
     }
 
-    /** Hanya aplikasi Pengaturan/pemasang/izin. Layar utama (launcher) tidak termasuk, supaya membuka aplikasi biasa tidak ikut terblokir. */
+    /**
+     * Permukaan yang memang bisa membawa pengguna ke halaman uninstall/disable.
+     * Launcher sengaja tidak masuk pemeriksaan showsProtected(), karena seluruh pohon
+     * Accessibility launcher dapat berisi nama aplikasi dan action generik seperti
+     * "hapus" meskipun pengguna hanya kembali dari notification shade.
+     */
     private fun isSettingsLike(pkg: String): Boolean =
         pkg in Config.PROTECTED && (pkg.contains("settings") || pkg.contains("packageinstaller") ||
             pkg.contains("permissioncontroller") || pkg.contains("vending"))
+
+    /** Launcher hanya dipantau pada event klik, bukan dengan memindai seluruh layarnya. */
+    private fun isProtectedNavigationSurface(pkg: String): Boolean =
+        isSettingsLike(pkg) || pkg in setOf(
+            "com.sec.android.app.launcher",
+            "com.google.android.apps.nexuslauncher",
+            "com.android.launcher3",
+            "com.miui.home",
+            "com.oppo.launcher",
+            "com.transsion.hilauncher"
+        )
 
     /** True bila yang diklik adalah baris/tombol yang memuat nama aplikasi terlindung. */
     private fun clickedProtected(event: AccessibilityEvent): Boolean {
@@ -537,7 +546,7 @@ class GuardService : AccessibilityService() {
         return when (mode) {
             "content" -> cur != packageName && cur in browsers && browserHasBlocked(root)
             "screen_keyword" -> cur != packageName && screenHasBlocked(root)
-            "protect" -> cur in Config.PROTECTED && showsProtected(root)
+            "protect" -> isSettingsLike(cur) && showsProtected(root)
             else -> cur == pkg
         }
     }
