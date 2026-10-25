@@ -925,6 +925,7 @@ class MainActivity : Activity() {
             if (LocationTracker.hasPermission(this)) "" else "Izin lokasi belum diberikan. Ketuk tombol di bawah untuk memberi izin.",
             11f, false, C_SUB
         )
+        var zoneMap: MapPicker.Handle? = null
         val useBtn = Button(this).apply { text = "Pakai lokasi saya sekarang" }
         useBtn.setOnClickListener {
             if (!LocationTracker.hasPermission(this@MainActivity)) {
@@ -937,12 +938,15 @@ class MainActivity : Activity() {
                     } else {
                         latF.setText(String.format(java.util.Locale.US, "%.6f", l.latitude))
                         lonF.setText(String.format(java.util.Locale.US, "%.6f", l.longitude))
+                        zoneMap?.center(l.latitude, l.longitude)
                         status.text = "Lokasi didapat (akurasi sekitar ${l.accuracy.toInt()} m)."
                     }
                 }
             }
         }
         box.addView(useBtn)
+        box.addView(text("Ketuk peta untuk menaruh titik zona (peta butuh internet).", 11f, false, C_SUB))
+        zoneMap = MapPicker.attach(this, box, latF, lonF, 200, dp(280))
         box.addView(latF)
         box.addView(lonF)
         box.addView(status)
@@ -953,6 +957,7 @@ class MainActivity : Activity() {
         seek.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: android.widget.SeekBar?, p: Int, fromUser: Boolean) {
                 radiusLabel.text = "Radius: ${radii[p]} m"
+                zoneMap?.setRadius(radii[p])
             }
 
             override fun onStartTrackingTouch(sb: android.widget.SeekBar?) {}
@@ -962,7 +967,8 @@ class MainActivity : Activity() {
         box.addView(seek)
         android.app.AlertDialog.Builder(this)
             .setTitle("Tambah Zona Ketat")
-            .setView(box)
+            .setView(ScrollView(this).apply { addView(box) })
+            .setOnDismissListener { zoneMap?.destroy() }
             .setPositiveButton("Simpan") { _, _ ->
                 val lat = latF.text.toString().trim().toDoubleOrNull()
                 val lon = lonF.text.toString().trim().toDoubleOrNull()
@@ -1529,6 +1535,7 @@ class MainActivity : Activity() {
             if (LocationTracker.hasPermission(this)) "" else "Izin lokasi belum diberikan. Ketuk tombol di bawah untuk memberi izin.",
             11f, false, C_SUB
         )
+        var ruleMap: MapPicker.Handle? = null
         val useBtn = Button(this).apply { text = "Pakai lokasi saya sekarang" }
         useBtn.setOnClickListener {
             if (!LocationTracker.hasPermission(this@MainActivity)) {
@@ -1541,12 +1548,17 @@ class MainActivity : Activity() {
                     } else {
                         latF.setText(String.format(java.util.Locale.US, "%.6f", l.latitude))
                         lonF.setText(String.format(java.util.Locale.US, "%.6f", l.longitude))
+                        ruleMap?.center(l.latitude, l.longitude)
                         status.text = "Lokasi didapat (akurasi sekitar ${l.accuracy.toInt()} m)."
                     }
                 }
             }
         }
         body.addView(useBtn)
+        if (!locked) {
+            body.addView(text("Ketuk peta untuk menaruh titik (peta butuh internet).", 11f, false, C_SUB))
+            ruleMap = MapPicker.attach(this, body, latF, lonF, old?.radius ?: 150, dp(260))
+        }
         body.addView(latF)
         body.addView(lonF)
         body.addView(status)
@@ -1565,6 +1577,7 @@ class MainActivity : Activity() {
         seek.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(s: android.widget.SeekBar?, p: Int, fromUser: Boolean) {
                 radiusLabel.text = "Radius: ${radiusOf(p)} m"
+                ruleMap?.setRadius(radiusOf(p))
             }
 
             override fun onStartTrackingTouch(s: android.widget.SeekBar?) {}
