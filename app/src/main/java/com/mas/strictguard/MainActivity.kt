@@ -589,6 +589,7 @@ class MainActivity : Activity() {
         val raw = Store.strictRaw(this)
         return when {
             Store.pausedNow(this) -> "Mode OFF (jeda)"
+            raw && Zone.active(this) -> "Mode KETAT (Zona Ketat)"
             raw && Store.strictOn(this) -> "Mode KETAT aktif"
             raw -> "Mode Ketat terjadwal"
             else -> "Mode Normal"
@@ -642,6 +643,7 @@ class MainActivity : Activity() {
                 val left = Store.pauseLeftMin(this)
                 "OFF: semua blokir dijeda. " + (if (left >= 0L) "Berakhir sekitar $left menit lagi." else "Berlaku sampai kamu memilih Normal.")
             }
+            raw && Zone.active(this) -> "KETAT (Zona Ketat): kamu di dalam zona. Mematikannya wajib mengetik teks acak ${Zone.MIN_TEXT} huruf."
             raw && Store.strictOn(this) -> "KETAT aktif: pengaturan terkunci dan sulit dimatikan."
             raw -> "KETAT terjadwal: sedang di luar jadwal, berperilaku seperti Normal."
             else -> "NORMAL: blokir bekerja, pengaturan masih bebas diubah."
@@ -715,7 +717,11 @@ class MainActivity : Activity() {
             true
         ) { friendDialog() }
 
+        renderZoneSection(strict)
         header("Mode Ketat")
+        if (Zone.active(this)) {
+            put(text("Kamu berada di Zona Ketat: untuk keluar dari Mode Ketat wajib mengetik teks acak ${Zone.MIN_TEXT} huruf (selain metode lain yang sudah diatur). Keluar dari radius zona mengembalikan Mode Ketat ke pengaturan semula.", 13f, true, C_BAD))
+        }
         if (!raw) {
             put(text("Mati. Semua pengaturan bisa diubah bebas.", 13f))
             put(button("Aktifkan Mode Ketat") {
@@ -739,7 +745,7 @@ class MainActivity : Activity() {
             13f, true, C_BAD
         ))
         val waitMin = if (Store.exitWaitOn(this)) Store.exitDelayMin(this) else 0
-        val textLen = Store.exitTextLen(this)
+        val textLen = Zone.requiredTextLen(this, Store.exitTextLen(this))
         val friend = FriendApproval.isSet(this)
         if (!SafeTimer.isRunning(this, "exit")) {
             put(button("Minta nonaktifkan" + (if (waitMin > 0) " (tunggu " + fmtDur(waitMin) + ")" else "")) {
@@ -850,6 +856,7 @@ class MainActivity : Activity() {
                 return@button
             }
             Store.setStrict(this, false)
+            Zone.onUserExit(this)
             SafeTimer.cancel(this, "exit")
             Store.log(this, "Mode Ketat dinonaktifkan")
             gateText = null
@@ -862,6 +869,115 @@ class MainActivity : Activity() {
             gateTyped = ""
             render()
         })
+    }
+
+
+    private fun renderZoneSection(strict: Boolean) {
+        Zone.update(this)
+        header("Zona Ketat (lokasi)")
+        put(text(
+            "Di dalam zona, Mode Ketat menyala otomatis, dan bila sudah ketat menjadi lebih ketat: hanya bisa dimatikan dengan teks acak ${Zone.MIN_TEXT} huruf. Keluar dari zona mengembalikan Mode Ketat seperti semula. Perlu izin lokasi \"Izinkan sepanjang waktu\" dan GPS menyala.",
+            12f, false, C_SUB
+        ))
+        val zs = Zone.zones(this)
+        val canEdit = !Store.strictOn(this)
+        if (zs.isEmpty()) put(text("Belum ada zona.", 13f))
+        for ((i, r) in zs) {
+            val row = LinearLayout(this)
+            row.orientation = LinearLayout.HORIZONTAL
+            row.addView(text(
+                "Zona $i: ${String.format(java.util.Locale.US, "%.5f, %.5f", r.lat, r.lon)} (radius ${r.radius} m)",
+                13f
+            ).apply { layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) })
+            if (canEdit) row.addView(text("Hapus", 13f, true, C_BAD).apply {
+                setPadding(dp(12), dp(6), dp(4), dp(6))
+                setOnClickListener {
+                    Zone.remove(this@MainActivity, i)
+                    render()
+                }
+            })
+            put(row)
+        }
+        if (zs.isNotEmpty()) {
+            val d = Zone.distanceToEdge(this)
+            put(text(
+                when {
+                    Zone.active(this) -> "Status: di DALAM zona, Zona Ketat berlaku."
+                    Zone.inside(this) && Zone.overridden(this) -> "Status: di dalam zona, tetapi dilewati sampai kamu keluar radius."
+                    d == null -> "Status: posisi belum diketahui (cek izin lokasi dan GPS)."
+                    else -> "Status: di luar zona, sekitar ${Math.max(0, d)} m dari tepi zona terdekat."
+                },
+                12f, true, C_SUB
+            ))
+            if (!canEdit) put(text("Zona tidak bisa dihapus saat Mode Ketat berlaku. Menambah zona tetap boleh.", 11f, false, C_SUB))
+        }
+        if (zs.size < Zone.MAX_ZONES) put(button("Tambah zona") { dialogZone() })
+    }
+
+    private fun dialogZone() {
+        val box = LinearLayout(this)
+        box.orientation = LinearLayout.VERTICAL
+        box.setPadding(dp(20), dp(8), dp(20), dp(8))
+        val inType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL or InputType.TYPE_NUMBER_FLAG_SIGNED
+        val latF = EditText(this).apply { hint = "Lintang, mis. -7.290500"; inputType = inType }
+        val lonF = EditText(this).apply { hint = "Bujur, mis. 112.734000"; inputType = inType }
+        val status = text(
+            if (LocationTracker.hasPermission(this)) "" else "Izin lokasi belum diberikan. Ketuk tombol di bawah untuk memberi izin.",
+            11f, false, C_SUB
+        )
+        val useBtn = Button(this).apply { text = "Pakai lokasi saya sekarang" }
+        useBtn.setOnClickListener {
+            if (!LocationTracker.hasPermission(this@MainActivity)) {
+                askLocationPermission()
+            } else {
+                status.text = "Mencari lokasi..."
+                LocationTracker.fetchNow(this@MainActivity) { l ->
+                    if (l == null) {
+                        status.text = "Lokasi belum didapat. Nyalakan GPS lalu coba lagi."
+                    } else {
+                        latF.setText(String.format(java.util.Locale.US, "%.6f", l.latitude))
+                        lonF.setText(String.format(java.util.Locale.US, "%.6f", l.longitude))
+                        status.text = "Lokasi didapat (akurasi sekitar ${l.accuracy.toInt()} m)."
+                    }
+                }
+            }
+        }
+        box.addView(useBtn)
+        box.addView(latF)
+        box.addView(lonF)
+        box.addView(status)
+        val radii = intArrayOf(100, 150, 200, 300, 500, 1000)
+        val radiusLabel = text("", 12f)
+        val seek = android.widget.SeekBar(this).apply { max = radii.size - 1; progress = 2 }
+        radiusLabel.text = "Radius: ${radii[seek.progress]} m"
+        seek.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: android.widget.SeekBar?, p: Int, fromUser: Boolean) {
+                radiusLabel.text = "Radius: ${radii[p]} m"
+            }
+
+            override fun onStartTrackingTouch(sb: android.widget.SeekBar?) {}
+            override fun onStopTrackingTouch(sb: android.widget.SeekBar?) {}
+        })
+        box.addView(radiusLabel)
+        box.addView(seek)
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Tambah Zona Ketat")
+            .setView(box)
+            .setPositiveButton("Simpan") { _, _ ->
+                val lat = latF.text.toString().trim().toDoubleOrNull()
+                val lon = lonF.text.toString().trim().toDoubleOrNull()
+                if (lat == null || lon == null || lat !in -90.0..90.0 || lon !in -180.0..180.0) {
+                    toast("Lokasi tidak valid: isi lintang dan bujur, atau pakai lokasi saya sekarang.")
+                } else if (!Zone.add(this, lat, lon, radii[seek.progress])) {
+                    toast("Jumlah zona sudah penuh")
+                } else {
+                    if (!LocationTracker.hasPermission(this) || !LocationTracker.hasBackground(this)) askLocationPermission()
+                    Zone.update(this)
+                    render()
+                }
+            }
+            .setNegativeButton("Batal", null)
+            .show()
     }
 
     private fun dialogExpire() {

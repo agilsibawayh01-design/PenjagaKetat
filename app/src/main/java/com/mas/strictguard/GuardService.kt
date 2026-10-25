@@ -178,6 +178,7 @@ class GuardService : AccessibilityService() {
     private fun refreshCache(now: Long) {
         if (now - cacheAt < 1500L) return
         cacheAt = now
+        Zone.update(this)
         strictNow = Store.strictOn(this)
         pausedNow = Store.pausedNow(this)
         ipBlock = Store.blockIpUrls(this)

@@ -283,6 +283,8 @@ object Store {
     /** Mode Ketat yang BERLAKU sekarang: bendera aktif, belum kedaluwarsa, dan sedang dalam jadwal (bila ada). */
     fun strictOn(c: Context): Boolean {
         if (!strictRaw(c)) return false
+        // Di dalam Zona Ketat: jadwal dan kedaluwarsa diabaikan (selalu ketat).
+        if (Zone.active(c)) return true
         val exp = expireMin(c)
         if (exp > 0 && SafeTimer.isRunning(c, "expire") && SafeTimer.elapsed(c, "expire") >= exp * 60000L) {
             setStrict(c, false)

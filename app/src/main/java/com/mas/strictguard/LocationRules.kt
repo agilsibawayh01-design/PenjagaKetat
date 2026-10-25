@@ -70,12 +70,16 @@ object LocationTracker {
     @Volatile
     private var last: Location? = null
     private var registered = false
+
+    @Volatile
+    private var appCtx: Context? = null
     private var lm: LocationManager? = null
     private val main = Handler(Looper.getMainLooper())
 
     private val listener = object : LocationListener {
         override fun onLocationChanged(l: Location) {
             last = l
+            appCtx?.let { Zone.update(it) }
         }
 
         override fun onProviderEnabled(provider: String) {}
@@ -116,6 +120,7 @@ object LocationTracker {
     @Synchronized
     fun ensure(c: Context) {
         val ctx = c.applicationContext
+        appCtx = ctx
         val need = LocationRules.anyRule(ctx) && hasPermission(ctx)
         try {
             if (!need) {
