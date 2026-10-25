@@ -17,6 +17,8 @@ class GuardService : AccessibilityService() {
     private var lastFeedAt = 0L
     private var lastStoreAt = 0L
     private var ipBlock = true
+    private var lastScreenNodes = 0
+    private var lastScreenTexts = 0
     private var lastBackAt = 0L
     private var lastProtectAt = 0L
 
@@ -218,6 +220,11 @@ class GuardService : AccessibilityService() {
         // Keyboard/IME mengirim event saat pengguna mengetik. Jangan memindai UI keyboard
         // sebagai layar aplikasi, supaya input keyword di PenjagaKetat tidak memicu blokir.
         if (pkg == packageName || pkg in Config.IGNORED || pkg in inputMethodPackages) return
+        if (pkg == BrowserStoreGuard.STORE) {
+            BrowserStoreGuard.seenCount++
+            BrowserStoreGuard.seenInfo = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date()) +
+                " jenis=" + AccessibilityEvent.eventTypeToString(event.eventType) + " total=" + BrowserStoreGuard.seenCount
+        }
         try {
             handle(event, pkg)
         } catch (t: Throwable) {
@@ -229,7 +236,11 @@ class GuardService : AccessibilityService() {
         val now = System.currentTimeMillis()
         refreshCache(now)
         TimeGuard.check(this)
-        if (backing || pausedNow) return
+        if (backing || pausedNow) {
+            if (pkg == BrowserStoreGuard.STORE) BrowserStoreGuard.gateInfo = "ditahan: backing=$backing jeda=$pausedNow"
+            return
+        }
+        if (pkg == BrowserStoreGuard.STORE) BrowserStoreGuard.gateInfo = "lolos"
 
         // Jangan pernah memindai layar internal PenjagaKetat sendiri.
         // Event dari keyboard/IME saat mengetik di pengaturan bisa membuat service
@@ -341,7 +352,13 @@ class GuardService : AccessibilityService() {
                 startBlock("content", "")
                 return
             }
-            if (screenHasBlocked(root)) {
+            val sHit = screenHasBlocked(root)
+            if (pkg == BrowserStoreGuard.STORE) {
+                BrowserStoreGuard.screenDiag = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date()) +
+                    " layar: node=" + lastScreenNodes + " teks=" + lastScreenTexts + " kata kunci=" + screenKeywords.size +
+                    " hasil=" + (if (sHit) "BLOKIR" else "aman")
+            }
+            if (sHit) {
                 startBlock("screen_keyword", "")
                 return
             }
@@ -524,7 +541,10 @@ class GuardService : AccessibilityService() {
             // abaikan
         }
         val limit = if (root.packageName?.toString() == BrowserStoreGuard.STORE) 1200 else 600
-        for (n in collect(root, limit)) {
+        val all = collect(root, limit)
+        lastScreenNodes = all.size
+        lastScreenTexts = all.count { !it.text.isNullOrEmpty() || !it.contentDescription.isNullOrEmpty() }
+        for (n in all) {
             // Jangan anggap kolom URL sebagai "layar". URL punya jalur pemeriksaan
             // sendiri agar keyword URL tidak tercampur dengan keyword layar.
             if (isUrlBarNode(n)) continue

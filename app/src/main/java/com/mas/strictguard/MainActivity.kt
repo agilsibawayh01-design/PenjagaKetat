@@ -1101,6 +1101,11 @@ class MainActivity : Activity() {
         }
         put(ib)
         put(text("Situs yang dibuka lewat angka IP melewati filter nama situs. IP jaringan rumah (192.168.x.x, 10.x) tetap boleh.", 11f, false, C_SUB))
+        put(text("Diagnosa Play Store (buka Play Store lalu kembali ke sini dan tekan Segarkan):", 11f, true, C_SUB))
+        put(text("Event: " + BrowserStoreGuard.seenInfo + " | " + BrowserStoreGuard.gateInfo, 11f, false, C_SUB).apply { typeface = Typeface.MONOSPACE })
+        put(text("Toko: " + BrowserStoreGuard.diag, 11f, false, C_SUB).apply { typeface = Typeface.MONOSPACE })
+        put(text("Layar: " + BrowserStoreGuard.screenDiag, 11f, false, C_SUB).apply { typeface = Typeface.MONOSPACE })
+        put(button("Segarkan diagnosa") { render() })
         val sb = CheckBox(this)
         sb.text = "Cegah memasang browser lain dari Play Store"
         sb.isChecked = BrowserStoreGuard.enabled(this)

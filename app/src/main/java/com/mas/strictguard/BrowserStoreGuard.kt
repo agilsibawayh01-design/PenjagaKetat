@@ -48,41 +48,143 @@ object BrowserStoreGuard {
         return names.any { t.contains(it) } || GENERIC.any { t.contains(it) }
     }
 
-    /** True bila event/layar Play Store ini harus dikembalikan. */
-    fun shouldBack(c: Context, event: AccessibilityEvent, root: AccessibilityNodeInfo?, screenHeight: Int): Boolean {
-        val names = names(c)
-        if (event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) {
-            val typed = (event.text?.joinToString(" ") ?: "").lowercase().trim()
-            if (typed.length in 3..40 && !typed.contains("chrome") &&
-                (names.any { typed.contains(it) } || GENERIC.any { typed.contains(it) })
-            ) return true
+    class Box(val top: Int, val cy: Int)
+
+    /** Hasil pemindaian terakhir, ditampilkan di layar Browser untuk diagnosa. */
+    @Volatile
+    var diag: String = "belum ada pemindaian (buka Play Store dulu)"
+
+    @Volatile
+    var screenDiag: String = "belum ada"
+
+    @Volatile
+    var seenCount = 0
+
+    @Volatile
+    var seenInfo = "belum ada event dari Play Store"
+
+    @Volatile
+    var gateInfo = ""
+
+    private val diagFmt = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
+
+    @Volatile
+    private var lastDeepAt = 0L
+
+    @Volatile
+    private var lastErrAt = 0L
+
+    /**
+     * Keputusan murni dari posisi layar: ada nama browser yang (a) sebaris dengan tombol Instal
+     * (hasil pencarian / daftar), atau (b) berada di bagian judul atas layar sementara tombol Instal
+     * ada di bagian atas-tengah (halaman detail aplikasi).
+     */
+    fun decide(names: List<Box>, installs: List<Box>, h: Int): Boolean {
+        if (names.isEmpty() || installs.isEmpty() || h <= 0) return false
+        val gap = Math.max(220, (h * 0.10).toInt())
+        for (n in names) for (i in installs) {
+            if (Math.abs(n.cy - i.cy) <= gap) return true
+            if (n.top < h * 0.35 && i.cy < h * 0.65) return true
         }
-        if (root == null) return false
-        // Browser terlihat berdampingan dengan tombol Instal (halaman detail ATAU hasil pencarian):
-        // tutup sebelum tombol sempat ditekan. Memakai pencarian teks dari sisi aplikasi Play Store
-        // (cepat), bukan menelusuri ratusan node satu per satu.
+        return false
+    }
+
+    private fun text(n: AccessibilityNodeInfo): String =
+        (n.text?.toString() ?: n.contentDescription?.toString() ?: "").lowercase().trim()
+
+    /** Cepat: pencarian teks dari sisi aplikasi Play Store (hanya belasan panggilan). */
+    @Volatile
+    private var cheapInstalls = 0
+
+    private fun cheapScan(root: AccessibilityNodeInfo, names: List<String>, h: Int): Boolean {
         val r = Rect()
-        val installY = ArrayList<Int>()
+        val installs = ArrayList<Box>()
         for (q in listOf("instal", "install", "pasang")) {
             val found = root.findAccessibilityNodeInfosByText(q) ?: continue
             for (n in found) {
-                val t = (n.text?.toString() ?: n.contentDescription?.toString() ?: "").lowercase().trim()
-                if (t in INSTALL) {
+                if (text(n) in INSTALL) {
                     n.getBoundsInScreen(r)
-                    installY.add(r.centerY())
+                    installs.add(Box(r.top, r.centerY()))
                 }
             }
         }
-        if (installY.isEmpty()) return false
-        val gap = Math.max(160, (screenHeight * 0.08).toInt())
+        cheapInstalls = installs.size
+        if (installs.isEmpty()) return false
+        val boxes = ArrayList<Box>()
         for (q in names + GENERIC) {
             val found = root.findAccessibilityNodeInfosByText(q) ?: continue
             for (n in found) {
-                val t = (n.text?.toString() ?: n.contentDescription?.toString() ?: "").lowercase().trim()
+                val t = text(n)
                 if (t.isEmpty() || !isBrowserText(t, names)) continue
                 n.getBoundsInScreen(r)
-                val cy = r.centerY()
-                if (installY.any { Math.abs(cy - it) <= gap }) return true
+                boxes.add(Box(r.top, r.centerY()))
+            }
+        }
+        return decide(boxes, installs, h)
+    }
+
+    /** Lambat tapi menyeluruh: menelusuri pohon tampilan. Dipakai bila pemeriksaan cepat tidak menemukan apa pun. */
+    private fun deepScan(root: AccessibilityNodeInfo, names: List<String>, h: Int): Boolean {
+        val installs = ArrayList<Box>()
+        val boxes = ArrayList<Box>()
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        var count = 0
+        val r = Rect()
+        val t0 = System.currentTimeMillis()
+        while (queue.isNotEmpty() && count < 1500 && System.currentTimeMillis() - t0 < 450L) {
+            val n = queue.removeFirst()
+            count++
+            val t = text(n)
+            if (t.isNotEmpty()) {
+                if (t in INSTALL) {
+                    n.getBoundsInScreen(r)
+                    installs.add(Box(r.top, r.centerY()))
+                } else if (isBrowserText(t, names)) {
+                    n.getBoundsInScreen(r)
+                    boxes.add(Box(r.top, r.centerY()))
+                }
+            }
+            for (i in 0 until n.childCount) {
+                val ch = n.getChild(i) ?: continue
+                queue.add(ch)
+            }
+        }
+        val res = decide(boxes, installs, h)
+        diag = diagFmt.format(java.util.Date()) + " dalam: node=" + count + " instal=" + installs.size +
+            " nama=" + boxes.size + " waktu=" + (System.currentTimeMillis() - t0) + "ms hasil=" + (if (res) "BLOKIR" else "aman")
+        return res
+    }
+
+    /** True bila event/layar Play Store ini harus dikembalikan. Tidak pernah melempar exception. */
+    fun shouldBack(c: Context, event: AccessibilityEvent, root: AccessibilityNodeInfo?, screenHeight: Int): Boolean {
+        try {
+            val names = names(c)
+            if (event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) {
+                var typed0 = event.text?.joinToString(" ") ?: ""
+                if (typed0.isEmpty()) typed0 = try { event.source?.text?.toString() ?: "" } catch (t: Throwable) { "" }
+                val typed = typed0.lowercase().trim()
+                if (typed.length in 3..40 && !typed.contains("chrome") &&
+                    (names.any { typed.contains(it) } || GENERIC.any { typed.contains(it) })
+                ) return true
+            }
+            if (root == null) return false
+            if (cheapScan(root, names, screenHeight)) {
+                diag = diagFmt.format(java.util.Date()) + " cepat: instal=" + cheapInstalls + " hasil=BLOKIR"
+                return true
+            }
+            val now = System.currentTimeMillis()
+            if (now - lastDeepAt > 700L) {
+                lastDeepAt = now
+                if (deepScan(root, names, screenHeight)) return true
+            } else if (!diag.contains("dalam")) {
+                diag = diagFmt.format(java.util.Date()) + " cepat: instal=" + cheapInstalls + " (pindai dalam menunggu)"
+            }
+        } catch (t: Throwable) {
+            val now = System.currentTimeMillis()
+            if (now - lastErrAt > 600_000L) {
+                lastErrAt = now
+                Store.log(c, "Pemeriksa Play Store error: " + t.javaClass.simpleName)
             }
         }
         return false
