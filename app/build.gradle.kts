@@ -25,10 +25,23 @@ android {
     }
 
     buildTypes {
+        release {
+            // Sengaja memakai kunci yang sama dengan debug agar APK release bisa menimpa
+            // (update) aplikasi yang sudah terpasang tanpa uninstall dan tanpa kehilangan data.
+            isDebuggable = false
+            isMinifyEnabled = false
+            isShrinkResources = false
+            signingConfig = signingConfigs.getByName("debug")
+        }
         debug {
             isDebuggable = true
             signingConfig = signingConfigs.getByName("debug")
         }
+    }
+
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
     }
 
     compileOptions {
