@@ -42,18 +42,19 @@ object Rules {
         "peacock", "hancock", "babcock", "hitchcock", "scunthorpe", "penistone", "kontraseptif", "nudibranch"
     )
 
-    fun matchesKeyword(text: String, keywords: Collection<String>): String? {
+    /** typing=true: kata pendek di ujung teks dianggap belum selesai diketik (mis. "anal" saat mengetik "analisis"). */
+    fun matchesKeyword(text: String, keywords: Collection<String>, typing: Boolean = false): String? {
         val t = text.lowercase()
-        val hit = scanKeywords(t, keywords) ?: return null
+        val hit = scanKeywords(t, keywords, typing) ?: return null
         var cleaned = t
         var changed = false
         for (w in WHITELIST) {
             if (cleaned.contains(w)) { cleaned = cleaned.replace(w, " "); changed = true }
         }
-        return if (!changed) hit else scanKeywords(cleaned, keywords)
+        return if (!changed) hit else scanKeywords(cleaned, keywords, typing)
     }
 
-    private fun scanKeywords(t: String, keywords: Collection<String>): String? {
+    private fun scanKeywords(t: String, keywords: Collection<String>, typing: Boolean): String? {
         for (k in keywords) {
             val kk = k.trim().lowercase()
             if (kk.isEmpty()) continue
@@ -64,6 +65,7 @@ object Rules {
                 while (idx >= 0) {
                     val before = idx == 0 || !t[idx - 1].isLetterOrDigit()
                     val end = idx + kk.length
+                    if (typing && end >= t.length) break
                     val after = end >= t.length || !t[end].isLetterOrDigit()
                     if (before && after) return k
                     idx = t.indexOf(kk, idx + 1)

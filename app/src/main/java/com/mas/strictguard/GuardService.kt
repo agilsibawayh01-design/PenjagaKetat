@@ -311,8 +311,8 @@ class GuardService : AccessibilityService() {
             if (typed.isNotEmpty()) {
                 val source = event.source
                 val isUrlBar = source != null && isUrlBarNode(source)
-                val urlKwHit = isUrlBar && pkg in browsers && Rules.matchesKeyword(typed, urlKeywords) != null
-                val screenKwHit = Rules.matchesKeyword(typed, screenKeywords) != null
+                val urlKwHit = isUrlBar && pkg in browsers && Rules.matchesKeyword(typed, urlKeywords, true) != null
+                val screenKwHit = Rules.matchesKeyword(typed, screenKeywords, true) != null
                 val kwHit = urlKwHit || screenKwHit
                 val dmHit = if (isUrlBar && pkg in browsers) Rules.matchesDomain(typed, domains) else null
                 val domainBlocked = dmHit != null && SiteTracker.shouldDnsBlock(this, dmHit)
@@ -535,7 +535,7 @@ class GuardService : AccessibilityService() {
             val f = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
             if (f != null && !isUrlBarNode(f)) {
                 val ft = f.text?.toString()?.trim() ?: ""
-                if (ft.isNotEmpty() && Rules.matchesKeyword(ft, screenKeywords) != null) return true
+                if (ft.isNotEmpty() && Rules.matchesKeyword(ft, screenKeywords, true) != null) return true
             }
         } catch (t: Throwable) {
             // abaikan
