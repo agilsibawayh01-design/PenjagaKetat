@@ -49,6 +49,32 @@ object Categories {
             )
         ),
         Cat(
+            "dewasa3", "Dewasa (daftar Blocking Sites)", "Nama situs dan istilah dewasa berbahasa Inggris, diambil dari daftar aplikasi Blocking Sites (aktif secara bawaan).",
+            listOf(
+                "3movs.com", "alohatube.com", "anybunny.com", "badjojo.com", "bangbros.com", "camhub.cc", "empflix.com",
+                "fakku.net", "freeones.com", "gelbooru.com", "jerkmate.com", "nudevista.com", "realitykings.com",
+                "slutload.com", "tube8.com", "xtube.com", "xxxbunker.com", "watchmygf.xxx", "wowgirls.com", "kindgirls.com"
+            ),
+            listOf(
+                "blowjob", "handjob", "creampie", "gangbang", "gang bang", "deepthroat", "doggystyle", "cumshot",
+                "facesitting", "facefuck", "masturbating", "mastrubat", "threesome", "pussy", "dildo", "lapdance",
+                "nsfw", "bdsm", "orgasm", "kamasutra", "kama sutra", "titties", "bangbros", "realitykings",
+                "alohatube", "anybunny", "badjojo", "empflix", "freeones", "gelbooru", "jerkmate", "nudevista",
+                "xxxbunker", "watchmygf", "wowgirls", "slutload", "downblouse", "scissoring",
+                "anal", "tits", "cock", "clit", "sexy", "milf", "naked", "penis", "vagina", "nipple", "erotic", "seduction", "condom"
+            )
+        ),
+        Cat(
+            "judi3", "Judi (daftar Blocking Sites)", "Situs taruhan internasional tambahan dari daftar aplikasi Blocking Sites (aktif secara bawaan).",
+            listOf(
+                "sportybet.com", "stake.bet", "stake.games", "gamdom.com", "betano.com", "bovada.lv", "partypoker.com",
+                "888poker.com", "pulszcasino.com", "sixty6casino.com", "4rabet.com", "casumo.com", "pinupcasino.com",
+                "1win.com", "bc.game", "pari-matchin.com", "batery-bet.in", "1rajbet.in", "hollywoodbets.net",
+                "betway.co.za", "caliente.mx"
+            ),
+            emptyList()
+        ),
+        Cat(
             "bypass", "Celah bypass", "Proxy, VPN gratis, dan situs pembuka blokir (aktif secara bawaan).",
             listOf(
                 "croxyproxy.com", "proxysite.com", "hidemy.name", "kproxy.com", "hide.me", "vpnbook.com",

@@ -127,7 +127,7 @@ object Store {
     fun setMotivation(c: Context, v: String) { sp(c).edit().putString("motivation", v.trim()).commit() }
 
     fun categoryOn(c: Context, id: String): Boolean =
-        sp(c).getBoolean("cat_$id", id == "dewasa" || id == "judi" || id == "dewasa2" || id == "judi2" || id == "bypass" || id == "film")
+        sp(c).getBoolean("cat_$id", id == "dewasa" || id == "judi" || id == "dewasa2" || id == "judi2" || id == "dewasa3" || id == "judi3" || id == "bypass" || id == "film")
     fun setCategory(c: Context, id: String, v: Boolean) { sp(c).edit().putBoolean("cat_$id", v).commit() }
 
     fun exitDelayMin(c: Context): Int = sp(c).getInt("exit_delay", 60)

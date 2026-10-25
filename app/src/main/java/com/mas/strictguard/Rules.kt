@@ -35,8 +35,25 @@ object Rules {
         return inWindow && (days and (1 shl dayIdx)) != 0
     }
 
+    /** Kata wajar yang mengandung potongan kata kunci (mis. "condominium" memuat "condom"). Dibuang sebelum pemeriksaan ulang. */
+    val WHITELIST = listOf(
+        "condominium", "condominiums", "essex", "sussex", "middlesex", "wessex", "sextant", "sexton", "sexagenarian",
+        "invagination", "analisis", "analisa", "analis", "analitik", "analog", "analgesik", "cockpit", "cocktail",
+        "peacock", "hancock", "babcock", "hitchcock", "scunthorpe", "penistone", "kontraseptif", "nudibranch"
+    )
+
     fun matchesKeyword(text: String, keywords: Collection<String>): String? {
         val t = text.lowercase()
+        val hit = scanKeywords(t, keywords) ?: return null
+        var cleaned = t
+        var changed = false
+        for (w in WHITELIST) {
+            if (cleaned.contains(w)) { cleaned = cleaned.replace(w, " "); changed = true }
+        }
+        return if (!changed) hit else scanKeywords(cleaned, keywords)
+    }
+
+    private fun scanKeywords(t: String, keywords: Collection<String>): String? {
         for (k in keywords) {
             val kk = k.trim().lowercase()
             if (kk.isEmpty()) continue
