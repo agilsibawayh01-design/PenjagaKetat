@@ -2678,6 +2678,23 @@ class MainActivity : Activity() {
             }.start()
             return
         }
+        if (requestCode == 5104 && resultCode == RESULT_OK && data?.data != null) {
+            val uri = data.data!!
+            try {
+                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            } catch (t: Throwable) {
+                toast("Izin file tidak bisa disimpan permanen. Pilih lokasi lain (mis. Google Drive).")
+                return
+            }
+            AutoBackup.enable(this, uri)
+            AutoBackup.now(this) { ok ->
+                runOnUiThread {
+                    toast(if (ok) "Cadangan otomatis aktif dan sudah tersimpan" else "Cadangan otomatis aktif, tetapi penulisan pertama gagal. Akan dicoba lagi.")
+                    render()
+                }
+            }
+            return
+        }
         if (requestCode == 5103 && resultCode == RESULT_OK && data?.data != null) {
             val uri = data.data!!
             val txt = FeatureDump.text()
@@ -2748,6 +2765,39 @@ class MainActivity : Activity() {
                 toast("Tidak ada aplikasi pemilih file")
             }
         })
+        header("Cadangan otomatis")
+        put(text("Pilih sebuah file di Google Drive sekali saja. Penjaga Ketat menulis ulang file itu otomatis setiap ada perubahan aturan (paling cepat tiap 5 menit) dan paling lambat sehari sekali. Setelah pasang ulang atau ganti HP, tekan \"Impor / restore dari file\" dan pilih file itu.", 12f))
+        if (AutoBackup.enabled(this)) {
+            val at = AutoBackup.lastAt(this)
+            put(text("Aktif: " + AutoBackup.displayName(this), 13f, true))
+            put(text(
+                if (at > 0L) "Terakhir tersimpan: " + java.text.SimpleDateFormat("dd MMM yyyy HH:mm", java.util.Locale("id")).format(java.util.Date(at))
+                else "Belum pernah tersimpan.",
+                12f, false, C_SUB
+            ))
+            val er = AutoBackup.error(this)
+            if (er.isNotEmpty()) put(text("Terakhir gagal: $er (akan dicoba lagi)", 12f, true, C_BAD))
+            put(button("Cadangkan sekarang") {
+                AutoBackup.now(this) { ok -> runOnUiThread { toast(if (ok) "Tersimpan" else "Gagal menyimpan"); render() } }
+            })
+            put(button("Matikan cadangan otomatis") {
+                AutoBackup.disable(this)
+                render()
+            })
+        } else {
+            put(button("Aktifkan cadangan otomatis (pilih file di Google Drive)") {
+                val i = Intent(Intent.ACTION_CREATE_DOCUMENT)
+                i.addCategory(Intent.CATEGORY_OPENABLE)
+                i.type = "application/json"
+                i.putExtra(Intent.EXTRA_TITLE, "PenjagaKetat_Otomatis.json")
+                i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                try {
+                    startActivityForResult(i, 5104)
+                } catch (t: Throwable) {
+                    toast("Tidak ada aplikasi penyimpan file")
+                }
+            })
+        }
         val last = Backup.lastSafety(this)
         if (last != null) put(button("Batalkan restore terakhir") {
             val parsed = Backup.parse(try { last.readText() } catch (t: Throwable) { "" })

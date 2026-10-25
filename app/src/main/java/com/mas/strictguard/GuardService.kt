@@ -45,6 +45,7 @@ class GuardService : AccessibilityService() {
             try {
                 val now = System.currentTimeMillis()
                 refreshCache(now)
+                AutoBackup.tick(this@GuardService)
                 Focus.active(this@GuardService)
                 if (now - locCheckAt > 60000L) {
                     locCheckAt = now
