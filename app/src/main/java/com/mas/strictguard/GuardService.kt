@@ -555,7 +555,7 @@ class GuardService : AccessibilityService() {
             if (!n.isVisibleToUser && !n.isEditable && !n.isFocused) continue
 
             val txt = n.text?.toString()?.trim() ?: ""
-            if (txt.isNotEmpty() && Rules.matchesKeyword(txt, screenKeywords) != null) return true
+            if (txt.isNotEmpty() && Rules.matchesKeyword(txt, screenKeywords, n.isEditable) != null) return true
 
             val desc = n.contentDescription?.toString()?.trim() ?: ""
             if (desc.isNotEmpty() && Rules.matchesKeyword(desc, screenKeywords) != null) return true
