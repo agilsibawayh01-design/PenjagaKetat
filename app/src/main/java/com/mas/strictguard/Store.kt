@@ -127,7 +127,7 @@ object Store {
     fun setMotivation(c: Context, v: String) { sp(c).edit().putString("motivation", v.trim()).commit() }
 
     fun categoryOn(c: Context, id: String): Boolean =
-        sp(c).getBoolean("cat_$id", id == "dewasa" || id == "judi" || id == "dewasa2" || id == "judi2" || id == "bypass")
+        sp(c).getBoolean("cat_$id", id == "dewasa" || id == "judi" || id == "dewasa2" || id == "judi2" || id == "bypass" || id == "film")
     fun setCategory(c: Context, id: String, v: Boolean) { sp(c).edit().putBoolean("cat_$id", v).commit() }
 
     fun exitDelayMin(c: Context): Int = sp(c).getInt("exit_delay", 60)
@@ -363,6 +363,9 @@ object Store {
     }
 
     // ---- Browser ----
+    fun blockIpUrls(c: Context): Boolean = sp(c).getBoolean("block_ip_urls", true)
+    fun setBlockIpUrls(c: Context, v: Boolean) { sp(c).edit().putBoolean("block_ip_urls", v).commit() }
+
     fun blockOtherBrowsers(c: Context): Boolean = sp(c).getBoolean("block_browsers", true)
     fun setBlockOtherBrowsers(c: Context, v: Boolean) { sp(c).edit().putBoolean("block_browsers", v).commit() }
 

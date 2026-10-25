@@ -1088,6 +1088,19 @@ class MainActivity : Activity() {
             render()
         }
         put(cb)
+        val ib = CheckBox(this)
+        ib.text = "Blokir situs berupa alamat IP (mis. 178.62.96.212)"
+        ib.isChecked = Store.blockIpUrls(this)
+        ib.setOnClickListener {
+            if (!ib.isChecked && strict) {
+                toast("Mode Ketat aktif: tidak bisa dimatikan")
+            } else {
+                Store.setBlockIpUrls(this, ib.isChecked)
+            }
+            render()
+        }
+        put(ib)
+        put(text("Situs yang dibuka lewat angka IP melewati filter nama situs. IP jaringan rumah (192.168.x.x, 10.x) tetap boleh.", 11f, false, C_SUB))
         val sb = CheckBox(this)
         sb.text = "Cegah memasang browser lain dari Play Store"
         sb.isChecked = BrowserStoreGuard.enabled(this)

@@ -159,7 +159,7 @@ class BlockActivity : Activity() {
             }
             "site" -> "Aturan situs"
             "site_wait" -> "Timer Tunggu situs"
-            "content" -> "Kata kunci atau kategori konten"
+            "content" -> "Kata kunci, kategori konten, atau alamat IP"
             "screen_keyword" -> "Kata kunci layar"
             "protect", "protect_click" -> "Perlindungan Mode Ketat"
             "browser" -> "Browser tidak didukung"

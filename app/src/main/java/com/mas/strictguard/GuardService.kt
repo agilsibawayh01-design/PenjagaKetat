@@ -16,6 +16,7 @@ class GuardService : AccessibilityService() {
     private var lastScanAt = 0L
     private var lastFeedAt = 0L
     private var lastStoreAt = 0L
+    private var ipBlock = true
     private var lastBackAt = 0L
     private var lastProtectAt = 0L
 
@@ -177,6 +178,7 @@ class GuardService : AccessibilityService() {
         cacheAt = now
         strictNow = Store.strictOn(this)
         pausedNow = Store.pausedNow(this)
+        ipBlock = Store.blockIpUrls(this)
         if (now - browsersAt > 30000L || Store.pkgStamp > browsersAt) {
             browsersAt = now
             blockedBrowsers = if (Store.blockOtherBrowsers(this)) Store.unsupportedBrowsers(this) else emptySet()
@@ -290,7 +292,11 @@ class GuardService : AccessibilityService() {
         // URL keyword hanya boleh dipakai pada address bar browser.
         // Screen keyword berlaku pada teks umum yang tersedia melalui Accessibility.
         if (event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) {
-            val typed = event.text?.joinToString(" ") ?: ""
+            var typed = event.text?.joinToString(" ") ?: ""
+            if (typed.isEmpty()) {
+                // Beberapa aplikasi (mis. kolom pencarian Play Store) tidak mengisi event.text.
+                typed = try { event.source?.text?.toString() ?: "" } catch (t: Throwable) { "" }
+            }
             if (typed.isNotEmpty()) {
                 val source = event.source
                 val isUrlBar = source != null && isUrlBarNode(source)
@@ -299,7 +305,8 @@ class GuardService : AccessibilityService() {
                 val kwHit = urlKwHit || screenKwHit
                 val dmHit = if (isUrlBar && pkg in browsers) Rules.matchesDomain(typed, domains) else null
                 val domainBlocked = dmHit != null && SiteTracker.shouldDnsBlock(this, dmHit)
-                if (kwHit || domainBlocked) {
+                val ipHit = ipBlock && isUrlBar && pkg in browsers && Rules.isPublicIpUrl(typed)
+                if (kwHit || domainBlocked || ipHit) {
                     startBlock("typed", "")
                 }
             }
@@ -493,6 +500,7 @@ class GuardService : AccessibilityService() {
             val hit = Rules.matchesDomain(txt, domains)
             if (hit != null && SiteTracker.shouldDnsBlock(this, hit)) return true
             if (Rules.matchesKeyword(txt, urlKeywords) != null) return true
+            if (ipBlock && Rules.isPublicIpUrl(txt)) return true
         }
         return false
     }
@@ -504,7 +512,19 @@ class GuardService : AccessibilityService() {
     private fun screenHasBlocked(root: AccessibilityNodeInfo): Boolean {
         // Pengaman tambahan: jangan pernah memblokir berdasarkan teks di UI PenjagaKetat.
         if (root.packageName?.toString() == packageName) return false
-        for (n in collect(root, 600)) {
+        // Kolom input yang sedang aktif (mis. kotak pencarian) diperiksa lebih dulu. Murah dan tidak
+        // bergantung pada urutan node di pohon tampilan yang besar.
+        try {
+            val f = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+            if (f != null && !isUrlBarNode(f)) {
+                val ft = f.text?.toString()?.trim() ?: ""
+                if (ft.isNotEmpty() && Rules.matchesKeyword(ft, screenKeywords) != null) return true
+            }
+        } catch (t: Throwable) {
+            // abaikan
+        }
+        val limit = if (root.packageName?.toString() == BrowserStoreGuard.STORE) 1200 else 600
+        for (n in collect(root, limit)) {
             // Jangan anggap kolom URL sebagai "layar". URL punya jalur pemeriksaan
             // sendiri agar keyword URL tidak tercampur dengan keyword layar.
             if (isUrlBarNode(n)) continue
@@ -512,7 +532,7 @@ class GuardService : AccessibilityService() {
             // Accessibility tree kadang masih berisi node tersembunyi/off-screen
             // (termasuk konten lama/placeholder). Node seperti ini tidak boleh
             // menyebabkan blokir ketika pengguna baru membuka kolom input.
-            if (!n.isVisibleToUser) continue
+            if (!n.isVisibleToUser && !n.isEditable && !n.isFocused) continue
 
             val txt = n.text?.toString()?.trim() ?: ""
             if (txt.isNotEmpty() && Rules.matchesKeyword(txt, screenKeywords) != null) return true

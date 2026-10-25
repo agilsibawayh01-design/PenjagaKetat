@@ -56,6 +56,25 @@ object Rules {
         return null
     }
 
+    private val IPV4_URL = Regex("^(?:[a-z][a-z0-9+.-]*://)?(?:[^/@\\s]*@)?(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})(?::\\d+)?(?:[/?#].*)?$")
+
+    /**
+     * True bila teks di address bar berupa alamat IP publik (mis. 178.62.96.212/halaman). Alamat IP
+     * melewati filter DNS berbasis nama, jadi diblokir. IP lokal/jaringan rumah (192.168.x.x, 10.x, dll.) boleh.
+     */
+    fun isPublicIpUrl(text: String): Boolean {
+        val m = IPV4_URL.find(text.trim().lowercase()) ?: return false
+        val o = m.groupValues.drop(1).map { it.toIntOrNull() ?: return false }
+        if (o.any { it > 255 }) return false
+        val a = o[0]
+        val b = o[1]
+        if (a == 10 || a == 127 || a == 0) return false
+        if (a == 192 && b == 168) return false
+        if (a == 172 && b in 16..31) return false
+        if (a == 169 && b == 254) return false
+        return true
+    }
+
     private val HOST = Regex("[a-z0-9][a-z0-9.-]*\\.[a-z]{2,}")
 
     /** Rapikan input situs: huruf kecil, tanpa skema, tanpa "*." dan "www.", tanpa path. */

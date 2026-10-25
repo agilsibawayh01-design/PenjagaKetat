@@ -54,7 +54,15 @@ object Categories {
                 "croxyproxy.com", "proxysite.com", "hidemy.name", "kproxy.com", "hide.me", "vpnbook.com",
                 "browsec.com", "hola.org", "psiphon.ca", "torproject.org", "translate.goog"
             ),
-            listOf("vpn gratis", "free proxy", "web proxy", "proxy site", "unblock site", "buka blokir", "bypass blokir")
+            listOf("vpn gratis", "free proxy", "web proxy", "proxy site", "unblock site", "cara buka situs diblokir", "bypass blokir")
+        ),
+        Cat(
+            "film", "Film bajakan dan film dewasa", "Situs streaming film ilegal (domain sering berganti angka) dan film dewasa (aktif secara bawaan).",
+            emptyList(),
+            listOf(
+                "rebahin", "indoxxi", "lk21", "layarkaca21", "dunia21", "pusatfilm", "filmapik", "juraganfilm",
+                "nonton film semi", "film plus", "film dewasa", "semi korea", "semi jepang"
+            )
         ),
         Cat(
             "sosmed", "Media sosial", "Facebook, Instagram, TikTok, X/Twitter, Reddit, Snapchat (mati secara bawaan).",
