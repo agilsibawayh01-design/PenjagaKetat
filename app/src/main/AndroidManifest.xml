@@ -117,5 +117,10 @@
                 <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
             </intent-filter>
         </receiver>
+
+        <provider
+            android:name=".PauseStateProvider"
+            android:authorities="com.mas.strictguard.state"
+            android:exported="true" />
     </application>
 </manifest>
