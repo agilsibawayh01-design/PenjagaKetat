@@ -223,23 +223,25 @@ class MainActivity : Activity() {
         val sv = ScrollView(this)
         sv.addView(content)
         sv.background = bg(C_FIELD, dp(10))
+        sv.isVerticalScrollBarEnabled = true
+        sv.isScrollbarFadingEnabled = false
+        sv.isNestedScrollingEnabled = true
+        sv.overScrollMode = View.OVER_SCROLL_ALWAYS
         sv.layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(heightDp)).apply {
             topMargin = dp(6)
         }
-        sv.setOnTouchListener { v, _ ->
-            v.parent.requestDisallowInterceptTouchEvent(true)
+        // Selama jari menyentuh kotak, gulir halaman induk ditahan supaya
+        // kotak ini yang bergulir; dilepas lagi begitu jari diangkat.
+        sv.setOnTouchListener { v, ev ->
+            when (ev.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN, android.view.MotionEvent.ACTION_MOVE ->
+                    v.parent.requestDisallowInterceptTouchEvent(true)
+                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL ->
+                    v.parent.requestDisallowInterceptTouchEvent(false)
+            }
             false
         }
         return sv
-    }
-
-    /** Daftar ditampilkan LENGKAP (tidak terpotong); halaman utama yang digulir. */
-    private fun fullBox(content: LinearLayout): View {
-        content.background = bg(C_FIELD, dp(10))
-        content.layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = dp(6) }
-        return content
     }
 
     private fun builtinKeywordList(): View {
@@ -268,6 +270,10 @@ class MainActivity : Activity() {
                     Store.addUrlKeyword(this, item)
                     Store.addScreenKeyword(this, item)
                     render()
+                }.apply {
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                    )
                 })
             } else {
                 row.addView(text("Aktif", 12f, true, C_OK).apply {
@@ -287,7 +293,7 @@ class MainActivity : Activity() {
             }
             col.addView(row)
         }
-        return fullBox(col)
+        return scrollBox(240, col)
     }
 
     private fun chipList(items: List<String>, onRemove: (String) -> Unit): View {
@@ -308,7 +314,7 @@ class MainActivity : Activity() {
             })
             col.addView(row)
         }
-        return fullBox(col)
+        return scrollBox(180, col)
     }
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_LONG).show()
@@ -1402,10 +1408,17 @@ class MainActivity : Activity() {
             render()
         })
         val others = all.filter { it.pkg !in chosen }
-        val shown = if (appQuery.isEmpty()) others.take(15)
-        else others.filter { it.label.lowercase().contains(appQuery) || it.pkg.contains(appQuery) }.take(40)
-        if (appQuery.isEmpty() && others.size > 15) put(text("Menampilkan 15 pertama. Ketik nama untuk mencari yang lain.", 11f, false, C_SUB))
-        for (a in shown) put(appRow(a, false, strict))
+        val shown = if (appQuery.isEmpty()) others
+        else others.filter { it.label.lowercase().contains(appQuery) || it.pkg.contains(appQuery) }
+        if (shown.isEmpty()) {
+            put(text("Tidak ada aplikasi yang cocok.", 12f, false, C_SUB))
+        } else {
+            val col = LinearLayout(this)
+            col.orientation = LinearLayout.VERTICAL
+            col.setPadding(dp(10), dp(4), dp(10), dp(4))
+            for (a in shown) col.addView(appRow(a, false, strict))
+            put(scrollBox(360, col))
+        }
     }
 
     private fun appRow(a: AppRow, on: Boolean, strict: Boolean): View {
@@ -2146,10 +2159,17 @@ class MainActivity : Activity() {
             render()
         })
         val others = all.filter { it.pkg !in chosen }
-        val shown = if (protQuery.isEmpty()) others.take(15)
-        else others.filter { it.label.lowercase().contains(protQuery) || it.pkg.contains(protQuery) }.take(40)
-        if (protQuery.isEmpty() && others.size > 15) put(text("Menampilkan 15 pertama. Ketik nama untuk mencari yang lain.", 11f, false, C_SUB))
-        for (a in shown) put(protectedRow(a, false, strict))
+        val shown = if (protQuery.isEmpty()) others
+        else others.filter { it.label.lowercase().contains(protQuery) || it.pkg.contains(protQuery) }
+        if (shown.isEmpty()) {
+            put(text("Tidak ada aplikasi yang cocok.", 12f, false, C_SUB))
+        } else {
+            val col = LinearLayout(this)
+            col.orientation = LinearLayout.VERTICAL
+            col.setPadding(dp(10), dp(4), dp(10), dp(4))
+            for (a in shown) col.addView(protectedRow(a, false, strict))
+            put(scrollBox(360, col))
+        }
     }
 
     private fun protectedRow(a: AppRow, on: Boolean, strict: Boolean): View {
