@@ -233,6 +233,15 @@ class MainActivity : Activity() {
         return sv
     }
 
+    /** Daftar ditampilkan LENGKAP (tidak terpotong); halaman utama yang digulir. */
+    private fun fullBox(content: LinearLayout): View {
+        content.background = bg(C_FIELD, dp(10))
+        content.layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = dp(6) }
+        return content
+    }
+
     private fun builtinKeywordList(): View {
         val all = Store.builtinKeywords(this).sorted()
         if (all.isEmpty()) return text("Tidak ada keyword bawaan.", 12f, false, C_SUB)
@@ -278,7 +287,7 @@ class MainActivity : Activity() {
             }
             col.addView(row)
         }
-        return scrollBox(240, col)
+        return fullBox(col)
     }
 
     private fun chipList(items: List<String>, onRemove: (String) -> Unit): View {
@@ -299,7 +308,7 @@ class MainActivity : Activity() {
             })
             col.addView(row)
         }
-        return scrollBox(180, col)
+        return fullBox(col)
     }
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_LONG).show()
