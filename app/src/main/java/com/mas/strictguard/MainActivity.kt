@@ -2121,34 +2121,72 @@ class MainActivity : Activity() {
             .show()
     }
 
+    private var protQuery = ""
+
     private fun renderProtected(strict: Boolean) {
         header("Lindungi aplikasi lain dari uninstall")
         put(text("Saat Mode Ketat aktif, halaman Pengaturan atau pemasang yang menampilkan nama aplikasi ini (copot, hentikan paksa, matikan aksesibilitas) langsung diblokir. Ini bukan penguncian sistem, tapi penghalang yang kuat.", 12f))
         val chosen = Store.protectedApps(this)
-        val installed = loadApps()
-        val rows = installed.sortedWith(compareByDescending<AppRow> { it.pkg in chosen }.thenBy { it.label.lowercase() })
+        val all = loadApps()
+        val byPkg = all.associateBy { it.pkg }
+
+        // Yang sudah dilindungi (termasuk yang tidak punya ikon peluncur).
+        val chosenRows = chosen.map { byPkg[it] ?: AppRow(it, it) }.sortedBy { it.label.lowercase() }
+        header("Dilindungi (${chosenRows.size})")
+        for (a in chosenRows) put(protectedRow(a, true, strict))
+
+        header("Tambah aplikasi")
+        val q = EditText(this)
+        q.hint = "Cari nama aplikasi"
+        q.setSingleLine()
+        q.setText(protQuery)
+        put(q)
+        put(button("Cari") {
+            protQuery = q.text.toString().trim().lowercase()
+            render()
+        })
+        val others = all.filter { it.pkg !in chosen }
+        val shown = if (protQuery.isEmpty()) others.take(15)
+        else others.filter { it.label.lowercase().contains(protQuery) || it.pkg.contains(protQuery) }.take(40)
+        if (protQuery.isEmpty() && others.size > 15) put(text("Menampilkan 15 pertama. Ketik nama untuk mencari yang lain.", 11f, false, C_SUB))
+        for (a in shown) put(protectedRow(a, false, strict))
+    }
+
+    private fun protectedRow(a: AppRow, on: Boolean, strict: Boolean): View {
+        val top = LinearLayout(this)
+        top.orientation = LinearLayout.HORIZONTAL
+        top.gravity = Gravity.CENTER_VERTICAL
+        top.setPadding(0, dp(6), 0, dp(6))
+        val icon = ImageView(this)
+        try {
+            icon.setImageDrawable(packageManager.getApplicationIcon(a.pkg))
+        } catch (e: Exception) {
+            // tanpa ikon
+        }
+        icon.layoutParams = LinearLayout.LayoutParams(dp(42), dp(42))
+        top.addView(icon)
         val col = LinearLayout(this)
         col.orientation = LinearLayout.VERTICAL
-        for (a in rows) {
-            val cb = CheckBox(this).apply {
-                text = a.label + "\n" + a.pkg
-                textSize = 13f
-                isChecked = a.pkg in chosen
-                setOnClickListener { v ->
-                    val checked = (v as CheckBox).isChecked
-                    if (checked) {
-                        Store.addProtected(this@MainActivity, a.pkg)
-                    } else if (strict || a.pkg in Config.SEED_PROTECTED) {
-                        toast(if (strict) "Mode Ketat aktif: tidak bisa melepas perlindungan" else "Aplikasi ini selalu dilindungi")
-                    } else {
-                        Store.removeProtected(this@MainActivity, a.pkg)
-                    }
-                    render()
-                }
+        col.setPadding(dp(12), 0, dp(8), 0)
+        col.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        col.addView(text(a.label, 14f, true))
+        col.addView(text(a.pkg, 10f, false, C_SUB))
+        top.addView(col)
+        val sw = Switch(this)
+        sw.isChecked = on
+        sw.setOnClickListener {
+            val checked = sw.isChecked
+            if (checked) {
+                Store.addProtected(this@MainActivity, a.pkg)
+            } else if (strict || a.pkg in Config.SEED_PROTECTED) {
+                toast(if (strict) "Mode Ketat aktif: tidak bisa melepas perlindungan" else "Aplikasi ini selalu dilindungi")
+            } else {
+                Store.removeProtected(this@MainActivity, a.pkg)
             }
-            col.addView(cb)
+            render()
         }
-        put(scrollBox(320, col))
+        top.addView(sw)
+        return top
     }
 
     private fun renderCategories(strict: Boolean) {
