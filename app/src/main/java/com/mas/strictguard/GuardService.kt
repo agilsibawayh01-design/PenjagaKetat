@@ -249,6 +249,15 @@ class GuardService : AccessibilityService() {
         // membaca kembali kolom input PenjagaKetat dan memblokirnya sendiri.
         val foregroundRoot = rootInActiveWindow
         if (foregroundRoot?.packageName?.toString() == packageName) return
+
+        // Folder Aman Samsung dikunci saat Mode Ketat.
+        if (strictNow && pkg in SecureGuard.SECURE_FOLDER_PACKAGES) {
+            if (now - lastBackAt > 800L) {
+                lastBackAt = now
+                performGlobalAction(GLOBAL_ACTION_HOME)
+            }
+            return
+        }
         if (FeatureDump.active()) FeatureDump.capture(pkg, foregroundRoot)
 
         // Klik pada aplikasi terlindung di Pengaturan (mis. daftar layanan Aksesibilitas): langsung kembali,
@@ -408,6 +417,7 @@ class GuardService : AccessibilityService() {
             val t = n.text?.toString()?.lowercase()?.trim() ?: ""
             val d = n.contentDescription?.toString()?.lowercase()?.trim() ?: ""
             if (t.isEmpty() && d.isEmpty()) continue
+            if (t in SecureGuard.SECURE_PAGE_TEXTS || d in SecureGuard.SECURE_PAGE_TEXTS) return true
             if (t.contains(Config.SERVICE_MARKER) || d.contains(Config.SERVICE_MARKER)) return true
             if (!nameHit) {
                 for (name in protectedNames) {
