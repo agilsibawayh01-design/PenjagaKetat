@@ -26,6 +26,7 @@ class BlockActivity : Activity() {
     private var siteDomain = ""
     private lateinit var emgBtn: Button
     private lateinit var why: TextView
+    private var pauseLeft = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -158,12 +159,60 @@ class BlockActivity : Activity() {
                 showSiteWaitCountdown()
             }
             "location" -> info.text = "Aplikasi ini diblokir berdasarkan lokasi kamu saat ini."
+            "pause" -> {
+                title.text = "Jeda sebentar"
+                title.setTextColor(cBtn)
+                val label = appLabel()
+                val et = android.widget.EditText(this).apply {
+                    hint = "Mau ngapain di $label?"
+                    setSingleLine()
+                    setTextColor(cFg)
+                    setHintTextColor(cSub)
+                    visibility = View.INVISIBLE
+                }
+                card.addView(et, card.indexOfChild(openBtn))
+                pauseLeft = 10
+                openBtn.text = "Lanjut buka $label"
+                openBtn.visibility = View.VISIBLE
+                openBtn.isEnabled = false
+                fun refresh() {
+                    openBtn.isEnabled = pauseLeft <= 0 && et.text.toString().trim().length >= 3
+                }
+                et.addTextChangedListener(object : android.text.TextWatcher {
+                    override fun afterTextChanged(s: android.text.Editable?) { refresh() }
+                    override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                    override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                })
+                openBtn.setOnClickListener {
+                    Store.setPauseOk(this, pkg, System.currentTimeMillis() + 5 * 60000L)
+                    Store.log(this, "Jeda $label: " + et.text.toString().trim().take(60))
+                    val li = packageManager.getLaunchIntentForPackage(pkg)
+                    if (li != null) startActivity(li)
+                    finish()
+                }
+                val phases = arrayOf("Tarik napas pelan...", "Tahan sebentar...", "Hembuskan perlahan...")
+                val tick = object : Runnable {
+                    override fun run() {
+                        if (pauseLeft > 0) {
+                            val idx = ((10 - pauseLeft) / 3) % 3
+                            info.text = phases[idx] + "\n" + pauseLeft
+                            pauseLeft--
+                            handler.postDelayed(this, 1000L)
+                        } else {
+                            et.visibility = View.VISIBLE
+                            info.text = "Apa tujuanmu membuka $label?\nTulis singkat, lalu lanjut."
+                            refresh()
+                        }
+                    }
+                }
+                tick.run()
+            }
             "browser" -> info.text = "Browser ini tidak didukung.\nGunakan Chrome saja."
             "hour" -> info.text = "Batas pemakaian per jam tercapai.\nCoba lagi nanti."
             "launch" -> info.text = "Batas jumlah peluncuran aplikasi ini tercapai."
             else -> startTimerFlow(mode)
         }
-        why.text = reasonText(mode)
+        why.text = if (mode == "pause") appLabel() else reasonText(mode)
         setupEmergency(mode)
     }
 

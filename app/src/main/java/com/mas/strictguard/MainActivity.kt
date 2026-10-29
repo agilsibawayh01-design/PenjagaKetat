@@ -222,7 +222,8 @@ class MainActivity : Activity() {
 
     private fun screenSummary(s: String): String = when (s) {
         "apps" -> "${Store.apps(this).size} aplikasi diblokir"
-        "stats" -> "Pemakaian dan blokir hari ini"
+        "stats" -> "Pemakaian, blokir, dan hari bersih"
+        "urge" -> "Dorongan itu naik lalu turun sendiri. Tunggu saja"
         "focus" -> "Sesi fokus untuk menjaga konsentrasi"
         "words" -> "Browser, kategori, kata kunci, dan fitur sosmed"
         "sched", "profiles" -> "Jadwal otomatis dan profil aturan"
@@ -469,8 +470,13 @@ class MainActivity : Activity() {
                     renderStrictStatus(acc, adm)
                     renderStrict(strict, acc && adm)
                     renderProtection(strict)
+                    renderBypassGuard(strict)
                 }
-                "apps" -> renderApps(strict)
+                "apps" -> {
+                    renderApps(strict)
+                    renderPauseApps(strict)
+                }
+                "urge" -> renderUrge()
                 "words" -> {
                     renderBrowsers(strict)
                     renderCategories(strict)
@@ -523,6 +529,7 @@ class MainActivity : Activity() {
         "net" -> "VPN DNS dan notifikasi"
         "stats" -> "Dashboard"
         "focus" -> "Mode Fokus"
+        "urge" -> "Dorongan"
         else -> "Lainnya"
     }
 
@@ -640,6 +647,14 @@ class MainActivity : Activity() {
         }
 
         renderFocusLine()
+
+        root.addView(button("🆘  Lagi tergoda? Tekan di sini") {
+            urgeEnd = 0L
+            goScreen("urge")
+        }.apply {
+            setTextColor(C_BAD)
+            background = bg(C_CHIP, dp(14))
+        })
 
         val blocks = try {
             StatsDb.blocksByReason(this, UsageTracker.startOfDay()).sumOf { it.second }
@@ -1520,6 +1535,214 @@ class MainActivity : Activity() {
         }
         put(text("Jam HP diubah saat Mode Ketat aktif: jadwal diabaikan dan blokir berlaku penuh 30 menit.", 12f))
         put(text("Pemulihan darurat: keluar Mode Ketat lewat tombol di atas (tunggu lalu ketik teks acak). Itu jalur pemulihan yang selalu tersedia, tanpa PC.", 12f))
+    }
+
+    // ---------- Celah pemasangan (saklar terpisah) ----------
+    private fun renderBypassGuard(strict: Boolean) {
+        header("Celah pemasangan")
+        put(text("Saat Mode Ketat aktif, halaman Pengaturan untuk menambah pengguna/tamu dan Aplikasi admin perangkat selalu ditutup.", 12f))
+        val cb = CheckBox(this)
+        cb.text = "Tutup halaman izin \"Instal aplikasi tidak dikenal\" saat Mode Ketat"
+        cb.isChecked = Store.blockUnknownInstall(this)
+        cb.setOnClickListener {
+            val v = cb.isChecked
+            if (!v && strict) {
+                toast("Mode Ketat aktif: tidak bisa dimatikan")
+            } else {
+                Store.setBlockUnknownInstall(this, v)
+            }
+            render()
+        }
+        put(cb)
+        put(text("Berikan dulu izin instal APK ke Chrome/Pengelola file sebelum menyalakan saklar ini bila kamu masih butuh memperbarui aplikasi lewat APK.", 11f, false, C_SUB))
+    }
+
+    // ---------- Hari bersih (streak) ----------
+    private fun renderStreak() {
+        header("Hari bersih")
+        val now = System.currentTimeMillis()
+        val per = try { StatsDb.blocksPerDay(this, 35) } catch (t: Throwable) { emptyMap() }
+        val first = try { packageManager.getPackageInfo(packageName, 0).firstInstallTime } catch (t: Throwable) { now }
+        val firstKey = StatsDb.dayKey(first)
+        val days = ArrayList<Pair<String, Int>>() // lama -> baru; -1 = sebelum terpasang
+        for (i in 34 downTo 0) {
+            val k = StatsDb.dayKey(now - i.toLong() * 86400000L)
+            days.add(Pair(k, if (k < firstKey) -1 else (per[k] ?: 0)))
+        }
+        var streak = 0
+        for (i in days.indices.reversed()) {
+            if (days[i].second == 0) streak++ else break
+        }
+        var best = 0
+        var run = 0
+        for (d in days) {
+            if (d.second == 0) { run++; if (run > best) best = run } else run = 0
+        }
+        put(text("$streak hari", 30f, true, C_OK))
+        put(text("beruntun tanpa satu pun blokir • rekor $best hari (35 hari terakhir)", 12f, false, C_SUB))
+        val last28 = days.takeLast(28)
+        val grid = LinearLayout(this)
+        grid.orientation = LinearLayout.VERTICAL
+        grid.setPadding(0, dp(8), 0, dp(4))
+        for (r in 0 until 4) {
+            val row = LinearLayout(this)
+            row.orientation = LinearLayout.HORIZONTAL
+            for (c in 0 until 7) {
+                val d = last28[r * 7 + c]
+                val color = when {
+                    d.second < 0 -> C_CHIP
+                    d.second == 0 -> C_OK
+                    else -> C_BAD
+                }
+                row.addView(View(this).apply {
+                    background = bg(color, dp(6))
+                    layoutParams = LinearLayout.LayoutParams(0, dp(26), 1f).apply { setMargins(dp(2), dp(2), dp(2), dp(2)) }
+                })
+            }
+            grid.addView(row)
+        }
+        put(grid)
+        put(text("Hijau = bersih, merah = ada blokir, abu = sebelum aplikasi terpasang. Riwayat disimpan 35 hari.", 11f, false, C_SUB))
+        val weekAgo = now - 7L * 86400000L
+        val urges = Store.urgeTimes(this).count { it >= weekAgo }
+        put(text("Dorongan dilawan 7 hari terakhir: $urges kali", 12f, false, C_TEXT))
+    }
+
+    // ---------- Dorongan ----------
+    private var urgeEnd = 0L
+    private var urgeTv: TextView? = null
+    private var urgeHint: TextView? = null
+    private var urgeBtn: Button? = null
+    private val urgeTick = object : Runnable {
+        override fun run() {
+            if (screen != "urge" || urgeEnd == 0L) return
+            val left = urgeEnd - System.currentTimeMillis()
+            val tv = urgeTv ?: return
+            if (left <= 0L) {
+                tv.text = "Selesai"
+                urgeHint?.text = "Kamu berhasil melewatinya. Lanjutkan harimu."
+                urgeBtn?.text = "Selesai, ke layar utama"
+                return
+            }
+            val sec = (left + 999L) / 1000L
+            tv.text = String.format(java.util.Locale.getDefault(), "%d:%02d", sec / 60, sec % 60)
+            val elapsed = (90L - sec).coerceAtLeast(0L)
+            val ph = (elapsed % 14L)
+            urgeHint?.text = when {
+                ph < 4L -> "Tarik napas pelan..."
+                ph < 8L -> "Tahan sebentar..."
+                else -> "Hembuskan perlahan..."
+            }
+            handler.postDelayed(this, 500L)
+        }
+    }
+
+    private fun renderUrge() {
+        handler.removeCallbacks(urgeTick)
+        header("Dorongan")
+        if (urgeEnd == 0L) {
+            put(text("Dorongan itu naik lalu turun sendiri, biasanya dalam beberapa menit. Kamu tidak perlu melawannya, cukup menunggu 90 detik sambil mengatur napas.", 13f))
+            put(text(Store.motivation(this), 13f, false, C_SUB))
+            put(button("Mulai 90 detik") {
+                urgeEnd = System.currentTimeMillis() + 90000L
+                Store.addUrge(this)
+                render()
+            })
+            return
+        }
+        val tv = text("", 44f, true, C_PRIMARY).apply { gravity = Gravity.CENTER }
+        val hint = text("", 16f, false, C_TEXT).apply { gravity = Gravity.CENTER }
+        urgeTv = tv
+        urgeHint = hint
+        put(tv)
+        put(hint)
+        put(text(Store.motivation(this), 12f, false, C_SUB).apply { gravity = Gravity.CENTER })
+        val b = button(if (System.currentTimeMillis() >= urgeEnd) "Selesai, ke layar utama" else "Batal") {
+            val done = System.currentTimeMillis() >= urgeEnd
+            urgeEnd = 0L
+            if (done) {
+                try {
+                    startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                } catch (t: Throwable) {
+                    // abaikan
+                }
+            }
+            goScreen("home")
+        }
+        urgeBtn = b
+        put(b)
+        urgeTick.run()
+    }
+
+    // ---------- Jeda sebelum buka aplikasi ----------
+    private var pauseQuery = ""
+
+    private fun renderPauseApps(strict: Boolean) {
+        header("Jeda sebelum buka")
+        put(text("Aplikasi yang dipilih meminta jeda napas 10 detik dan satu kalimat tujuan sebelum dibuka (berlaku lagi setelah 5 menit). Ini bukan blokir, hanya gesekan. Saat Mode Ketat aktif, daftar ini hanya bisa ditambah.", 12f))
+        val chosen = Store.pauseApps(this)
+        val all = loadApps()
+        val byPkg = all.associateBy { it.pkg }
+        val chosenRows = chosen.map { byPkg[it] ?: AppRow(it, it) }.sortedBy { it.label.lowercase() }
+        if (chosenRows.isEmpty()) put(text("Belum ada aplikasi.", 12f, false, C_SUB))
+        for (a in chosenRows) put(pauseRow(a, true, strict))
+        val q = EditText(this)
+        q.hint = "Cari aplikasi untuk ditambah"
+        q.setSingleLine()
+        q.setText(pauseQuery)
+        put(q)
+        put(button("Cari") {
+            pauseQuery = q.text.toString().trim().lowercase()
+            render()
+        })
+        val others = all.filter { it.pkg !in chosen }
+        val shown = if (pauseQuery.isEmpty()) others
+        else others.filter { it.label.lowercase().contains(pauseQuery) || it.pkg.contains(pauseQuery) }
+        if (shown.isEmpty()) {
+            put(text("Tidak ada aplikasi yang cocok.", 12f, false, C_SUB))
+        } else {
+            val col = LinearLayout(this)
+            col.orientation = LinearLayout.VERTICAL
+            col.setPadding(dp(10), dp(4), dp(10), dp(4))
+            for (a in shown) col.addView(pauseRow(a, false, strict))
+            put(scrollBox(300, col))
+        }
+    }
+
+    private fun pauseRow(a: AppRow, on: Boolean, strict: Boolean): View {
+        val top = LinearLayout(this)
+        top.orientation = LinearLayout.HORIZONTAL
+        top.gravity = Gravity.CENTER_VERTICAL
+        top.setPadding(0, dp(6), 0, dp(6))
+        val icon = ImageView(this)
+        try {
+            icon.setImageDrawable(packageManager.getApplicationIcon(a.pkg))
+        } catch (e: Exception) {
+            // tanpa ikon
+        }
+        icon.layoutParams = LinearLayout.LayoutParams(dp(42), dp(42))
+        top.addView(icon)
+        val col = LinearLayout(this)
+        col.orientation = LinearLayout.VERTICAL
+        col.setPadding(dp(12), 0, dp(8), 0)
+        col.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        col.addView(text(a.label, 14f, true))
+        col.addView(text(a.pkg, 10f, false, C_SUB))
+        top.addView(col)
+        val sw = Switch(this)
+        sw.isChecked = on
+        sw.setOnClickListener {
+            if (sw.isChecked) {
+                Store.addPauseApp(this@MainActivity, a.pkg)
+            } else if (strict) {
+                toast("Mode Ketat aktif: tidak bisa melepas jeda")
+            } else {
+                Store.removePauseApp(this@MainActivity, a.pkg)
+            }
+            render()
+        }
+        top.addView(sw)
+        return top
     }
 
     private fun renderNewApps(strict: Boolean) {
@@ -2656,6 +2879,8 @@ class MainActivity : Activity() {
             header("Akses Penggunaan")
             put(text("Aktifkan Akses Penggunaan agar pemakaian aplikasi tercatat. Angka pemakaian di bawah kosong sampai itu aktif.", 12f))
         }
+
+        renderStreak()
 
         header("Hari ini")
         put(text(Dashboard.dur(s.todayMs), 30f, true, C_PRIMARY))

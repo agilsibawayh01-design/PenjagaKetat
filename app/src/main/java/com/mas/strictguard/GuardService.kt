@@ -35,6 +35,9 @@ class GuardService : AccessibilityService() {
     private var limitPkg = ""
     private var backing = false
     private var strictNow = false
+    private var blockUnknownNow = false
+    private var pauseAppsNow: Set<String> = emptySet()
+    private var lastPauseAt = 0L
     private var pausedNow = false
     private var blockedBrowsers: Set<String> = emptySet()
     private var browsersAt = 0L
@@ -181,6 +184,8 @@ class GuardService : AccessibilityService() {
         cacheAt = now
         Zone.update(this)
         strictNow = Store.strictOn(this)
+        blockUnknownNow = Store.blockUnknownInstall(this)
+        pauseAppsNow = Store.pauseApps(this)
         pausedNow = Store.pausedNow(this)
         ipBlock = Store.blockIpUrls(this)
         if (now - browsersAt > 30000L || Store.pkgStamp > browsersAt) {
@@ -299,6 +304,17 @@ class GuardService : AccessibilityService() {
             return
         }
         if (BlockEngine.hasLimit(this, pkg, apps, profiles)) scheduleLimitCheck(pkg)
+
+        // 1b. Jeda napas + niat sebelum aplikasi tertentu dibuka (hanya gesekan, tidak memblokir).
+        if (pkg in pauseAppsNow && now > Store.pauseOkUntil(this, pkg) && now - lastPauseAt > 2500L) {
+            lastPauseAt = now
+            val pi = Intent(this, BlockActivity::class.java)
+                .putExtra("mode", "pause")
+                .putExtra("pkg", pkg)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+            startActivity(pi)
+            return
+        }
 
         // 2. Riwayat situs browser.
         // Ambil domain utama dari address bar sebelum pemeriksaan keyword.
@@ -419,6 +435,7 @@ class GuardService : AccessibilityService() {
             if (t.isEmpty() && d.isEmpty()) continue
             if (t in SecureGuard.SECURE_PAGE_TEXTS || d in SecureGuard.SECURE_PAGE_TEXTS) return true
             if (t in SecureGuard.BYPASS_PAGE_TEXTS || d in SecureGuard.BYPASS_PAGE_TEXTS) return true
+            if (blockUnknownNow && (t in SecureGuard.UNKNOWN_INSTALL_TEXTS || d in SecureGuard.UNKNOWN_INSTALL_TEXTS)) return true
             if (t.contains(Config.SERVICE_MARKER) || d.contains(Config.SERVICE_MARKER)) return true
             if (!nameHit) {
                 for (name in protectedNames) {

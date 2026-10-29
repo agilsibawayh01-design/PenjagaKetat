@@ -371,6 +371,25 @@ object Store {
     fun blockOtherBrowsers(c: Context): Boolean = sp(c).getBoolean("block_browsers", true)
     fun setBlockOtherBrowsers(c: Context, v: Boolean) { sp(c).edit().putBoolean("block_browsers", v).commit() }
 
+    /** Saklar terpisah: saat Mode Ketat, tutup halaman izin "Instal aplikasi tidak dikenal". */
+    fun blockUnknownInstall(c: Context): Boolean = sp(c).getBoolean("block_unknown_install", false)
+    fun setBlockUnknownInstall(c: Context, v: Boolean) { sp(c).edit().putBoolean("block_unknown_install", v).commit() }
+
+    /** Aplikasi yang diberi jeda (napas + niat) sebelum dibuka. */
+    fun pauseApps(c: Context): Set<String> = getSet(c, "pause_apps")
+    fun addPauseApp(c: Context, p: String) = putSet(c, "pause_apps", getSet(c, "pause_apps") + p)
+    fun removePauseApp(c: Context, p: String) = putSet(c, "pause_apps", getSet(c, "pause_apps") - p)
+    fun pauseOkUntil(c: Context, pkg: String): Long = sp(c).getLong("pauseok_$pkg", 0L)
+    fun setPauseOk(c: Context, pkg: String, v: Long) { sp(c).edit().putLong("pauseok_$pkg", v).commit() }
+
+    /** Riwayat tombol Dorongan (waktu), disimpan maksimal 200. */
+    fun urgeTimes(c: Context): List<Long> =
+        (sp(c).getString("urge_times", "") ?: "").split(',').mapNotNull { it.toLongOrNull() }
+    fun addUrge(c: Context) {
+        val l = (urgeTimes(c) + System.currentTimeMillis()).takeLast(200)
+        sp(c).edit().putString("urge_times", l.joinToString(",")).commit()
+    }
+
     /** Browser terpasang selain Chrome yang akan diblokir (bila aturannya aktif). */
     @Volatile
     var pkgStamp = 0L

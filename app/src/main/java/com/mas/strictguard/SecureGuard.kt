@@ -24,6 +24,16 @@ object SecureGuard {
         "buka kunci oem", "oem unlocking",
         "nama host penyedia dns pribadi", "private dns provider hostname",
         "tambahkan vpn", "tambah vpn", "add vpn",
-        "vpn selalu aktif", "always-on vpn", "blokir koneksi tanpa vpn", "block connections without vpn"
+        "vpn selalu aktif", "always-on vpn", "blokir koneksi tanpa vpn", "block connections without vpn",
+        // Menambah pengguna/tamu (ruang kosong tanpa pemblokiran)
+        "tambahkan pengguna", "tambah pengguna", "add user", "tambahkan tamu", "tambah tamu", "add guest",
+        // Aplikasi admin perangkat
+        "aplikasi admin perangkat", "device admin apps", "device admin app"
+    )
+
+    /** Hanya bila saklar "blokir pemasangan tidak dikenal" aktif. */
+    val UNKNOWN_INSTALL_TEXTS: Set<String> = setOf(
+        "instal aplikasi tidak dikenal", "instal aplikasi yang tidak dikenal", "install unknown apps",
+        "izinkan dari sumber ini", "allow from this source"
     )
 }
