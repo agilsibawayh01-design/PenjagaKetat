@@ -31,6 +31,9 @@ object SecureGuard {
         "aplikasi admin perangkat", "device admin apps", "device admin app"
     )
 
+    /** Label aplikasi buatan sendiri yang boleh dipasang lewat APK saat saklar pemasangan aktif. */
+    val OWN_APP_LABELS: List<String> = listOf("penjaga ketat", "channel blocker", "telegram blocker", "bankswitch", "bank switch")
+
     /** Hanya bila saklar "blokir pemasangan tidak dikenal" aktif. */
     val UNKNOWN_INSTALL_TEXTS: Set<String> = setOf(
         "instal aplikasi tidak dikenal", "instal aplikasi yang tidak dikenal", "install unknown apps",

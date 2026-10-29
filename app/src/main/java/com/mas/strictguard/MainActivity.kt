@@ -1542,7 +1542,7 @@ class MainActivity : Activity() {
         header("Celah pemasangan")
         put(text("Saat Mode Ketat aktif, halaman Pengaturan untuk menambah pengguna/tamu dan Aplikasi admin perangkat selalu ditutup.", 12f))
         val cb = CheckBox(this)
-        cb.text = "Tutup halaman izin \"Instal aplikasi tidak dikenal\" saat Mode Ketat"
+        cb.text = "Saat Mode Ketat: blokir pemasangan APK dari luar Play Store (kecuali Penjaga Ketat & Channel Blocker) dan tutup halaman izin Instal aplikasi tidak dikenal"
         cb.isChecked = Store.blockUnknownInstall(this)
         cb.setOnClickListener {
             val v = cb.isChecked
@@ -1554,7 +1554,7 @@ class MainActivity : Activity() {
             render()
         }
         put(cb)
-        put(text("Berikan dulu izin instal APK ke Chrome/Pengelola file sebelum menyalakan saklar ini bila kamu masih butuh memperbarui aplikasi lewat APK.", 11f, false, C_SUB))
+        put(text("Layar pemasang APK ditutup bila yang dipasang bukan aplikasi buatanmu. Update Penjaga Ketat dan Channel Blocker lewat Chrome atau Pengelola file tetap bisa. Instal dari Play Store tidak terpengaruh.", 11f, false, C_SUB))
     }
 
     // ---------- Hari bersih (streak) ----------

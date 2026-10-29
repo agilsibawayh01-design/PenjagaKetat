@@ -427,6 +427,13 @@ class GuardService : AccessibilityService() {
      * Daftar aplikasi biasa (hanya memuat nama) tetap boleh dibuka.
      */
     private fun showsProtected(root: AccessibilityNodeInfo): Boolean {
+        // Pemasang APK: saat saklar aktif, hanya izinkan pemasangan aplikasi kita sendiri.
+        if (blockUnknownNow && (root.packageName?.toString() ?: "").contains("packageinstaller")) {
+            val texts = collect(root, 600).mapNotNull {
+                (it.text?.toString() ?: it.contentDescription?.toString())?.lowercase()?.trim()?.takeIf { s -> s.isNotEmpty() }
+            }
+            if (texts.size >= 4 && texts.none { t -> SecureGuard.OWN_APP_LABELS.any { t.contains(it) } }) return true
+        }
         var nameHit = false
         var actionHit = false
         for (n in collect(root, 600)) {
