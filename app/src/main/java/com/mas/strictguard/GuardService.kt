@@ -351,6 +351,9 @@ class GuardService : AccessibilityService() {
             return
         }
 
+        // 3b. Layar pemasang APK memuat teksnya bertahap: periksa ulang beberapa kali.
+        if (strictNow && blockUnknownNow && pkg.contains("packageinstaller")) scheduleInstallerCheck()
+
         // 4. Lindungi pengaturan saat Mode Ketat aktif
         if (strictNow && isSettingsLike(pkg) && now - lastProtectAt > 500L) {
             lastProtectAt = now
@@ -426,36 +429,79 @@ class GuardService : AccessibilityService() {
      * atau halaman detail layanan aksesibilitas Penjaga Ketat.
      * Daftar aplikasi biasa (hanya memuat nama) tetap boleh dibuka.
      */
+    private var installerCheckRunning = false
+
+    private fun scheduleInstallerCheck() {
+        if (installerCheckRunning) return
+        installerCheckRunning = true
+        var n = 0
+        val r = object : Runnable {
+            override fun run() {
+                try {
+                    val root = rootInActiveWindow
+                    val cur = root?.packageName?.toString() ?: ""
+                    if (root != null && cur.contains("packageinstaller") && strictNow && blockUnknownNow) {
+                        if (showsProtected(root)) {
+                            installerCheckRunning = false
+                            startBlock("protect", "")
+                            return
+                        }
+                        n++
+                        if (n < 12) {
+                            handler.postDelayed(this, 500L)
+                            return
+                        }
+                    }
+                } catch (t: Throwable) {
+                    // abaikan
+                }
+                installerCheckRunning = false
+            }
+        }
+        handler.postDelayed(r, 400L)
+    }
+
+    private var lastProtectWhy = ""
+    private fun why(s: String): Boolean { lastProtectWhy = s; return true }
+
     private fun showsProtected(root: AccessibilityNodeInfo): Boolean {
         // Pemasang APK: saat saklar aktif, hanya izinkan pemasangan aplikasi kita sendiri.
         if (blockUnknownNow && (root.packageName?.toString() ?: "").contains("packageinstaller")) {
             val texts = collect(root, 600).mapNotNull {
                 (it.text?.toString() ?: it.contentDescription?.toString())?.lowercase()?.trim()?.takeIf { s -> s.isNotEmpty() }
             }
-            if (texts.size >= 4 && texts.none { t -> SecureGuard.OWN_APP_LABELS.any { t.contains(it) } }) return true
+            // Hanya layar PEMASANGAN. Layar copot/uninstall tidak disentuh.
+            val isUninstall = texts.any { it.contains("uninstal") || it.contains("copot") || it.contains("hapus") }
+            val isInstall = texts.any { it.contains("instal") || it.contains("pasang") || it.contains("perbarui") || it.contains("update") }
+            if (!isUninstall && isInstall && texts.size >= 4 &&
+                texts.none { t -> SecureGuard.OWN_APP_LABELS.any { t.contains(it) } }
+            ) return why("pemasang APK")
         }
         var nameHit = false
+        var hitName = ""
+        var hitAction = ""
         var actionHit = false
         for (n in collect(root, 600)) {
             val t = n.text?.toString()?.lowercase()?.trim() ?: ""
             val d = n.contentDescription?.toString()?.lowercase()?.trim() ?: ""
             if (t.isEmpty() && d.isEmpty()) continue
-            if (t in SecureGuard.SECURE_PAGE_TEXTS || d in SecureGuard.SECURE_PAGE_TEXTS) return true
-            if (t in SecureGuard.BYPASS_PAGE_TEXTS || d in SecureGuard.BYPASS_PAGE_TEXTS) return true
-            if (blockUnknownNow && (t in SecureGuard.UNKNOWN_INSTALL_TEXTS || d in SecureGuard.UNKNOWN_INSTALL_TEXTS)) return true
-            if (t.contains(Config.SERVICE_MARKER) || d.contains(Config.SERVICE_MARKER)) return true
+            if (t in SecureGuard.SECURE_PAGE_TEXTS || d in SecureGuard.SECURE_PAGE_TEXTS) return why("folder aman: " + t + d)
+            if (t in SecureGuard.BYPASS_PAGE_TEXTS || d in SecureGuard.BYPASS_PAGE_TEXTS) return why("halaman celah: " + t + d)
+            if (blockUnknownNow && (t in SecureGuard.UNKNOWN_INSTALL_TEXTS || d in SecureGuard.UNKNOWN_INSTALL_TEXTS)) return why("izin instal: " + t + d)
+            if (t.contains(Config.SERVICE_MARKER) || d.contains(Config.SERVICE_MARKER)) return why("layanan aksesibilitas")
             if (!nameHit) {
                 for (name in protectedNames) {
                     if (t.contains(name) || d.contains(name)) {
                         nameHit = true
+                        hitName = name + " di '" + (t + d).take(40) + "'"
                         break
                     }
                 }
             }
             if (!actionHit) {
-                if (isActionText(t) || isActionText(d)) actionHit = true
+                if (isActionText(t) || isActionText(d)) { actionHit = true; hitAction = (t + d).take(30) }
             }
-            if (nameHit && actionHit) return true
+            if (nameHit && actionHit) return why("nama " + hitName + ", tombol: " + hitAction)
         }
         return false
     }
@@ -632,6 +678,7 @@ class GuardService : AccessibilityService() {
         backing = true
         val statTarget = if ((mode == "site" || mode == "site_wait") && blockDomain.isNotEmpty()) blockDomain else pkg
         StatsDb.addBlock(this, if (mode == "typed") "content" else if (mode == "protect_click") "protect" else mode, statTarget)
+        if (mode == "protect" || mode == "protect_click") Store.log(this, "Proteksi ($mode, $pkg): " + lastProtectWhy.ifEmpty { "klik pada nama terlindung" })
         // Klik di Pengaturan: beri 120 ms agar halaman tujuan sempat terbuka, lalu kembali.
         if (mode == "protect_click") handler.postDelayed({ stepBack(mode, pkg, 0) }, 120L) else stepBack(mode, pkg, 0)
     }
