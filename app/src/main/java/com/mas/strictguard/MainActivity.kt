@@ -81,6 +81,26 @@ class MainActivity : Activity() {
         scroll.setBackgroundColor(C_BG)
         scroll.addView(root)
         setContentView(scroll)
+        applySystemBars()
+    }
+
+    /** Status bar dan navigation bar mengikuti warna latar aplikasi (terang/gelap). */
+    private fun applySystemBars() {
+        try {
+            window.statusBarColor = C_BG
+            window.navigationBarColor = C_BG
+            if (Build.VERSION.SDK_INT >= 30) {
+                val m = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or
+                    android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+                window.insetsController?.setSystemBarsAppearance(if (night) 0 else m, m)
+            } else {
+                val m = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+                val f = window.decorView.systemUiVisibility
+                window.decorView.systemUiVisibility = if (night) f and m.inv() else f or m
+            }
+        } catch (t: Throwable) {
+            // tampilan saja, abaikan
+        }
     }
 
     override fun onResume() {
@@ -120,7 +140,7 @@ class MainActivity : Activity() {
         val c = LinearLayout(this)
         c.orientation = LinearLayout.VERTICAL
         c.setPadding(dp(18), dp(14), dp(18), dp(16))
-        c.background = bg(C_CARD, dp(20)).apply { if (night) setStroke(dp(1), C_CHIP) }
+        c.background = bg(C_CARD, dp(20)).apply { setStroke(dp(1), C_CHIP) }
         c.elevation = if (night) 0f else dp(1).toFloat()
         val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         lp.bottomMargin = dp(12)
@@ -498,13 +518,22 @@ class MainActivity : Activity() {
         col.orientation = LinearLayout.VERTICAL
         col.setPadding(dp(14), 0, 0, 0)
         col.addView(text("Penjaga Ketat", 22f, true, Color.WHITE))
-        val line = modeLabel() + " • " +
-            (if (acc && adm) "perlindungan lengkap" else "perlu tindakan")
         col.addView(text(modeLabel(), 13f, false, Color.argb(235, 255, 255, 255)))
-        col.addView(text(if (acc && adm) "●  Perlindungan lengkap" else "●  Perlu tindakan", 12f, true,
-            if (acc && adm) Color.parseColor("#9BE7B8") else Color.parseColor("#FFD27A")))
+        val protectionOk = acc && adm
+        col.addView(TextView(this).apply {
+            text = if (protectionOk) "●  Perlindungan lengkap" else "●  Perlu tindakan"
+            textSize = 12f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(if (protectionOk) Color.parseColor("#9BE7B8") else Color.parseColor("#FFD27A"))
+            background = bg(Color.argb(46, 255, 255, 255), dp(20))
+            setPadding(dp(12), dp(5), dp(12), dp(5))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(8) }
+        })
         banner.addView(col)
         root.addView(banner)
+        renderStatTiles()
         renderModeSwitch()
 
         if (!acc || !adm) {
@@ -521,7 +550,7 @@ class MainActivity : Activity() {
             }
         }
 
-        renderTodayCard(acc && adm)
+        renderFocusLine()
 
         val blocks = try {
             StatsDb.blocksByReason(this, UsageTracker.startOfDay()).sumOf { it.second }
@@ -545,6 +574,62 @@ class MainActivity : Activity() {
         homeRow("⚙️", "Lainnya", "Backup, kode teman, kunci aplikasi, dan log.", "Backup • Teman • Log", Color.parseColor("#455A64"), "more")
     }
 
+    /** Warna aksen; di mode gelap dibuat lebih terang supaya terbaca. */
+    private fun accent(color: Int): Int =
+        if (night) Color.argb(255, Math.min(255, Color.red(color) + 70), Math.min(255, Color.green(color) + 70), Math.min(255, Color.blue(color) + 70))
+        else color
+
+    private fun statTile(value: String, label: String, color: Int, first: Boolean, last: Boolean, target: String): View {
+        val t = LinearLayout(this)
+        t.orientation = LinearLayout.VERTICAL
+        t.gravity = Gravity.CENTER_HORIZONTAL
+        t.setPadding(dp(8), dp(14), dp(8), dp(12))
+        t.background = bg(C_CARD, dp(18)).apply { setStroke(dp(1), C_CHIP) }
+        t.elevation = if (night) 0f else dp(1).toFloat()
+        t.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+            setMargins(if (first) 0 else dp(4), 0, if (last) 0 else dp(4), 0)
+        }
+        t.addView(text(value, 20f, true, accent(color)).apply { gravity = Gravity.CENTER })
+        t.addView(text(label, 11f, false, C_SUB).apply { gravity = Gravity.CENTER })
+        t.setOnClickListener { goScreen(target) }
+        return t
+    }
+
+    /** Tiga angka ringkas di bawah banner: pemakaian, blokir hari ini, jumlah aplikasi diblokir. */
+    private fun renderStatTiles() {
+        var usage = "—"
+        var blocks = "0"
+        try {
+            val s = Dashboard.get(this)
+            usage = if (s.usageAccess) Dashboard.dur(s.todayMs) else "Izin?"
+            blocks = s.blocksToday.toString()
+        } catch (t: Throwable) {
+            // tampilkan nilai bawaan
+        }
+        val apps = try { Store.apps(this).size.toString() } catch (t: Throwable) { "0" }
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { bottomMargin = dp(12) }
+        row.addView(statTile(usage, "Pemakaian hari ini", Color.parseColor("#1565C0"), true, false, "stats"))
+        row.addView(statTile(blocks, "Diblokir hari ini", Color.parseColor("#EF6C00"), false, false, "stats"))
+        row.addView(statTile(apps, "Aplikasi diblokir", Color.parseColor("#6A1B9A"), false, true, "apps"))
+        root.addView(row)
+    }
+
+    /** Kartu kecil hanya saat Mode Fokus berjalan. */
+    private fun renderFocusLine() {
+        if (!Focus.running(this)) return
+        val left = Focus.leftMs(this) / 60000L + 1L
+        val card = newCard()
+        card.addView(text(
+            "🎯  Mode Fokus " + (if (Store.pausedNow(this)) "dijeda" else "aktif") + " • sisa sekitar $left menit",
+            13f, true, C_PRIMARY
+        ))
+        root.addView(card)
+    }
+
     private fun homeGroup(label: String) {
         root.addView(text(label, 11f, true, C_SUB).apply {
             letterSpacing = 0.08f
@@ -556,18 +641,27 @@ class MainActivity : Activity() {
         val row = LinearLayout(this)
         row.orientation = LinearLayout.HORIZONTAL
         row.gravity = Gravity.CENTER_VERTICAL
-        row.setPadding(dp(14), dp(12), dp(14), dp(12))
-        row.background = bg(C_CARD, dp(18)).apply { if (night) setStroke(dp(1), C_CHIP) }
+        row.setPadding(dp(14), dp(10), dp(14), dp(10))
+        row.background = bg(C_CARD, dp(18)).apply { setStroke(dp(1), C_CHIP) }
+        try {
+            val tv = android.util.TypedValue()
+            if (theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)) {
+                row.foreground = getDrawable(tv.resourceId)
+                row.clipToOutline = true
+            }
+        } catch (t: Throwable) {
+            // tanpa efek sentuh
+        }
         row.elevation = if (night) 0f else dp(1).toFloat()
         row.layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { bottomMargin = dp(8) }
+        ).apply { bottomMargin = dp(6) }
         row.addView(TextView(this).apply {
             text = icon
             textSize = 20f
             gravity = Gravity.CENTER
             background = bg(Color.argb(if (night) 70 else 38, Color.red(color), Color.green(color), Color.blue(color)), dp(14))
-            layoutParams = LinearLayout.LayoutParams(dp(46), dp(46))
+            layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
         })
         val col = LinearLayout(this)
         col.orientation = LinearLayout.VERTICAL
@@ -618,14 +712,21 @@ class MainActivity : Activity() {
         else -> (min / 1440).toString() + " hari"
     }
 
-    private fun pill(label: String, selected: Boolean, color: Int, onClick: () -> Unit): TextView {
+    private fun pill(label: String, selected: Boolean, color: Int, onClick: () -> Unit): TextView =
+        pillImpl(label, selected, color, false, onClick)
+
+    private fun segPill(label: String, selected: Boolean, color: Int, onClick: () -> Unit): TextView =
+        pillImpl(label, selected, color, true, onClick)
+
+    private fun pillImpl(label: String, selected: Boolean, color: Int, seg: Boolean, onClick: () -> Unit): TextView {
         val t = TextView(this)
         t.text = label
         t.textSize = 14f
         t.setTypeface(null, Typeface.BOLD)
         t.gravity = Gravity.CENTER
         t.setTextColor(if (selected) Color.WHITE else C_SUB)
-        t.background = bg(if (selected) color else C_CHIP, dp(12))
+        t.background = bg(if (selected) color else if (seg) Color.TRANSPARENT else C_CHIP, dp(if (seg) 14 else 12))
+        if (seg && selected) t.elevation = dp(2).toFloat()
         t.setPadding(dp(8), dp(12), dp(8), dp(12))
         t.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
             setMargins(dp(3), 0, dp(3), 0)
@@ -640,16 +741,18 @@ class MainActivity : Activity() {
         header("Mode")
         val row = LinearLayout(this)
         row.orientation = LinearLayout.HORIZONTAL
-        row.addView(pill("Off", paused, Color.parseColor("#78909C")) {
+        row.background = bg(C_CHIP, dp(18))
+        row.setPadding(dp(3), dp(3), dp(3), dp(3))
+        row.addView(segPill("Off", paused, Color.parseColor("#78909C")) {
             if (raw) toast("Mode Ketat aktif. Keluar dulu lewat metode penonaktifan.") else pauseDialog()
         })
-        row.addView(pill("Normal", !paused && !raw, C_PRIMARY) {
+        row.addView(segPill("Normal", !paused && !raw, C_PRIMARY) {
             if (raw) toast("Mode Ketat aktif. Keluar dulu lewat metode penonaktifan.") else {
                 Store.pauseStop(this)
                 render()
             }
         })
-        row.addView(pill("Ketat", raw, C_BAD) {
+        row.addView(segPill("Ketat", raw, C_BAD) {
             if (screen != "strict") goScreen("strict") else toast("Atur metode penonaktifan di bawah, lalu tekan Aktifkan Mode Ketat.")
         })
         put(row)
