@@ -45,6 +45,32 @@ class BlockActivity : Activity() {
             setBackgroundColor(cBg)
             setPadding(48, 48, 48, 48)
         }
+        val dm = resources.displayMetrics.density
+        fun dpx(v: Int) = (v * dm).toInt()
+        val cCard = if (night) Color.parseColor("#1B2129") else Color.parseColor("#F4F6F9")
+        val cBtn = if (night) Color.parseColor("#6FA8FF") else Color.parseColor("#1A56DB")
+        val cBtn2 = if (night) Color.parseColor("#2A333F") else Color.parseColor("#E3E8EF")
+        fun styleBtn(b: Button, primary: Boolean) {
+            b.isAllCaps = false
+            b.setTextColor(if (primary) Color.WHITE else cFg)
+            b.background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(if (primary) cBtn else cBtn2)
+                cornerRadius = dpx(14).toFloat()
+            }
+            b.stateListAnimator = null
+            b.layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dpx(8) }
+        }
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dpx(22), dpx(26), dpx(22), dpx(20))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(cCard)
+                cornerRadius = dpx(24).toFloat()
+            }
+        }
         val title = TextView(this).apply {
             text = "Diblokir"
             textSize = 28f
@@ -87,13 +113,24 @@ class BlockActivity : Activity() {
             text = "Tutup"
             setOnClickListener { closeScreen() }
         }
-        root.addView(title)
-        root.addView(why)
-        root.addView(info)
-        root.addView(motiv)
-        root.addView(openBtn)
-        root.addView(emgBtn)
-        root.addView(closeBtn)
+        styleBtn(openBtn, true)
+        styleBtn(emgBtn, false)
+        styleBtn(closeBtn, true)
+        closeBtn.text = "Kembali"
+        emgBtn.textSize = 12f
+        emgBtn.minHeight = 0
+        emgBtn.minimumHeight = 0
+        (emgBtn.layoutParams as LinearLayout.LayoutParams).topMargin = dpx(22)
+        card.addView(title)
+        card.addView(why)
+        card.addView(info)
+        card.addView(motiv)
+        card.addView(openBtn)
+        card.addView(closeBtn)
+        card.addView(emgBtn)
+        root.addView(card, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ))
         setContentView(root)
 
         when (mode) {
@@ -265,11 +302,13 @@ class BlockActivity : Activity() {
         val total = left / 1000L
         val min = total / 60L
         val sec = total % 60L
-        info.text = String.format(
-            java.util.Locale.getDefault(),
-            "Timer tunggu aktif.\nSisa waktu: %02d:%02d\n\nAplikasi akan tetap diblokir sampai timer selesai.",
-            min, sec
-        )
+        val clock = String.format(java.util.Locale.getDefault(), "%02d:%02d", min, sec)
+        val full = "Timer tunggu aktif\n$clock\nAplikasi tetap diblokir sampai timer selesai."
+        val sp = android.text.SpannableString(full)
+        val a = full.indexOf(clock)
+        sp.setSpan(android.text.style.RelativeSizeSpan(3.2f), a, a + clock.length, 0)
+        sp.setSpan(android.text.style.StyleSpan(Typeface.BOLD), a, a + clock.length, 0)
+        info.text = sp
         handler.postDelayed({ showWaitCountdown(g) }, 1000L)
     }
 

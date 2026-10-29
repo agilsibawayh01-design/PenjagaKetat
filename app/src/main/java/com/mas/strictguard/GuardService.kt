@@ -418,6 +418,7 @@ class GuardService : AccessibilityService() {
             val d = n.contentDescription?.toString()?.lowercase()?.trim() ?: ""
             if (t.isEmpty() && d.isEmpty()) continue
             if (t in SecureGuard.SECURE_PAGE_TEXTS || d in SecureGuard.SECURE_PAGE_TEXTS) return true
+            if (t in SecureGuard.BYPASS_PAGE_TEXTS || d in SecureGuard.BYPASS_PAGE_TEXTS) return true
             if (t.contains(Config.SERVICE_MARKER) || d.contains(Config.SERVICE_MARKER)) return true
             if (!nameHit) {
                 for (name in protectedNames) {

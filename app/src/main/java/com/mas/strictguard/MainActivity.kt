@@ -159,8 +159,76 @@ class MainActivity : Activity() {
         root.addView(card)
         cur = card
         val help = HELP[s]
-        card.addView(text(s, 16f, true, C_PRIMARY).apply { setPadding(0, 0, 0, if (help != null) dp(1) else dp(6)) })
+        val titleRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, if (help != null) dp(1) else dp(6))
+        }
+        titleRow.addView(View(this).apply {
+            background = bg(C_PRIMARY, dp(2))
+            layoutParams = LinearLayout.LayoutParams(dp(4), dp(18)).apply { rightMargin = dp(10) }
+        })
+        titleRow.addView(text(s, 16f, true, C_TEXT).apply {
+            setPadding(0, 0, 0, 0)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        if (s in COLLAPSIBLE) {
+            card.tag = s
+            titleRow.minimumHeight = dp(40)
+            titleRow.addView(text("▾", 16f, true, C_SUB))
+            card.layoutTransition = android.animation.LayoutTransition().apply { setDuration(180L) }
+            titleRow.setOnClickListener {
+                if (!openCards.add(s)) openCards.remove(s)
+                applyCollapse(card)
+            }
+        }
+        card.addView(titleRow)
         if (help != null) card.addView(text(help, 12f, false, C_SUB).apply { setPadding(0, 0, 0, dp(8)) })
+    }
+
+    private val openCards = mutableSetOf<String>()
+
+    /** Kartu yang jarang diubah: tertutup sampai judulnya disentuh. */
+    private val COLLAPSIBLE: Set<String> = setOf(
+        "Metode penonaktifan", "Zona Ketat (lokasi)", "Aplikasi baru", "Riwayat pass",
+        "Catatan perlindungan", "Browser", "Kategori situs", "🛡️ Keyword Bawaan PenjagaKetat",
+        "🔗 Keyword URL", "📱 Keyword Layar", "Rekam layar (untuk memperbaiki deteksi)",
+        "Cadangan otomatis", "Pengingat waktu hampir habis", "Kontrol notifikasi",
+        "Teks motivasi", "Pengecualian (ALLOW)", "Per hari"
+    )
+
+    private fun applyCollapse(card: LinearLayout) {
+        val key = card.tag as? String ?: return
+        val open = key in openCards
+        for (i in 1 until card.childCount) card.getChildAt(i).visibility = if (open) View.VISIBLE else View.GONE
+        val row = card.getChildAt(0) as? LinearLayout ?: return
+        (row.getChildAt(row.childCount - 1) as? TextView)?.text = if (open) "▾" else "▸"
+    }
+
+    private fun collapseAll() {
+        for (i in 0 until root.childCount) {
+            val c = root.getChildAt(i) as? LinearLayout ?: continue
+            if (c.tag is String) applyCollapse(c)
+        }
+    }
+
+    private fun sectionLabel(label: String) {
+        cur = null
+        root.addView(text(label, 12f, true, C_SUB).apply {
+            letterSpacing = 0.08f
+            setPadding(dp(6), dp(10), 0, dp(6))
+        })
+    }
+
+    private fun screenSummary(s: String): String = when (s) {
+        "apps" -> "${Store.apps(this).size} aplikasi diblokir"
+        "stats" -> "Pemakaian dan blokir hari ini"
+        "focus" -> "Sesi fokus untuk menjaga konsentrasi"
+        "words" -> "Browser, kategori, kata kunci, dan fitur sosmed"
+        "sched", "profiles" -> "Jadwal otomatis dan profil aturan"
+        "strict" -> "Kunci pengaturan agar sulit dimatikan"
+        "net" -> "Filter DNS dan kontrol notifikasi"
+        else -> "Keamanan, cadangan, dan pengaturan lain"
     }
 
     private val HELP: Map<String, String> = mapOf(
@@ -211,9 +279,14 @@ class MainActivity : Activity() {
             isAllCaps = false
             textSize = 14f
             setTextColor(Color.WHITE)
-            background = bg(C_PRIMARY, dp(14))
-            minHeight = 0
-            minimumHeight = 0
+            background = android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(Color.argb(70, 255, 255, 255)),
+                bg(C_PRIMARY, dp(14)), null
+            )
+            stateListAnimator = null
+            elevation = 0f
+            minHeight = dp(48)
+            minimumHeight = dp(48)
             setPadding(dp(16), dp(12), dp(16), dp(12))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
@@ -228,8 +301,8 @@ class MainActivity : Activity() {
             textSize = 12f
             setTextColor(C_PRIMARY)
             background = bg(C_CHIP, dp(10))
-            minHeight = 0
-            minimumHeight = 0
+            minHeight = dp(44)
+            minimumHeight = dp(44)
             setPadding(dp(8), dp(6), dp(8), dp(6))
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
                 topMargin = dp(4)
@@ -413,17 +486,22 @@ class MainActivity : Activity() {
                 "focus" -> renderFocus(strict)
                 "sched" -> renderSchedule(strict)
                 else -> {
+                    sectionLabel("KEAMANAN")
                     renderAppLock(strict)
-                    renderBackup(strict)
                     renderFriend()
+                    renderProtected(strict)
+                    renderNewApps(strict)
+                    sectionLabel("CADANGAN")
+                    renderBackup(strict)
+                    sectionLabel("DETEKSI & TAMPILAN")
                     renderDetection()
                     renderMotivation(strict)
-                    renderNewApps(strict)
-                    renderProtected(strict)
+                    sectionLabel("RIWAYAT")
                     renderLog()
                 }
             }
         }
+        collapseAll()
         val same = lastScreen == screen
         lastScreen = screen
         scroll.post { scroll.scrollTo(0, if (same) keepY else 0) }
@@ -467,10 +545,21 @@ class MainActivity : Activity() {
         back.layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
         back.setOnClickListener { goScreen("home") }
         row.addView(back)
-        row.addView(text(title, 20f, true).apply {
-            setPadding(dp(12), 0, 0, 0)
+        row.addView(text(title, 22f, true).apply {
+            setPadding(dp(14), 0, 0, 0)
         })
+        row.setPadding(0, dp(2), 0, dp(6))
         root.addView(row)
+        root.addView(text(screenSummary(screen), 13f, false, C_SUB).apply { setPadding(dp(4), 0, 0, dp(10)) })
+        if (Store.strictOn(this)) {
+            root.addView(text("🔒  Mode Ketat aktif · pengaturan penting terkunci", 12f, true, C_BAD).apply {
+                background = bg(if (night) Color.parseColor("#3A1F22") else Color.parseColor("#FDECEC"), dp(12))
+                setPadding(dp(12), dp(8), dp(12), dp(8))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = dp(12) }
+            })
+        }
     }
 
     @Deprecated("Deprecated in Java")
