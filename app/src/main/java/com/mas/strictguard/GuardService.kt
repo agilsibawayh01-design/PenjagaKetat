@@ -473,7 +473,7 @@ class GuardService : AccessibilityService() {
             // Hanya layar PEMASANGAN. Layar copot/uninstall tidak disentuh.
             val isUninstall = texts.any { it.contains("uninstal") || it.contains("copot") || it.contains("hapus") }
             val isInstall = texts.any { it.contains("instal") || it.contains("pasang") || it.contains("perbarui") || it.contains("update") }
-            if (!isUninstall && isInstall && texts.size >= 4 &&
+            if (!isUninstall && isInstall && texts.size >= 2 &&
                 texts.none { t -> SecureGuard.OWN_APP_LABELS.any { t.contains(it) } }
             ) return why("pemasang APK")
         }
