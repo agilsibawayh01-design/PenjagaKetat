@@ -188,6 +188,155 @@ class MainActivity : Activity() {
 
     private val openCards = mutableSetOf<String>()
 
+    private val noActions = object : android.view.ActionMode.Callback {
+        override fun onCreateActionMode(mode: android.view.ActionMode?, menu: android.view.Menu?) = false
+        override fun onPrepareActionMode(mode: android.view.ActionMode?, menu: android.view.Menu?) = false
+        override fun onActionItemClicked(mode: android.view.ActionMode?, item: android.view.MenuItem?) = false
+        override fun onDestroyActionMode(mode: android.view.ActionMode?) {}
+    }
+
+    /** Mematikan fitur wajib mengetik teks acak. Menyalakan/menambah langsung. */
+    private fun gateOff(isOff: Boolean, what: String, apply: () -> Unit) {
+        if (!isOff) {
+            apply()
+            render()
+        } else {
+            textGate(what, { apply(); render() }, { render() })
+        }
+    }
+
+    /**
+     * Gerbang yang SAMA dengan keluar dari Mode Ketat: waktu tunggu, teks acak (panjang sama),
+     * dan kode teman, sesuai metode yang kamu pilih.
+     */
+    private fun textGate(what: String, onOk: () -> Unit, onCancel: () -> Unit) {
+        val waitMin = if (Store.exitWaitOn(this)) Store.exitDelayMin(this) else 0
+        val textLen = Zone.requiredTextLen(this, Store.exitTextLen(this))
+        val friend = FriendApproval.isSet(this)
+
+        if (waitMin > 0) {
+            if (!SafeTimer.isRunning(this, "feat")) {
+                android.app.AlertDialog.Builder(this)
+                    .setTitle("Butuh waktu tunggu")
+                    .setMessage("Untuk $what, kamu harus menunggu " + fmtDur(waitMin) + " (sama seperti keluar Mode Ketat). Mulai permintaan sekarang? Setelah waktunya habis, ulangi aksi ini.")
+                    .setPositiveButton("Mulai") { _, _ ->
+                        SafeTimer.start(this, "feat")
+                        Store.log(this, "Permintaan: $what")
+                        onCancel()
+                    }
+                    .setNegativeButton("Batal") { _, _ -> onCancel() }
+                    .setOnCancelListener { onCancel() }
+                    .show()
+                return
+            }
+            val left = waitMin * 60000L - SafeTimer.elapsed(this, "feat")
+            if (left > 0L) {
+                android.app.AlertDialog.Builder(this)
+                    .setTitle("Masih menunggu")
+                    .setMessage("Sisa ${left / 60000L + 1} menit. Waktu dihitung dari jam internal, jadi mengubah jam HP tidak mempercepatnya.")
+                    .setPositiveButton("OK", null)
+                    .setNeutralButton("Batalkan permintaan") { _, _ -> SafeTimer.cancel(this, "feat") }
+                    .setOnDismissListener { onCancel() }
+                    .show()
+                return
+            }
+        }
+
+        val code = if (textLen > 0) Rules.randomText(textLen) else ""
+        var typed = ""
+        val col = LinearLayout(this)
+        col.orientation = LinearLayout.VERTICAL
+        col.setPadding(dp(20), dp(8), dp(20), dp(8))
+        col.addView(text("Untuk $what, selesaikan verifikasi yang sama dengan keluar Mode Ketat.", 13f))
+        var et: EditText? = null
+        if (textLen > 0) {
+            col.addView(text("Ketik teks ini persis ($textLen huruf, huruf besar dan kecil dibedakan). Hanya bagian berikutnya yang ditampilkan, ketik tanpa spasi.", 12f, false, C_SUB))
+            val shown = TextView(this)
+            shown.textSize = 20f
+            shown.typeface = Typeface.MONOSPACE
+            shown.setTextColor(C_TEXT)
+            shown.setPadding(dp(12), dp(12), dp(12), dp(12))
+            shown.background = bg(C_FIELD, dp(10))
+            shown.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+            col.addView(shown)
+            val counter = text("0/$textLen", 12f, true, C_SUB)
+            col.addView(counter)
+            val warn = text("", 12f, true, C_BAD)
+            col.addView(warn)
+            val box = EditText(this)
+            box.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            box.minLines = 3
+            box.isLongClickable = false
+            box.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+            box.customSelectionActionModeCallback = noActions
+            if (Build.VERSION.SDK_INT >= 23) box.customInsertionActionModeCallback = noActions
+            fun refresh() {
+                var cp = 0
+                while (cp < typed.length && cp < code.length && typed[cp] == code[cp]) cp++
+                val end = Math.min(code.length, cp + 24)
+                shown.text = code.substring(cp, end).chunked(4).joinToString(" ")
+                counter.text = "${typed.length}/$textLen"
+                warn.text = if (typed.length > cp) "Huruf ke-${cp + 1} salah. Hapus sampai huruf ke-$cp lalu ketik ulang." else ""
+            }
+            refresh()
+            var prev = ""
+            var guard = false
+            box.addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}
+                override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
+                override fun afterTextChanged(s: Editable?) {
+                    if (guard) return
+                    val now = s?.toString() ?: ""
+                    if (now.length - prev.length > 3) {
+                        guard = true
+                        box.setText(prev)
+                        box.setSelection(prev.length)
+                        guard = false
+                        toast("Ketik huruf satu per satu")
+                        return
+                    }
+                    prev = now
+                    typed = now
+                    refresh()
+                }
+            })
+            col.addView(box)
+            et = box
+        }
+        val friendInput = EditText(this)
+        if (friend) {
+            col.addView(text("Masukkan juga kode teman (teman harus ada di dekatmu):", 13f))
+            friendInput.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            col.addView(friendInput)
+        }
+        val sv = ScrollView(this)
+        sv.addView(col)
+        val dlg = android.app.AlertDialog.Builder(this)
+            .setTitle("Konfirmasi")
+            .setView(sv)
+            .setPositiveButton("Lanjut", null)
+            .setNegativeButton("Batal") { _, _ -> onCancel() }
+            .setOnCancelListener { onCancel() }
+            .create()
+        try {
+            dlg.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+        } catch (t: Throwable) {
+            // abaikan
+        }
+        dlg.show()
+        dlg.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            if (textLen > 0 && (et?.text?.toString() ?: "") != code) {
+                toast("Teks tidak cocok")
+            } else if (friend && !FriendApproval.verify(this, friendInput.text.toString())) {
+                toast("Kode teman salah atau terkunci")
+            } else {
+                SafeTimer.cancel(this, "feat")
+                dlg.dismiss()
+                onOk()
+            }
+        }
+    }
+
     /** Kartu yang jarang diubah: tertutup sampai judulnya disentuh. */
     private val COLLAPSIBLE: Set<String> = setOf(
         "Metode penonaktifan", "Zona Ketat (lokasi)", "Aplikasi baru", "Riwayat pass",
@@ -379,8 +528,7 @@ class MainActivity : Activity() {
                         if (Store.strictOn(this@MainActivity)) {
                             toast("Mode Ketat aktif: tidak bisa mengubah keyword bawaan")
                         } else {
-                            Store.disableBuiltinKeyword(this@MainActivity, item)
-                            render()
+                            gateOff(true, "mematikan keyword bawaan") { Store.disableBuiltinKeyword(this@MainActivity, item) }
                         }
                     }
                 })
@@ -1427,7 +1575,8 @@ class MainActivity : Activity() {
             if (!cb.isChecked && strict) {
                 toast("Mode Ketat aktif: tidak bisa dimatikan")
             } else {
-                Store.setBlockOtherBrowsers(this, cb.isChecked)
+                val v = cb.isChecked
+                gateOff(!v, "mematikan blokir browser lain") { Store.setBlockOtherBrowsers(this, v) }
             }
             render()
         }
@@ -1439,7 +1588,8 @@ class MainActivity : Activity() {
             if (!ib.isChecked && strict) {
                 toast("Mode Ketat aktif: tidak bisa dimatikan")
             } else {
-                Store.setBlockIpUrls(this, ib.isChecked)
+                val v = ib.isChecked
+                gateOff(!v, "mematikan blokir situs IP") { Store.setBlockIpUrls(this, v) }
             }
             render()
         }
@@ -1457,7 +1607,8 @@ class MainActivity : Activity() {
             if (!sb.isChecked && strict) {
                 toast("Mode Ketat aktif: tidak bisa dimatikan")
             } else {
-                BrowserStoreGuard.setEnabled(this, sb.isChecked)
+                val v = sb.isChecked
+                gateOff(!v, "mematikan pencegah browser di Play Store") { BrowserStoreGuard.setEnabled(this, v) }
             }
             render()
         }
@@ -1478,8 +1629,7 @@ class MainActivity : Activity() {
             put(text("• $n   ✕", 12f, false, C_SUB).apply {
                 setOnClickListener {
                     if (strict) toast("Mode Ketat aktif: tidak bisa dihapus") else {
-                        BrowserStoreGuard.removeName(this@MainActivity, n)
-                        render()
+                        gateOff(true, "menghapus nama browser") { BrowserStoreGuard.removeName(this@MainActivity, n) }
                     }
                 }
             })
@@ -1549,7 +1699,7 @@ class MainActivity : Activity() {
             if (!v && strict) {
                 toast("Mode Ketat aktif: tidak bisa dimatikan")
             } else {
-                Store.setBlockUnknownInstall(this, v)
+                gateOff(!v, "mematikan blokir pemasangan APK") { Store.setBlockUnknownInstall(this, v) }
             }
             render()
         }
@@ -2638,8 +2788,10 @@ class MainActivity : Activity() {
                     if (!now && strict) {
                         toast("Mode Ketat aktif: kategori tidak bisa dimatikan")
                     } else {
-                        Store.setCategory(this@MainActivity, cat.id, now)
-                        Store.log(this@MainActivity, "Kategori ${cat.name}: " + (if (now) "ON" else "OFF"))
+                        gateOff(!now, "mematikan kategori ${cat.name}") {
+                            Store.setCategory(this@MainActivity, cat.id, now)
+                            Store.log(this@MainActivity, "Kategori ${cat.name}: " + (if (now) "ON" else "OFF"))
+                        }
                     }
                     render()
                 }
@@ -3026,8 +3178,10 @@ class MainActivity : Activity() {
                 if (strict) {
                     toast("Mode Ketat aktif: VPN DNS tidak bisa dimatikan")
                 } else {
-                    VpnManager.stop(this)
-                    handler.postDelayed({ render() }, 500L)
+                    textGate("mematikan VPN DNS", {
+                        VpnManager.stop(this)
+                        handler.postDelayed({ render() }, 500L)
+                    }, { render() })
                 }
             })
         }
@@ -3435,7 +3589,7 @@ class MainActivity : Activity() {
         })
         put(chipList(Store.urlKeywords(this).sorted()) { k ->
             if (strict) toast("Mode Ketat aktif: tidak bisa menghapus")
-            else { Store.removeUrlKeyword(this, k); render() }
+            else gateOff(true, "menghapus keyword URL") { Store.removeUrlKeyword(this, k) }
         })
 
         header("📱 Keyword Layar")
@@ -3451,7 +3605,7 @@ class MainActivity : Activity() {
         })
         put(chipList(Store.screenKeywords(this).sorted()) { k ->
             if (strict) toast("Mode Ketat aktif: tidak bisa menghapus")
-            else { Store.removeScreenKeyword(this, k); render() }
+            else gateOff(true, "menghapus keyword layar") { Store.removeScreenKeyword(this, k) }
         })
 
         header("Situs")
