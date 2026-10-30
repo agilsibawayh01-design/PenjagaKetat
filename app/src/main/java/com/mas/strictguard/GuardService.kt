@@ -9,6 +9,11 @@ import android.view.accessibility.AccessibilityNodeInfo
 import android.view.inputmethod.InputMethodManager
 
 class GuardService : AccessibilityService() {
+    companion object {
+        @Volatile var instance: GuardService? = null
+    }
+
+    @Volatile private var selfTesting = false
     private val handler = Handler(Looper.getMainLooper())
     private var lastBlockAt = 0L
     private var blockDomain = ""
@@ -150,6 +155,7 @@ class GuardService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        instance = this
         Store.seed(this)
         try {
             if (watcher == null) watcher = PackageWatcher.register(this)
@@ -165,6 +171,7 @@ class GuardService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        if (instance === this) instance = null
         try {
             watcher?.let { unregisterReceiver(it) }
         } catch (t: Throwable) {
@@ -226,6 +233,7 @@ class GuardService : AccessibilityService() {
         val pkg = event.packageName?.toString() ?: return
         // Keyboard/IME mengirim event saat pengguna mengetik. Jangan memindai UI keyboard
         // sebagai layar aplikasi, supaya input keyword di PenjagaKetat tidak memicu blokir.
+        if (selfTesting) return
         if (pkg == packageName || pkg in Config.IGNORED || pkg in inputMethodPackages) return
         if (pkg == BrowserStoreGuard.STORE) {
             BrowserStoreGuard.seenCount++
@@ -429,6 +437,107 @@ class GuardService : AccessibilityService() {
      * atau halaman detail layanan aksesibilitas Penjaga Ketat.
      * Daftar aplikasi biasa (hanya memuat nama) tetap boleh dibuka.
      */
+    private fun screenTexts(root: AccessibilityNodeInfo?): List<String> {
+        if (root == null) return emptyList()
+        val out = ArrayList<String>()
+        for (n in collect(root, 600)) {
+            val t = n.text?.toString()?.lowercase()?.trim() ?: ""
+            val d = n.contentDescription?.toString()?.lowercase()?.trim() ?: ""
+            if (t.isNotEmpty()) out.add(t)
+            if (d.isNotEmpty() && d != t) out.add(d)
+        }
+        return out
+    }
+
+    private fun openPk() {
+        try {
+            startActivity(
+                Intent(this, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+            )
+        } catch (t: Throwable) {
+            // abaikan
+        }
+    }
+
+    /** Uji otomatis: membuka halaman Pengaturan satu per satu dan memeriksa penandanya. */
+    fun startSelfTest() {
+        if (selfTesting) return
+        selfTesting = true
+        SelfTest.results.clear()
+        handler.postDelayed({ selfTesting = false }, 90000L)
+        val targets = SelfTest.targets()
+        var idx = 0
+        var tries = 0
+        val r = object : Runnable {
+            override fun run() {
+                if (!selfTesting || idx >= targets.size) {
+                    selfTesting = false
+                    SelfTest.finishedAt = System.currentTimeMillis()
+                    openPk()
+                    return
+                }
+                val t = targets[idx]
+                if (tries == 0) {
+                    try {
+                        val i = t.intent() ?: throw IllegalStateException("tanpa perintah")
+                        startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    } catch (e: Throwable) {
+                        SelfTest.results.add(SelfTest.Result(t.name, false, "halaman tidak bisa dibuka lewat perintah sistem"))
+                        idx++
+                        handler.postDelayed(this, 300L)
+                        return
+                    }
+                }
+                tries++
+                val root = rootInActiveWindow
+                val onOther = root != null && root.packageName?.toString() != packageName
+                val texts = if (onOther) screenTexts(root) else emptyList()
+                val hit = texts.firstOrNull { it in t.markers }
+                if (hit != null || tries >= 10) {
+                    val detail = when {
+                        hit != null -> "terdeteksi lewat teks \"$hit\""
+                        texts.isEmpty() -> "halaman tidak terbuka"
+                        else -> "tidak ada penanda. Teks di layar: " + texts.distinct().take(25).joinToString(" | ")
+                    }
+                    SelfTest.results.add(SelfTest.Result(t.name, hit != null, detail))
+                    if (onOther) performGlobalAction(GLOBAL_ACTION_BACK)
+                    idx++
+                    tries = 0
+                    handler.postDelayed(this, 900L)
+                } else {
+                    handler.postDelayed(this, 600L)
+                }
+            }
+        }
+        handler.post(r)
+    }
+
+    /** Pindai layar yang sedang terbuka (mis. DNS Pribadi) setelah [delaySec] detik. */
+    fun startManualScan(delaySec: Int) {
+        if (selfTesting) return
+        selfTesting = true
+        SelfTest.results.clear()
+        handler.postDelayed({
+            try {
+                val root = rootInActiveWindow
+                val texts = screenTexts(root)
+                val hit = texts.firstOrNull { it in SelfTest.ALL_MARKERS }
+                val detail = when {
+                    hit != null -> "terdeteksi lewat teks \"$hit\""
+                    texts.isEmpty() -> "tidak ada teks terbaca"
+                    else -> "tidak ada penanda. Teks di layar: " + texts.distinct().take(25).joinToString(" | ")
+                }
+                SelfTest.results.add(SelfTest.Result("Layar yang kamu buka", hit != null, detail))
+            } catch (t: Throwable) {
+                SelfTest.results.add(SelfTest.Result("Layar yang kamu buka", false, "gagal memindai"))
+            }
+            selfTesting = false
+            SelfTest.finishedAt = System.currentTimeMillis()
+            openPk()
+        }, delaySec * 1000L)
+    }
+
     private var installerCheckRunning = false
 
     private fun scheduleInstallerCheck() {

@@ -62,7 +62,7 @@ object Zone {
 
     /** Panjang teks acak yang diwajibkan untuk keluar dari Mode Ketat saat ini. */
     fun requiredTextLen(c: Context, configured: Int): Int =
-        if (active(c)) Math.max(configured, MIN_TEXT) else configured
+        Night.scaleText(c, if (active(c)) Math.max(configured, MIN_TEXT) else configured)
 
     /** Jarak (m) ke tepi zona terdekat; negatif bila di dalam. Null bila posisi tidak diketahui. */
     fun distanceToEdge(c: Context): Int? {

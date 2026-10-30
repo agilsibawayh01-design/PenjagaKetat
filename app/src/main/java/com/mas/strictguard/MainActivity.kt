@@ -82,6 +82,10 @@ class MainActivity : Activity() {
         scroll.addView(root)
         setContentView(scroll)
         applySystemBars()
+        if (intent?.getBooleanExtra("urge", false) == true) {
+            screen = "urge"
+            urgeEnd = 0L
+        }
     }
 
     /** Status bar dan navigation bar mengikuti warna latar aplikasi (terang/gelap). */
@@ -210,7 +214,7 @@ class MainActivity : Activity() {
      * dan kode teman, sesuai metode yang kamu pilih.
      */
     private fun textGate(what: String, onOk: () -> Unit, onCancel: () -> Unit) {
-        val waitMin = if (Store.exitWaitOn(this)) Store.exitDelayMin(this) else 0
+        val waitMin = Night.scaleWait(this, if (Store.exitWaitOn(this)) Store.exitDelayMin(this) else 0)
         val textLen = Zone.requiredTextLen(this, Store.exitTextLen(this))
         val friend = FriendApproval.isSet(this)
 
@@ -619,6 +623,7 @@ class MainActivity : Activity() {
                     renderStrict(strict, acc && adm)
                     renderProtection(strict)
                     renderBypassGuard(strict)
+                    renderNight(strict)
                 }
                 "apps" -> {
                     renderApps(strict)
@@ -648,6 +653,7 @@ class MainActivity : Activity() {
                     sectionLabel("CADANGAN")
                     renderBackup(strict)
                     sectionLabel("DETEKSI & TAMPILAN")
+                    renderSelfTest()
                     renderDetection()
                     renderMotivation(strict)
                     sectionLabel("RIWAYAT")
@@ -1114,7 +1120,7 @@ class MainActivity : Activity() {
             else "Terjadwal: sedang di luar jadwal, jadi pengaturan bebas diubah sementara.",
             13f, true, C_BAD
         ))
-        val waitMin = if (Store.exitWaitOn(this)) Store.exitDelayMin(this) else 0
+        val waitMin = Night.scaleWait(this, if (Store.exitWaitOn(this)) Store.exitDelayMin(this) else 0)
         val textLen = Zone.requiredTextLen(this, Store.exitTextLen(this))
         val friend = FriendApproval.isSet(this)
         if (!SafeTimer.isRunning(this, "exit")) {
@@ -1705,6 +1711,72 @@ class MainActivity : Activity() {
         }
         put(cb)
         put(text("Layar pemasang APK ditutup bila yang dipasang bukan aplikasi buatanmu. Update Penjaga Ketat dan Channel Blocker lewat Chrome atau Pengelola file tetap bisa. Instal dari Play Store tidak terpengaruh.", 11f, false, C_SUB))
+    }
+
+    // ---------- Jam rawan ----------
+    private fun renderNight(strict: Boolean) {
+        header("Jam rawan")
+        put(text("Di jam rawan, gerbang keluar Mode Ketat dan gerbang mematikan fitur dua kali lebih berat: teks acak dua kali lebih panjang dan waktu tunggu dua kali lebih lama.", 12f))
+        if (Night.active(this)) put(text("Sekarang sedang jam rawan (gerbang x2).", 13f, true, C_BAD))
+        val cb = CheckBox(this)
+        cb.text = "Aktifkan jam rawan"
+        cb.isChecked = Night.enabled(this)
+        cb.setOnClickListener {
+            val v = cb.isChecked
+            if (!v && strict) {
+                toast("Mode Ketat aktif: tidak bisa dimatikan")
+            } else {
+                gateOff(!v, "mematikan jam rawan") { Night.setEnabled(this, v) }
+            }
+            render()
+        }
+        put(cb)
+        fun pick(isStart: Boolean) {
+            if (strict) {
+                toast("Mode Ketat aktif: jam rawan tidak bisa diubah")
+                return
+            }
+            val cur = if (isStart) Night.start(this) else Night.end(this)
+            android.app.TimePickerDialog(this, { _, h, m ->
+                val v = h * 60 + m
+                textGate("mengubah jam rawan", {
+                    if (isStart) Night.setWindow(this, v, Night.end(this)) else Night.setWindow(this, Night.start(this), v)
+                    render()
+                }, { render() })
+            }, cur / 60, cur % 60, true).show()
+        }
+        put(button("Mulai: " + Night.fmt(Night.start(this))) { pick(true) })
+        put(button("Selesai: " + Night.fmt(Night.end(this))) { pick(false) })
+    }
+
+    // ---------- Uji perlindungan ----------
+    private fun renderSelfTest() {
+        header("Uji perlindungan")
+        put(text("Membuka halaman Pengaturan satu per satu dan memeriksa apakah penandanya terdeteksi di HP ini (Opsi pengembang, VPN, izin instal, tambah pengguna, admin perangkat). Layar akan berpindah sendiri selama sekitar 20 detik.", 12f))
+        put(button("Mulai uji") {
+            val svc = GuardService.instance
+            if (svc == null) toast("Aksesibilitas belum aktif") else {
+                toast("Uji berjalan, jangan sentuh layar")
+                svc.startSelfTest()
+            }
+        })
+        put(button("Pindai layar yang kubuka (10 detik)") {
+            val svc = GuardService.instance
+            if (svc == null) toast("Aksesibilitas belum aktif") else {
+                toast("Buka halaman yang mau diuji (mis. DNS Pribadi) sekarang")
+                svc.startManualScan(10)
+                moveTaskToBack(true)
+            }
+        })
+        if (SelfTest.results.isEmpty()) {
+            put(text("Belum ada hasil.", 12f, false, C_SUB))
+        } else {
+            for (r in SelfTest.results) {
+                put(text((if (r.ok) "✔  " else "✘  ") + r.name, 13f, true, if (r.ok) C_OK else C_BAD))
+                put(text(r.detail, 11f, false, C_SUB))
+            }
+            put(text("Baris merah berarti halaman itu belum tertutup di HP ini. Kirim screenshot hasilnya supaya penandanya bisa disesuaikan.", 11f, false, C_SUB))
+        }
     }
 
     // ---------- Hari bersih (streak) ----------
