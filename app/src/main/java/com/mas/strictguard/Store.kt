@@ -375,6 +375,11 @@ object Store {
     fun blockUnknownInstall(c: Context): Boolean = sp(c).getBoolean("block_unknown_install", false)
     fun setBlockUnknownInstall(c: Context, v: Boolean) { sp(c).edit().putBoolean("block_unknown_install", v).commit() }
 
+    /** Surat untuk diri sendiri: ditampilkan di dialog gerbang saat mencoba keluar/mematikan fitur. */
+    fun letter(c: Context): String = sp(c).getString("letter", null)
+        ?: "Ingatlah Allah, Tuhanmu.\nAllah melihatmu dan mengawasimu setiap saat."
+    fun setLetter(c: Context, v: String) { sp(c).edit().putString("letter", v.trim()).commit() }
+
     /** Aplikasi yang diberi jeda (napas + niat) sebelum dibuka. */
     fun pauseApps(c: Context): Set<String> = getSet(c, "pause_apps")
     fun addPauseApp(c: Context, p: String) = putSet(c, "pause_apps", getSet(c, "pause_apps") + p)

@@ -41,6 +41,7 @@ class GuardService : AccessibilityService() {
     private var backing = false
     private var strictNow = false
     private var blockUnknownNow = false
+    private var nightLocked: Set<String> = emptySet()
     private var pauseAppsNow: Set<String> = emptySet()
     private var lastPauseAt = 0L
     private var pausedNow = false
@@ -192,6 +193,8 @@ class GuardService : AccessibilityService() {
         Zone.update(this)
         strictNow = Store.strictOn(this)
         blockUnknownNow = Store.blockUnknownInstall(this)
+        nightLocked = Night.lockedPackages(this)
+        DnsGuard.check(this, strictNow)
         pauseAppsNow = Store.pauseApps(this)
         pausedNow = Store.pausedNow(this)
         ipBlock = Store.blockIpUrls(this)
@@ -262,6 +265,12 @@ class GuardService : AccessibilityService() {
         // membaca kembali kolom input PenjagaKetat dan memblokirnya sendiri.
         val foregroundRoot = rootInActiveWindow
         if (foregroundRoot?.packageName?.toString() == packageName) return
+
+        // Jam rawan: Play Store / Pengaturan ditutup total bila saklarnya aktif.
+        if (pkg in nightLocked && !selfTesting) {
+            startBlock("night", pkg)
+            return
+        }
 
         // Folder Aman Samsung dikunci saat Mode Ketat.
         if (strictNow && pkg in SecureGuard.SECURE_FOLDER_PACKAGES) {
@@ -497,7 +506,7 @@ class GuardService : AccessibilityService() {
                 if (hit != null || tries >= 10) {
                     val detail = when {
                         hit != null -> "terdeteksi lewat teks \"$hit\""
-                        texts.isEmpty() -> "halaman tidak terbuka"
+                        texts.isEmpty() -> "halaman tidak terbuka (paket aktif: " + (root?.packageName ?: "tidak ada") + ")"
                         else -> "tidak ada penanda. Teks di layar: " + texts.distinct().take(25).joinToString(" | ")
                     }
                     SelfTest.results.add(SelfTest.Result(t.name, hit != null, detail))

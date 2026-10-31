@@ -251,6 +251,7 @@ class MainActivity : Activity() {
         val col = LinearLayout(this)
         col.orientation = LinearLayout.VERTICAL
         col.setPadding(dp(20), dp(8), dp(20), dp(8))
+        col.addView(letterCard())
         col.addView(text("Untuk $what, selesaikan verifikasi yang sama dengan keluar Mode Ketat.", 13f))
         var et: EditText? = null
         if (textLen > 0) {
@@ -648,6 +649,7 @@ class MainActivity : Activity() {
                     sectionLabel("KEAMANAN")
                     renderAppLock(strict)
                     renderFriend()
+                    renderLetter(strict)
                     renderProtected(strict)
                     renderNewApps(strict)
                     sectionLabel("CADANGAN")
@@ -1120,6 +1122,7 @@ class MainActivity : Activity() {
             else "Terjadwal: sedang di luar jadwal, jadi pengaturan bebas diubah sementara.",
             13f, true, C_BAD
         ))
+        put(letterCard())
         val waitMin = Night.scaleWait(this, if (Store.exitWaitOn(this)) Store.exitDelayMin(this) else 0)
         val textLen = Zone.requiredTextLen(this, Store.exitTextLen(this))
         val friend = FriendApproval.isSet(this)
@@ -1747,8 +1750,64 @@ class MainActivity : Activity() {
         }
         put(button("Mulai: " + Night.fmt(Night.start(this))) { pick(true) })
         put(button("Selesai: " + Night.fmt(Night.end(this))) { pick(false) })
+        put(text("Kunci total di jam rawan (pilihan):", 12f, true))
+        val cp = CheckBox(this)
+        cp.text = "Tutup Play Store"
+        cp.isChecked = Night.lockPlay(this)
+        cp.setOnClickListener {
+            val v = cp.isChecked
+            if (!v && strict) toast("Mode Ketat aktif: tidak bisa dimatikan")
+            else gateOff(!v, "mematikan kunci Play Store") { Night.setLockPlay(this, v) }
+            render()
+        }
+        put(cp)
+        val cs = CheckBox(this)
+        cs.text = "Tutup aplikasi Pengaturan (aksesibilitas tidak bisa dinyalakan ulang sampai jam rawan selesai)"
+        cs.isChecked = Night.lockSettings(this)
+        cs.setOnClickListener {
+            val v = cs.isChecked
+            if (!v && strict) toast("Mode Ketat aktif: tidak bisa dimatikan")
+            else gateOff(!v, "mematikan kunci Pengaturan") { Night.setLockSettings(this, v) }
+            render()
+        }
+        put(cs)
         put(text("Profil Malam menutup browser dan aplikasi sosmed yang terpasang selama jam rawan, setiap hari. Saat Mode Ketat aktif, tombol ini hanya menambah aplikasi, tidak mengubah jadwal.", 12f, false, C_SUB))
         put(button("Buat / perbarui profil Malam") { createNightProfile(strict) })
+    }
+
+    private fun letterCard(): View {
+        val box = LinearLayout(this)
+        box.orientation = LinearLayout.VERTICAL
+        box.setPadding(dp(14), dp(10), dp(14), dp(10))
+        box.background = bg(C_CHIP, dp(14))
+        val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        lp.bottomMargin = dp(8)
+        box.layoutParams = lp
+        box.addView(text("Surat untuk dirimu", 11f, true, C_SUB))
+        box.addView(text(Store.letter(this), 14f, false, C_TEXT).apply { setTypeface(null, Typeface.ITALIC) })
+        return box
+    }
+
+    private fun renderLetter(strict: Boolean) {
+        header("Surat untuk diri sendiri")
+        put(text("Tulis sekali, di saat tenang. Tulisan ini muncul di dialog gerbang saat kamu mencoba keluar dari Mode Ketat atau mematikan fitur.", 12f))
+        val et = EditText(this).apply {
+            setText(Store.letter(this@MainActivity))
+            textSize = 14f
+            minLines = 3
+            isEnabled = !strict
+        }
+        put(et)
+        put(button("Simpan surat") {
+            val v = et.text.toString().trim()
+            if (strict) toast("Mode Ketat aktif: surat tidak bisa diubah")
+            else if (v.length < 5) toast("Isi surat terlalu pendek")
+            else {
+                Store.setLetter(this, v)
+                toast("Tersimpan")
+                render()
+            }
+        })
     }
 
     private fun createNightProfile(strict: Boolean) {

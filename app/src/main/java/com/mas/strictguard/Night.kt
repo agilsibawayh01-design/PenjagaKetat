@@ -26,6 +26,20 @@ object Night {
         return if (s < e) m in s until e else (m >= s || m < e)
     }
 
+    fun lockPlay(c: Context): Boolean = sp(c).getBoolean("night_lock_play", false)
+    fun setLockPlay(c: Context, v: Boolean) { sp(c).edit().putBoolean("night_lock_play", v).commit() }
+    fun lockSettings(c: Context): Boolean = sp(c).getBoolean("night_lock_settings", false)
+    fun setLockSettings(c: Context, v: Boolean) { sp(c).edit().putBoolean("night_lock_settings", v).commit() }
+
+    /** Paket yang ditutup total pada jam rawan sekarang. */
+    fun lockedPackages(c: Context): Set<String> {
+        if (!active(c)) return emptySet()
+        val out = HashSet<String>()
+        if (lockPlay(c)) out.add("com.android.vending")
+        if (lockSettings(c)) out.add("com.android.settings")
+        return out
+    }
+
     fun scaleText(c: Context, base: Int): Int =
         if (base <= 0 || !active(c)) base else Math.min(base * 2, 2000)
 

@@ -159,6 +159,7 @@ class BlockActivity : Activity() {
                 showSiteWaitCountdown()
             }
             "location" -> info.text = "Aplikasi ini diblokir berdasarkan lokasi kamu saat ini."
+            "night" -> info.text = "Jam rawan.\nAplikasi ini ditutup sampai " + Night.fmt(Night.end(this)) + "."
             "pause" -> {
                 title.text = "Jeda sebentar"
                 title.setTextColor(cBtn)
@@ -235,6 +236,7 @@ class BlockActivity : Activity() {
             "launch" -> "Batas jumlah buka aplikasi"
             "location" -> "Aturan lokasi"
             "focus" -> "Mode Fokus"
+            "night" -> "Jam rawan"
             "profile" -> {
                 val names = try {
                     ProfileStore.load(this).filter { pkg in it.apps && ProfileEngine.isActive(this, it) }.map { it.name }
