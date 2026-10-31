@@ -119,6 +119,17 @@ object StatsDb {
         return out
     }
 
+    /** Jumlah blokir per jam (0-23) selama [days] hari terakhir. */
+    fun blocksByHour(c: Context, days: Int): IntArray {
+        val out = IntArray(24)
+        val since = UsageTracker.startOfDay() - (days - 1).toLong() * 86400000L
+        db(c).rawQuery(
+            "SELECT CAST(strftime('%H', ts / 1000, 'unixepoch', 'localtime') AS INTEGER), COUNT(*) FROM blocks WHERE ts >= ? GROUP BY 1",
+            arrayOf(since.toString())
+        ).use { while (it.moveToNext()) { val h = it.getInt(0); if (h in 0..23) out[h] = it.getInt(1) } }
+        return out
+    }
+
     fun clear(c: Context) {
         val d = db(c)
         d.delete("usage", null, null)

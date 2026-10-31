@@ -1747,6 +1747,73 @@ class MainActivity : Activity() {
         }
         put(button("Mulai: " + Night.fmt(Night.start(this))) { pick(true) })
         put(button("Selesai: " + Night.fmt(Night.end(this))) { pick(false) })
+        put(text("Profil Malam menutup browser dan aplikasi sosmed yang terpasang selama jam rawan, setiap hari. Saat Mode Ketat aktif, tombol ini hanya menambah aplikasi, tidak mengubah jadwal.", 12f, false, C_SUB))
+        put(button("Buat / perbarui profil Malam") { createNightProfile(strict) })
+    }
+
+    private fun createNightProfile(strict: Boolean) {
+        val social = listOf(
+            "com.instagram.android", "com.facebook.katana", "com.facebook.lite", "com.zhiliaoapp.musically",
+            "com.ss.android.ugc.trill", "com.twitter.android", "com.reddit.frontpage", "com.google.android.youtube",
+            "com.snapchat.android", "com.pinterest"
+        )
+        val candidates = (Config.BROWSERS - "com.google.android.googlequicksearchbox") + social
+        val installed = candidates.filter { packageManager.getLaunchIntentForPackage(it) != null }.toSet()
+        val list = ProfileStore.load(this).toMutableList()
+        val idx = list.indexOfFirst { it.id == "malam" }
+        val sched = listOf(Sched(Night.start(this), Night.end(this), 127))
+        if (idx < 0) {
+            list.add(Profile("malam", "Malam", true, installed, emptySet(), emptySet(), sched, 0))
+            Store.log(this, "Profil Malam dibuat (${installed.size} aplikasi)")
+        } else {
+            val old = list[idx]
+            list[idx] = if (strict) old.copy(apps = old.apps + installed, enabled = true)
+            else old.copy(apps = old.apps + installed, enabled = true, schedules = sched)
+            Store.log(this, "Profil Malam diperbarui (${list[idx].apps.size} aplikasi)")
+        }
+        ProfileStore.save(this, list)
+        toast("Profil Malam aktif: ${installed.size} aplikasi ditutup di jam rawan")
+        render()
+    }
+
+    private fun renderHourMap() {
+        header("Jam paling rawan")
+        val h = try { StatsDb.blocksByHour(this, 35) } catch (t: Throwable) { IntArray(24) }
+        val total = h.sum()
+        if (total == 0) {
+            put(text("Belum ada blokir tercatat.", 12f, false, C_SUB))
+            return
+        }
+        val max = Math.max(1, h.max())
+        val bars = LinearLayout(this)
+        bars.orientation = LinearLayout.HORIZONTAL
+        bars.gravity = Gravity.BOTTOM
+        bars.layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(70))
+        for (i in 0 until 24) {
+            val inNight = run {
+                val s = Night.start(this) / 60
+                val e = Night.end(this) / 60
+                if (s < e) i in s until e else (i >= s || i < e)
+            }
+            val barH = if (h[i] == 0) dp(3) else Math.max(dp(5), (dp(64) * h[i] / max))
+            bars.addView(View(this).apply {
+                background = bg(if (h[i] == 0) C_CHIP else if (inNight) C_BAD else C_PRIMARY, dp(3))
+                layoutParams = LinearLayout.LayoutParams(0, barH, 1f).apply { setMargins(dp(1), 0, dp(1), 0) }
+            })
+        }
+        put(bars)
+        put(text("00        06        12        18        23", 10f, false, C_SUB).apply { typeface = Typeface.MONOSPACE })
+        var top = 0
+        for (i in 1 until 24) if (h[i] > h[top]) top = i
+        put(text("Paling banyak: jam ${String.format(java.util.Locale.US, "%02d", top)}.00 (${h[top]} dari $total blokir, 35 hari). Merah = di dalam jam rawan, biru = di luar.", 12f))
+        val outside = (0 until 24).filter { i ->
+            val s = Night.start(this) / 60
+            val e = Night.end(this) / 60
+            !(if (s < e) i in s until e else (i >= s || i < e))
+        }.sumOf { h[it] }
+        if (Night.enabled(this) && outside * 100 / total >= 50) {
+            put(text("Lebih dari separuh blokir terjadi di luar jam rawan. Pertimbangkan memperluas jamnya di Mode Ketat dan status.", 12f, true, C_BAD))
+        }
     }
 
     // ---------- Uji perlindungan ----------
@@ -3105,6 +3172,7 @@ class MainActivity : Activity() {
         }
 
         renderStreak()
+        renderHourMap()
 
         header("Hari ini")
         put(text(Dashboard.dur(s.todayMs), 30f, true, C_PRIMARY))
