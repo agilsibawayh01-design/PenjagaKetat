@@ -256,6 +256,8 @@ class GuardService : AccessibilityService() {
         TimeGuard.check(this)
         if (backing || pausedNow) {
             if (pkg == BrowserStoreGuard.STORE) BrowserStoreGuard.gateInfo = "ditahan: backing=$backing jeda=$pausedNow"
+            // Mode Off (jeda): aplikasi bisa dibuka, tetapi bagian sosmed yang dinyalakan (Reels dll.) tetap ditutup.
+            if (pausedNow && !backing) checkFeeds(pkg, now)
             return
         }
         if (pkg == BrowserStoreGuard.STORE) BrowserStoreGuard.gateInfo = "lolos"
@@ -412,6 +414,11 @@ class GuardService : AccessibilityService() {
         }
 
         // 7. Bagian dalam aplikasi sosmed (Shorts, Reels, Cerita, Pencarian, ...)
+        checkFeeds(pkg, now)
+    }
+
+    /** Menutup bagian sosmed yang dinyalakan. Dipakai juga saat Mode Off (jeda). */
+    private fun checkFeeds(pkg: String, now: Long) {
         val feats = Features.activeFor(this, pkg)
         if (feats.isNotEmpty() && now - lastFeedAt > 600L) {
             lastFeedAt = now

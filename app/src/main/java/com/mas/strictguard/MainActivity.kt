@@ -387,7 +387,7 @@ class MainActivity : Activity() {
     }
 
     private val HELP: Map<String, String> = mapOf(
-        "Mode" to "Pilih Off (jeda), Normal, atau Ketat (terkunci).",
+        "Mode" to "Pilih Off (jeda), Normal, atau Ketat (terkunci). Saat Off, blokir bagian sosmed (Reels dll.) tetap aktif.",
         "Mode Ketat" to "Mengunci pengaturan agar sulit dimatikan saat godaan datang.",
         "Metode penonaktifan" to "Cara keluar dari Mode Ketat: menunggu, mengetik teks, atau kode teman.",
         "Status perlindungan" to "Cek apakah semua perlindungan diri masih berfungsi.",
@@ -4037,7 +4037,7 @@ class MainActivity : Activity() {
 
     private fun renderFeeds(strict: Boolean) {
         header("Blokir bagian aplikasi sosmed")
-        put(text("Aplikasinya tetap bisa dipakai, tetapi bagian pemicu kecanduan (Shorts, Reels, Cerita, Pencarian, tab Pembaruan) ditutup otomatis. Deteksi bergantung pada tampilan tiap aplikasi, jadi bisa meleset atau salah kena setelah aplikasinya diperbarui. Bila ada yang tidak terdeteksi atau salah blokir, pakai Rekam layar di bawah. Saat Mode Ketat aktif, fitur yang sudah menyala tidak bisa dimatikan.", 12f))
+        put(text("Aplikasinya tetap bisa dipakai, tetapi bagian pemicu kecanduan (Shorts, Reels, Cerita, Pencarian, tab Pembaruan) ditutup otomatis. Deteksi bergantung pada tampilan tiap aplikasi, jadi bisa meleset atau salah kena setelah aplikasinya diperbarui. Bila ada yang tidak terdeteksi atau salah blokir, pakai Rekam layar di bawah. Saat Mode Ketat aktif, fitur yang sudah menyala tidak bisa dimatikan. Di luar Mode Ketat, mematikannya wajib lewat gerbang yang sama dengan keluar Mode Ketat (teks acak dan seterusnya). Saat Mode Off (jeda), bagian yang menyala tetap ditutup: aplikasinya bisa dibuka, Reels dan sejenisnya tidak.", 12f))
         var lastGroup = ""
         for (f in Features.ALL) {
             if (f.group != lastGroup) {
@@ -4053,7 +4053,7 @@ class MainActivity : Activity() {
                     if (strict && on && !v) {
                         toast("Mode Ketat aktif: pengaturan terkunci")
                     } else {
-                        Features.setEnabled(this@MainActivity, f, v)
+                        gateOff(on && !v, "mematikan blokir ${f.group} ${f.label}") { Features.setEnabled(this@MainActivity, f, v) }
                     }
                     render()
                 }
