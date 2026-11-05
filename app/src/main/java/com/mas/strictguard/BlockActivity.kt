@@ -135,7 +135,8 @@ class BlockActivity : Activity() {
         setContentView(root)
 
         when (mode) {
-            "protect" -> info.text = "Mode Ketat aktif.\nHalaman ini tidak bisa dibuka."
+            "protect" -> info.text = if (Store.strictOn(this)) "Mode Ketat aktif.\nHalaman ini tidak bisa dibuka."
+                else "Penjaga Ketat dilindungi.\nUntuk mencopot atau menonaktifkannya, buka aplikasi lalu Setelan > Uninstall Penjaga Ketat dan lewati gerbangnya."
             "content" -> info.text = "Konten ini diblokir oleh Penjaga Ketat."
             "screen_keyword" -> info.text = "Konten ini diblokir karena mengandung kata kunci layar yang dibatasi."
             "profile" -> info.text = "Aplikasi ini diblokir oleh profil yang sedang aktif."
@@ -249,7 +250,7 @@ class BlockActivity : Activity() {
             "site_wait" -> "Timer Tunggu situs"
             "content" -> "Kata kunci, kategori konten, atau alamat IP"
             "screen_keyword" -> "Kata kunci layar"
-            "protect", "protect_click" -> "Perlindungan Mode Ketat"
+            "protect", "protect_click" -> "Perlindungan Penjaga Ketat"
             "browser" -> "Browser tidak didukung"
             else -> "Aturan Penjaga Ketat"
         }

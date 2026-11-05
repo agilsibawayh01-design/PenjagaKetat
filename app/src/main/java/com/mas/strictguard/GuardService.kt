@@ -45,6 +45,7 @@ class GuardService : AccessibilityService() {
     private var pauseAppsNow: Set<String> = emptySet()
     private var lastPauseAt = 0L
     private var pausedNow = false
+    private var selfGuardNow = false
     private var blockedBrowsers: Set<String> = emptySet()
     private var browsersAt = 0L
 
@@ -62,7 +63,7 @@ class GuardService : AccessibilityService() {
                 }
                 // Notifikasi menunjukkan SISA WAKTU PENGGUNAAN, bukan sisa masa tunggu.
                 // Masa tunggu tetap dihitung oleh WaitTimer/SiteTracker dan dipakai untuk memblokir.
-                if (!backing && !pausedNow && Foreground.hasUsageAccess(this@GuardService)) {
+                if (!backing && Foreground.hasUsageAccess(this@GuardService)) {
                     val p = Foreground.current(this@GuardService)
                     if (p.isNotEmpty() && p != packageName && p !in Config.IGNORED) {
                         var siteShown = false
@@ -125,10 +126,6 @@ class GuardService : AccessibilityService() {
         override fun run() {
             val p = limitPkg
             if (p.isEmpty()) return
-            if (pausedNow) {
-                limitPkg = ""
-                return
-            }
             try {
                 if (Foreground.hasUsageAccess(this@GuardService) && Foreground.current(this@GuardService) == p) {
                     val v = BlockEngine.check(this@GuardService, p, System.currentTimeMillis(), apps, profiles)
@@ -197,6 +194,7 @@ class GuardService : AccessibilityService() {
         DnsGuard.check(this, strictNow)
         pauseAppsNow = Store.pauseApps(this)
         pausedNow = Store.pausedNow(this)
+        selfGuardNow = !strictNow && !Store.uninstallWindowOpen(this)
         ipBlock = Store.blockIpUrls(this)
         if (now - browsersAt > 30000L || Store.pkgStamp > browsersAt) {
             browsersAt = now
@@ -254,10 +252,10 @@ class GuardService : AccessibilityService() {
         val now = System.currentTimeMillis()
         refreshCache(now)
         TimeGuard.check(this)
-        if (backing || pausedNow) {
-            if (pkg == BrowserStoreGuard.STORE) BrowserStoreGuard.gateInfo = "ditahan: backing=$backing jeda=$pausedNow"
-            // Mode Off (jeda): aplikasi bisa dibuka, tetapi bagian sosmed yang dinyalakan (Reels dll.) tetap ditutup.
-            if (pausedNow && !backing) checkFeeds(pkg, now)
+        // Mode Off tidak lagi melewati blokir: aplikasi, kata kunci, situs, dan fitur sosmed tetap aktif.
+        // Mematikannya satu per satu wajib lewat gerbang (teks acak/tunggu/kode teman) di aplikasi.
+        if (backing) {
+            if (pkg == BrowserStoreGuard.STORE) BrowserStoreGuard.gateInfo = "ditahan: backing=$backing"
             return
         }
         if (pkg == BrowserStoreGuard.STORE) BrowserStoreGuard.gateInfo = "lolos"
@@ -378,6 +376,17 @@ class GuardService : AccessibilityService() {
             lastProtectAt = now
             val root = rootInActiveWindow
             if (root != null && showsProtected(root)) {
+                startBlock("protect", "")
+                return
+            }
+        }
+
+        // 4b. Di luar Mode Ketat: halaman uninstall/nonaktifkan Penjaga Ketat sendiri tetap ditutup,
+        // kecuali jendela uninstall dibuka lewat gerbang di aplikasi.
+        if (selfGuardNow && isSettingsLike(pkg) && now - lastProtectAt > 500L) {
+            lastProtectAt = now
+            val root = rootInActiveWindow
+            if (root != null && showsOwnPage(root)) {
                 startBlock("protect", "")
                 return
             }
@@ -589,6 +598,22 @@ class GuardService : AccessibilityService() {
     private var lastProtectWhy = ""
     private fun why(s: String): Boolean { lastProtectWhy = s; return true }
 
+    /** Halaman uninstall/nonaktifkan Penjaga Ketat sendiri (bukan aplikasi lain). */
+    private fun showsOwnPage(root: AccessibilityNodeInfo): Boolean {
+        var nameHit = false
+        var actionHit = false
+        for (n in collect(root, 600)) {
+            val t = n.text?.toString()?.lowercase()?.trim() ?: ""
+            val d = n.contentDescription?.toString()?.lowercase()?.trim() ?: ""
+            if (t.isEmpty() && d.isEmpty()) continue
+            if (t.contains(Config.SERVICE_MARKER) || d.contains(Config.SERVICE_MARKER)) return why("layanan aksesibilitas (di luar Mode Ketat)")
+            if (t.contains(Config.APP_LABEL) || d.contains(Config.APP_LABEL)) nameHit = true
+            if (isActionText(t) || isActionText(d)) actionHit = true
+            if (nameHit && actionHit) return why("uninstal/nonaktifkan Penjaga Ketat (di luar Mode Ketat)")
+        }
+        return false
+    }
+
     private fun showsProtected(root: AccessibilityNodeInfo): Boolean {
         // Pemasang APK: saat saklar aktif, hanya izinkan pemasangan aplikasi kita sendiri.
         if (blockUnknownNow && (root.packageName?.toString() ?: "").contains("packageinstaller")) {
@@ -778,7 +803,7 @@ class GuardService : AccessibilityService() {
         return when (mode) {
             "content" -> cur != packageName && cur in browsers && browserHasBlocked(root)
             "screen_keyword" -> cur != packageName && screenHasBlocked(root)
-            "protect" -> isSettingsLike(cur) && showsProtected(root)
+            "protect" -> isSettingsLike(cur) && (if (strictNow) showsProtected(root) else showsOwnPage(root))
             else -> cur == pkg
         }
     }

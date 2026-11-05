@@ -738,6 +738,7 @@ class MainActivity : Activity() {
                 else -> {
                     sectionLabel("KEAMANAN")
                     renderAppLock(strict)
+                    renderUninstallGate(strict)
                     renderFriend()
                     renderLetter(strict)
                     renderProtected(strict)
@@ -1111,7 +1112,7 @@ class MainActivity : Activity() {
         val desc = when {
             paused -> {
                 val left = Store.pauseLeftMin(this)
-                "OFF: semua blokir dijeda. " + (if (left >= 0L) "Berakhir sekitar $left menit lagi." else "Berlaku sampai kamu memilih Normal.")
+                "OFF: kunci Mode Ketat mati, tetapi blokir aplikasi, kata kunci, dan situs TETAP aktif. Mematikannya satu per satu wajib teks acak. " + (if (left >= 0L) "Berakhir sekitar $left menit lagi." else "Berlaku sampai kamu memilih Normal.")
             }
             raw && Zone.active(this) -> "KETAT (Zona Ketat): kamu di dalam zona. Mematikannya wajib mengetik teks acak ${Zone.MIN_TEXT} huruf."
             raw && Store.strictOn(this) -> "KETAT aktif: pengaturan terkunci dan sulit dimatikan."
@@ -1126,7 +1127,7 @@ class MainActivity : Activity() {
         val labels = arrayOf("15 menit", "30 menit", "1 jam", "2 jam", "4 jam", "Sampai saya nyalakan lagi")
         val mins = intArrayOf(15, 30, 60, 120, 240, 0)
         android.app.AlertDialog.Builder(this)
-            .setTitle("Mode Off: jeda blokir")
+            .setTitle("Mode Off: kunci Ketat mati, blokir tetap aktif")
             .setItems(labels) { _, i ->
                 Store.pauseStart(this, mins[i])
                 render()
@@ -1579,6 +1580,21 @@ class MainActivity : Activity() {
         } else {
             inCred = true
             startActivityForResult(i, 88)
+        }
+    }
+
+    private fun renderUninstallGate(strict: Boolean) {
+        header("Uninstall Penjaga Ketat")
+        put(text("Di luar Mode Ketat, halaman uninstall dan penonaktifan Penjaga Ketat (termasuk Aksesibilitas dan Administrator perangkat) tetap ditutup. Untuk membukanya, lewati gerbang yang sama dengan keluar dari Mode Ketat.", 12f, false, C_SUB))
+        if (Store.uninstallWindowOpen(this)) {
+            put(text("Terbuka: sisa sekitar ${Store.uninstallLeftMin(this)} menit.", 13f, true, C_BAD))
+            put(button("Tutup sekarang") { Store.closeUninstallWindow(this); render() })
+        } else if (strict) {
+            put(text("Mode Ketat aktif: halaman itu terkunci penuh.", 12f, true, C_SUB))
+        } else {
+            put(button("Izinkan uninstall (10 menit)") {
+                textGate("mengizinkan uninstall atau menonaktifkan Penjaga Ketat", { Store.openUninstallWindow(this); render() }, { render() })
+            })
         }
     }
 
@@ -2318,8 +2334,7 @@ class MainActivity : Activity() {
                 toast("Mode Ketat aktif: aplikasi ini sudah terkunci, tidak bisa melepas blokir")
                 render()
             } else {
-                Store.removeApp(this, a.pkg)
-                render()
+                gateOff(true, "melepas blokir aplikasi ${a.label}") { Store.removeApp(this, a.pkg) }
             }
         }
         top.addView(sw)
@@ -3954,7 +3969,7 @@ class MainActivity : Activity() {
                 setPadding(dp(10), dp(8), dp(6), dp(8))
                 setOnClickListener {
                     if (strict) toast("Mode Ketat aktif: tidak bisa menghapus")
-                    else { Store.removeDomain(this@MainActivity, d); render() }
+                    else gateOff(true, "menghapus situs $d") { Store.removeDomain(this@MainActivity, d) }
                 }
             })
             siteCol.addView(row)

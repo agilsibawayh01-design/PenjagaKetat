@@ -353,6 +353,23 @@ object Store {
         log(c, if (minutes > 0) "Mode Off (jeda $minutes menit)" else "Mode Off (sampai dinyalakan lagi)")
     }
 
+    /** Jendela 10 menit (dibuka lewat gerbang di aplikasi) saat uninstall/penonaktifan Penjaga Ketat diizinkan di luar Mode Ketat. */
+    fun uninstallWindowOpen(c: Context): Boolean =
+        SafeTimer.isRunning(c, "uninst") && SafeTimer.elapsed(c, "uninst") < 10 * 60000L
+
+    fun uninstallLeftMin(c: Context): Long =
+        if (!uninstallWindowOpen(c)) 0L else 10L - SafeTimer.elapsed(c, "uninst") / 60000L
+
+    fun openUninstallWindow(c: Context) {
+        SafeTimer.start(c, "uninst")
+        log(c, "Jendela uninstall dibuka (10 menit)")
+    }
+
+    fun closeUninstallWindow(c: Context) {
+        SafeTimer.cancel(c, "uninst")
+        log(c, "Jendela uninstall ditutup")
+    }
+
     fun pauseStop(c: Context) {
         if (SafeTimer.isRunning(c, "pause")) log(c, "Mode Off diakhiri, kembali ke Mode Normal")
         SafeTimer.cancel(c, "pause")
