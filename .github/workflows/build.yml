@@ -8,6 +8,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      PK_KEYSTORE_B64: ${{ secrets.PK_KEYSTORE_B64 }}
+      PK_KEYSTORE_PASS: ${{ secrets.PK_KEYSTORE_PASS }}
+      PK_KEY_ALIAS: ${{ secrets.PK_KEY_ALIAS }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -19,8 +23,59 @@ jobs:
       - name: Generate Gradle wrapper
         run: gradle wrapper --gradle-version 8.7
       - run: chmod +x gradlew
+
+      # Tes unit (logika murni). Gagal tes TIDAK menghentikan pembuatan APK; lihat artifact laporan tes.
+      - name: Unit tests
+        id: tests
+        continue-on-error: true
+        run: ./gradlew testDebugUnitTest --no-daemon
+      - name: Lint
+        id: lint
+        continue-on-error: true
+        run: ./gradlew lintDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: laporan-tes-dan-lint
+          path: |
+            app/build/reports/tests/
+            app/build/reports/lint-results-debug.html
+          if-no-files-found: ignore
+
       - name: Build release APK
         run: ./gradlew assembleRelease --no-daemon
+
+      # Penandatanganan rilis. Kunci lama (debug.keystore) tetap dipakai sebagai penanda awal; kunci baru
+      # dari GitHub Secrets ditambahkan lewat rotasi kunci APK (lineage) supaya APK baru MENIMPA aplikasi
+      # lama tanpa uninstall. Tanpa Secrets: APK tetap ditandatangani kunci lama seperti sebelumnya.
+      - name: Sign release (rotasi kunci)
+        id: sign
+        run: |
+          set -e
+          APK=app/build/outputs/apk/release/app-release.apk
+          if [ -z "$PK_KEYSTORE_B64" ] || [ -z "$PK_KEYSTORE_PASS" ]; then
+            echo "SIGNING=kunci-lama (Secrets belum diisi)" >> "$GITHUB_STEP_SUMMARY"
+            echo "signed=old" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          ALIAS="${PK_KEY_ALIAS:-pkrelease}"
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          AS="$BT/apksigner"
+          echo "$PK_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/pk-release.jks"
+          OLD_ARGS=(--ks app/debug.keystore --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android)
+          NEW_ARGS=(--ks "$RUNNER_TEMP/pk-release.jks" --ks-key-alias "$ALIAS" --ks-pass env:PK_KEYSTORE_PASS --key-pass env:PK_KEYSTORE_PASS)
+          "$AS" rotate --out "$RUNNER_TEMP/pk.lineage" --old-signer "${OLD_ARGS[@]}" --new-signer "${NEW_ARGS[@]}"
+          cp "$APK" "$RUNNER_TEMP/unsigned-or-old.apk"
+          "$AS" sign "${OLD_ARGS[@]}" --next-signer "${NEW_ARGS[@]}" \
+            --lineage "$RUNNER_TEMP/pk.lineage" --min-sdk-version 29 \
+            --out "$RUNNER_TEMP/app-release-rotated.apk" "$RUNNER_TEMP/unsigned-or-old.apk"
+          "$AS" verify --verbose --print-certs "$RUNNER_TEMP/app-release-rotated.apk" | tee "$RUNNER_TEMP/verify.txt"
+          grep -q "Verified using v3 scheme (APK Signature Scheme v3): true" "$RUNNER_TEMP/verify.txt"
+          cp "$RUNNER_TEMP/app-release-rotated.apk" "$APK"
+          echo "SIGNING=rotasi kunci OK (v3 terverifikasi)" >> "$GITHUB_STEP_SUMMARY"
+          echo "signed=rotated" >> "$GITHUB_OUTPUT"
+          rm -f "$RUNNER_TEMP/pk-release.jks"
+
       - uses: actions/upload-artifact@v4
         with:
           name: PenjagaKetat-release-apk
