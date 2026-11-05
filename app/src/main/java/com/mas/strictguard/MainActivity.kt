@@ -43,6 +43,9 @@ import android.widget.Toast
 class MainActivity : Activity() {
     private lateinit var scroll: ScrollView
     private lateinit var root: LinearLayout
+    private lateinit var navBar: LinearLayout
+    private var statsLoading = false
+    private var statsFailed = false
     private val handler = Handler(Looper.getMainLooper())
     private var gateText: String? = null
     private var cur: LinearLayout? = null
@@ -80,7 +83,11 @@ class MainActivity : Activity() {
         }
         scroll.setBackgroundColor(C_BG)
         scroll.addView(root)
-        setContentView(scroll)
+        val outer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        outer.addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        navBar = buildNav()
+        outer.addView(navBar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        setContentView(outer)
         applySystemBars()
         if (intent?.getBooleanExtra("urge", false) == true) {
             screen = "urge"
@@ -109,6 +116,7 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        statsFailed = false
         Store.seed(this)
         AntiBypass.checkWiped(this)
         AntiBypass.syncMarker(this)
@@ -376,6 +384,7 @@ class MainActivity : Activity() {
 
     private fun screenSummary(s: String): String = when (s) {
         "apps" -> "${Store.apps(this).size} aplikasi diblokir"
+        "proteksi" -> "Aturan blokir, mode, jadwal, dan jaringan"
         "stats" -> "Pemakaian, blokir, dan hari bersih"
         "urge" -> "Dorongan itu naik lalu turun sendiri. Tunggu saja"
         "focus" -> "Sesi fokus untuk menjaga konsentrasi"
@@ -602,11 +611,91 @@ class MainActivity : Activity() {
 
     private fun fmt(min: Int): String = String.format("%02d:%02d", min / 60, min % 60)
 
+    // ---------- Navigasi 4 tab ----------
+    private val TABS = listOf(
+        Triple("🏠", "Beranda", "home"),
+        Triple("🛡️", "Proteksi", "proteksi"),
+        Triple("📊", "Statistik", "stats"),
+        Triple("⚙️", "Setelan", "more")
+    )
+
+    private fun tabOf(s: String): Int = when (s) {
+        "home", "urge" -> 0
+        "proteksi", "strict", "apps", "words", "profiles", "sched", "net", "focus" -> 1
+        "stats" -> 2
+        else -> 3
+    }
+
+    private fun isTabRoot(s: String): Boolean = s == "home" || s == "proteksi" || s == "stats" || s == "more"
+
+    private fun parentOf(s: String): String = when {
+        s == "urge" -> "home"
+        isTabRoot(s) -> "home"
+        tabOf(s) == 1 -> "proteksi"
+        else -> "home"
+    }
+
+    private fun buildNav(): LinearLayout {
+        val bar = LinearLayout(this)
+        bar.orientation = LinearLayout.HORIZONTAL
+        bar.setPadding(dp(6), dp(6), dp(6), dp(6))
+        bar.setBackgroundColor(C_CARD)
+        bar.elevation = dp(8).toFloat()
+        for ((icon, label, target) in TABS) {
+            val item = LinearLayout(this)
+            item.orientation = LinearLayout.VERTICAL
+            item.gravity = Gravity.CENTER
+            item.tag = target
+            item.setPadding(0, dp(4), 0, dp(4))
+            item.addView(TextView(this).apply { text = icon; textSize = 20f; gravity = Gravity.CENTER })
+            item.addView(TextView(this).apply { text = label; textSize = 11f; gravity = Gravity.CENTER; tag = "lbl" })
+            item.setOnClickListener { goScreen(target) }
+            bar.addView(item, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        }
+        return bar
+    }
+
+    private fun updateNav() {
+        navBar.setBackgroundColor(C_CARD)
+        val sel = tabOf(screen)
+        for (i in 0 until navBar.childCount) {
+            val item = navBar.getChildAt(i) as LinearLayout
+            val on = i == sel
+            val lbl = item.getChildAt(1) as TextView
+            lbl.setTextColor(if (on) C_PRIMARY else C_SUB)
+            lbl.setTypeface(null, if (on) Typeface.BOLD else Typeface.NORMAL)
+            item.getChildAt(0).alpha = if (on) 1f else 0.55f
+            item.background = if (on) bg(C_CHIP, dp(14)) else null
+        }
+    }
+
+    /** Statistik dihitung di thread latar agar layar tidak macet; tampilan dirender ulang setelah selesai. */
+    private fun loadStatsAsync() {
+        if (statsLoading) return
+        statsLoading = true
+        val app = applicationContext
+        Thread {
+            var ok = true
+            try {
+                Dashboard.get(app, true)
+            } catch (t: Throwable) {
+                ok = false
+            }
+            runOnUiThread {
+                statsLoading = false
+                statsFailed = !ok
+                if (!isFinishing && !isDestroyed && (screen == "stats" || screen == "home")) render()
+            }
+        }.start()
+    }
+
     private fun render() {
         if (AppLock.needsAuth(this)) {
             showLockScreen()
             return
         }
+        navBar.visibility = View.VISIBLE
+        updateNav()
         val keepY = scroll.scrollY
         root.removeAllViews()
         cur = null
@@ -642,6 +731,7 @@ class MainActivity : Activity() {
                     renderVpn(strict)
                     renderNotif()
                 }
+                "proteksi" -> renderProteksi()
                 "stats" -> renderDashboard(strict)
                 "focus" -> renderFocus(strict)
                 "sched" -> renderSchedule(strict)
@@ -683,10 +773,11 @@ class MainActivity : Activity() {
         "profiles" -> "Profil"
         "sched" -> "Jadwal & profil"
         "net" -> "VPN DNS dan notifikasi"
-        "stats" -> "Dashboard"
+        "proteksi" -> "Proteksi"
+        "stats" -> "Statistik"
         "focus" -> "Mode Fokus"
         "urge" -> "Dorongan"
-        else -> "Lainnya"
+        else -> "Setelan"
     }
 
     private fun goScreen(s: String) {
@@ -699,17 +790,19 @@ class MainActivity : Activity() {
         row.orientation = LinearLayout.HORIZONTAL
         row.gravity = Gravity.CENTER_VERTICAL
         row.setPadding(0, 0, 0, dp(10))
-        val back = TextView(this)
-        back.text = "←"
-        back.textSize = 22f
-        back.setTextColor(C_PRIMARY)
-        back.gravity = Gravity.CENTER
-        back.background = bg(C_CHIP, dp(22))
-        back.layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
-        back.setOnClickListener { goScreen("home") }
-        row.addView(back)
+        if (!isTabRoot(screen)) {
+            val back = TextView(this)
+            back.text = "←"
+            back.textSize = 22f
+            back.setTextColor(C_PRIMARY)
+            back.gravity = Gravity.CENTER
+            back.background = bg(C_CHIP, dp(22))
+            back.layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
+            back.setOnClickListener { goScreen(parentOf(screen)) }
+            row.addView(back)
+        }
         row.addView(text(title, 22f, true).apply {
-            setPadding(dp(14), 0, 0, 0)
+            setPadding(if (isTabRoot(screen)) dp(4) else dp(14), 0, 0, 0)
         })
         row.setPadding(0, dp(2), 0, dp(6))
         root.addView(row)
@@ -727,7 +820,7 @@ class MainActivity : Activity() {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        if (screen != "home") goScreen("home") else super.onBackPressed()
+        if (screen != "home") goScreen(parentOf(screen)) else super.onBackPressed()
     }
 
     private fun tile(icon: String, title: String, sub: String, color: Int, target: String): View {
@@ -812,11 +905,9 @@ class MainActivity : Activity() {
             background = bg(C_CHIP, dp(14))
         })
 
-        val blocks = try {
-            StatsDb.blocksByReason(this, UsageTracker.startOfDay()).sumOf { it.second }
-        } catch (t: Throwable) {
-            0
-        }
+    }
+
+    private fun renderProteksi() {
         val profiles = ProfileStore.load(this)
         val activeP = profiles.count { ProfileEngine.isActive(this, it) }
         val wordCount = Store.keywords(this).size + Store.domains(this).size
@@ -828,10 +919,8 @@ class MainActivity : Activity() {
         homeGroup("MODE")
         homeRow("🎯", "Mode Fokus", "Sesi waktu yang menutup aplikasi dan situs pemicu.", focusTileLabel(), Color.parseColor("#AD1457"), "focus")
         homeRow("🛡️", "Mode Ketat & status", "Kunci pengaturan dan cek perlindungan diri.", modeLabel(), Color.parseColor("#C62828"), "strict")
-        homeGroup("PANTAU & SISTEM")
-        homeRow("📊", "Dashboard", "Pemakaian, blokir, dan riwayat 7 hari.", "$blocks blokir hari ini", Color.parseColor("#EF6C00"), "stats")
         homeRow("🔌", "VPN & notifikasi", "Filter situs lewat DNS dan kontrol notifikasi.", if (VpnStatus.running) "VPN DNS aktif" else if (Store.vpnOn(this)) "VPN DNS: " + VpnStatus.state.label else "VPN DNS mati", Color.parseColor("#2E7D32"), "net")
-        homeRow("⚙️", "Lainnya", "Backup, kode teman, kunci aplikasi, dan log.", "Backup • Teman • Log", Color.parseColor("#455A64"), "more")
+
     }
 
     /** Warna aksen; di mode gelap dibuat lebih terang supaya terbaca. */
@@ -860,9 +949,12 @@ class MainActivity : Activity() {
         var usage = "—"
         var blocks = "0"
         try {
-            val s = Dashboard.get(this)
-            usage = if (s.usageAccess) Dashboard.dur(s.todayMs) else "Izin?"
-            blocks = s.blocksToday.toString()
+            val s = Dashboard.cached()
+            if (s != null) {
+                usage = if (s.usageAccess) Dashboard.dur(s.todayMs) else "Izin?"
+                blocks = s.blocksToday.toString()
+            }
+            if (!Dashboard.isFresh() && !statsFailed) loadStatsAsync()
         } catch (t: Throwable) {
             // tampilkan nilai bawaan
         }
@@ -1439,6 +1531,7 @@ class MainActivity : Activity() {
 
     // ---- Kunci aplikasi ----
     private fun showLockScreen() {
+        navBar.visibility = View.GONE
         root.removeAllViews()
         cur = null
         val logo = ImageView(this)
@@ -3224,7 +3317,19 @@ class MainActivity : Activity() {
     }
 
     private fun renderDashboard(strict: Boolean) {
-        val s = Dashboard.get(this, true)
+        val s = Dashboard.cached()
+        if (s == null) {
+            header("Statistik")
+            if (statsFailed) {
+                put(text("Statistik belum tersedia.", 12f, false, C_SUB))
+                put(button("Coba lagi") { statsFailed = false; loadStatsAsync(); render() })
+            } else {
+                put(text("Memuat statistik…", 12f, false, C_SUB))
+                loadStatsAsync()
+            }
+            return
+        }
+        if (!Dashboard.isFresh() && !statsFailed) loadStatsAsync()
         if (!s.usageAccess) {
             header("Akses Penggunaan")
             put(text("Aktifkan Akses Penggunaan agar pemakaian aplikasi tercatat. Angka pemakaian di bawah kosong sampai itu aktif.", 12f))
@@ -3265,15 +3370,27 @@ class MainActivity : Activity() {
         }
 
         header("7 hari terakhir")
-        val maxD = Math.max(1L, s.days.maxOf { it.ms })
-        for (d in s.days) put(text(barLine(d.label, d.ms, maxD, if (d.blocks > 0) " • ${d.blocks}x blokir" else ""), 11f))
+        put(text("Pemakaian per hari (menit)", 11f, false, C_SUB))
+        put(BarChartView(this, s.days.map { it.ms / 60000L }, s.days.map { it.label.substringBefore(' ') }, C_PRIMARY, C_TEXT, C_SUB) { "${it}m" }
+            .apply { layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(150)) })
+        put(text("Blokir per hari", 11f, false, C_SUB))
+        put(BarChartView(this, s.days.map { it.blocks.toLong() }, s.days.map { it.label.substringBefore(' ') }, C_BAD, C_TEXT, C_SUB) { "${it}x" }
+            .apply { layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(150)) })
         put(text("Total ${Dashboard.dur(s.weekMs)} • ${s.blocksWeek}x diblokir", 13f, true))
-        if (s.prevWeekMs > 0L) {
-            val pct = ((s.weekMs - s.prevWeekMs) * 100L / s.prevWeekMs).toInt()
-            put(text("Minggu lalu ${Dashboard.dur(s.prevWeekMs)}: " + (if (pct >= 0) "naik $pct%" else "turun ${-pct}%"), 12f, false, C_SUB))
+        val wk = StatsMath.percentChange(s.weekMs, s.prevWeekMs)
+        if (wk != null) {
+            put(text("Minggu lalu ${Dashboard.dur(s.prevWeekMs)}: " + (if (wk >= 0) "naik $wk%" else "turun ${-wk}%"), 12f, false, C_SUB))
         } else {
             put(text("Perbandingan dengan minggu lalu muncul setelah ada data 14 hari.", 11f, false, C_SUB))
         }
+
+        header("30 hari terakhir")
+        put(text("Pemakaian per hari (menit), data yang tersimpan paling lama 35 hari", 11f, false, C_SUB))
+        put(BarChartView(this, s.days30.map { it.second / 60000L }, s.days30.map { it.first.substring(8) }, C_PRIMARY, C_TEXT, C_SUB) { "${it}m" }
+            .apply { layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(150)) })
+
+        header("Mode Fokus")
+        put(text("Data belum tersedia: riwayat sesi Fokus belum dicatat oleh aplikasi.", 12f, false, C_SUB))
 
         header("Teratas 7 hari")
         if (s.topAppsWeek.isEmpty()) put(text("Belum ada data.", 12f, false, C_SUB))
@@ -3305,7 +3422,7 @@ class MainActivity : Activity() {
         put(text("Catatan: pemakaian situs hanya tercatat untuk situs yang punya aturan dan saat kolom alamat Chrome terlihat.", 11f, false, C_SUB))
 
         put(button("Hapus statistik") {
-            if (strict) toast("Mode Ketat aktif: statistik terkunci") else { StatsDb.clear(this); Dashboard.get(this, true); render() }
+            if (strict) toast("Mode Ketat aktif: statistik terkunci") else { StatsDb.clear(this); Dashboard.invalidate(); render() }
         })
     }
 

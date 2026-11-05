@@ -41,6 +41,7 @@ object SecureGuard {
     /** Hanya bila saklar "blokir pemasangan tidak dikenal" aktif. */
     val UNKNOWN_INSTALL_TEXTS: Set<String> = setOf(
         "instal aplikasi tidak dikenal", "instal aplikasi yang tidak dikenal", "install unknown apps",
+        "instal aplikasi yg tdk dikenal", "instal aplikasi yang tdk dikenal", "instal app tidak dikenal",
         "izinkan dari sumber ini", "allow from this source"
     )
 }

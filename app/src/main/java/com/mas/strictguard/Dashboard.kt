@@ -31,13 +31,21 @@ object Dashboard {
         val prevWeekMs: Long,
         val blocksWeek: Int,
         val topAppsWeek: List<Item>,
-        val topSitesWeek: List<Item>
+        val topSitesWeek: List<Item>,
+        val days30: List<Pair<String, Long>>
     )
 
     @Volatile
     private var cache: Snap? = null
 
     private val NOT_ATTEMPT = setOf("protect", "content", "dns")
+
+    /** Hasil terakhir tanpa menghitung ulang (aman dipanggil di thread utama). */
+    fun cached(): Snap? = cache
+
+    fun isFresh(): Boolean = cache?.let { System.currentTimeMillis() - it.at < 30000L } ?: false
+
+    fun invalidate() { cache = null }
 
     fun get(c: Context, force: Boolean = false): Snap {
         val old = cache
@@ -99,7 +107,7 @@ object Dashboard {
         // pemakaian aplikasi per hari (hari ini dari data langsung)
         val perDay = HashMap<String, HashMap<String, Long>>()
         try {
-            for ((d, p, ms) in StatsDb.usageRows(c, 14)) {
+            for ((d, p, ms) in StatsDb.usageRows(c, 30)) {
                 if (d != todayKey && ok(p)) perDay.getOrPut(d) { HashMap() }[p] = ms
             }
         } catch (t: Throwable) {
@@ -178,7 +186,8 @@ object Dashboard {
             prevWeekMs = prev.sumOf { total(it) },
             blocksWeek = week.sumOf { blocksByDay[it] ?: 0 },
             topAppsWeek = aggApps(week),
-            topSitesWeek = aggSites(week)
+            topSitesWeek = aggSites(week),
+            days30 = (29 downTo 0).map { i -> val k = StatsDb.dayKey(now - i * 86400000L); Pair(k, total(k)) }
         )
     }
 
@@ -196,7 +205,7 @@ object Dashboard {
             }
         } else {
             try {
-                for ((d, p, v) in StatsDb.usageRows(c, 14)) if (p == key) ms[d] = v
+                for ((d, p, v) in StatsDb.usageRows(c, 30)) if (p == key) ms[d] = v
             } catch (t: Throwable) {
                 // abaikan
             }

@@ -26,8 +26,9 @@ android {
 
     buildTypes {
         release {
-            // Sengaja memakai kunci yang sama dengan debug agar APK release bisa menimpa
-            // (update) aplikasi yang sudah terpasang tanpa uninstall dan tanpa kehilangan data.
+            // Dibangun dengan kunci lama (debug.keystore); langkah "Sign release" di workflow lalu
+            // menandatangani ulang dengan kunci baru + rotasi (lineage) bila GitHub Secrets diisi,
+            // sehingga APK tetap menimpa aplikasi lama tanpa uninstall dan tanpa kehilangan data.
             isDebuggable = false
             isMinifyEnabled = false
             isShrinkResources = false
@@ -37,6 +38,10 @@ android {
             isDebuggable = true
             signingConfig = signingConfigs.getByName("debug")
         }
+    }
+
+    testOptions {
+        unitTests.isReturnDefaultValues = true
     }
 
     lint {
@@ -56,4 +61,6 @@ android {
 
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20231013")
 }
