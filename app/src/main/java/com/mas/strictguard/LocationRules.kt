@@ -69,17 +69,21 @@ object LocationTracker {
 
     @Volatile
     private var last: Location? = null
-    private var registered = false
+    private var netReg = false
+    private var gpsReg = false
 
     @Volatile
     private var appCtx: Context? = null
     private var lm: LocationManager? = null
     private val main = Handler(Looper.getMainLooper())
 
-    private val listener = object : LocationListener {
+    private fun makeListener() = object : LocationListener {
         override fun onLocationChanged(l: Location) {
             last = l
-            appCtx?.let { Zone.update(it) }
+            appCtx?.let {
+                Zone.update(it)
+                ensure(it) // GPS menyala/mati sesuai jarak ke zona
+            }
         }
 
         override fun onProviderEnabled(provider: String) {}
@@ -87,6 +91,34 @@ object LocationTracker {
 
         @Deprecated("Deprecated in Java")
         override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+    }
+
+    private val netListener = makeListener()
+    private val gpsListener = makeListener()
+
+    /** Jarak (meter) dari posisi [l] ke batas aturan lokasi terdekat; null bila tidak ada aturan. */
+    private fun nearestBoundary(c: Context, l: Location): Float? {
+        var best: Float? = null
+        val out = FloatArray(1)
+        for (k in sp(c).all.keys) {
+            if (!k.startsWith("loc_")) continue
+            val r = LocationRules.get(c, k.removePrefix("loc_")) ?: continue
+            Location.distanceBetween(l.latitude, l.longitude, r.lat, r.lon, out)
+            val d = Math.abs(out[0] - r.radius)
+            if (best == null || d < best) best = d
+        }
+        return best
+    }
+
+    /**
+     * GPS hanya perlu saat dekat zona (dalam ~2 km dari batasnya) atau saat posisi jaringan tidak ada.
+     * Jauh dari zona cukup posisi jaringan yang murah. Histeresis 2 km menyala / 3 km mati.
+     */
+    private fun gpsNeeded(c: Context): Boolean {
+        if (!netReg) return true
+        val fix = current(c) ?: return true
+        val d = nearestBoundary(c, fix) ?: return false
+        return d < (if (gpsReg) 3000f else 2000f)
     }
 
     fun hasPermission(c: Context): Boolean =
@@ -124,26 +156,28 @@ object LocationTracker {
         val need = LocationRules.anyRule(ctx) && hasPermission(ctx)
         try {
             if (!need) {
-                if (registered) {
-                    lm?.removeUpdates(listener)
-                    registered = false
+                if (netReg || gpsReg) {
+                    lm?.removeUpdates(netListener)
+                    lm?.removeUpdates(gpsListener)
+                    netReg = false
+                    gpsReg = false
                 }
                 return
             }
             val m = lm ?: (ctx.getSystemService(Context.LOCATION_SERVICE) as LocationManager).also { lm = it }
-            if (!registered) {
-                var any = false
-                if (m.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                    m.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 30000L, 0f, listener, Looper.getMainLooper())
-                    any = true
-                }
-                if (m.isProviderEnabled(LocationManager.GPS_PROVIDER) &&
-                    ctx.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-                ) {
-                    m.requestLocationUpdates(LocationManager.GPS_PROVIDER, 120000L, 0f, listener, Looper.getMainLooper())
-                    any = true
-                }
-                registered = any
+            if (!netReg && m.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                m.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 60000L, 0f, netListener, Looper.getMainLooper())
+                netReg = true
+            }
+            val gpsOk = m.isProviderEnabled(LocationManager.GPS_PROVIDER) &&
+                ctx.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            val wantGps = gpsOk && gpsNeeded(ctx)
+            if (wantGps && !gpsReg) {
+                m.requestLocationUpdates(LocationManager.GPS_PROVIDER, 120000L, 0f, gpsListener, Looper.getMainLooper())
+                gpsReg = true
+            } else if (!wantGps && gpsReg) {
+                m.removeUpdates(gpsListener)
+                gpsReg = false
             }
             // Ambil posisi terakhir yang diketahui sistem bila belum ada yang segar.
             if (current(ctx) == null) {
