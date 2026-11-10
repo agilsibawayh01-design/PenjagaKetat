@@ -625,8 +625,15 @@ class GuardService : AccessibilityService() {
     private var lastProtectWhy = ""
     private fun why(s: String): Boolean { lastProtectWhy = s; return true }
 
-    /** Halaman uninstall/nonaktifkan Penjaga Ketat sendiri (bukan aplikasi lain). */
+    /** Nama aplikasi pelindung yang uninstall-nya ikut dijaga di luar Mode Ketat. */
+    private val GUARD_LABELS = listOf(
+        "blockp", "block p", "stay focused", "stayfocused", "channel blocker", "telegram blocker",
+        "safe telegram", "safetelegram", "bankswitch", "bank switch"
+    )
+
+    /** Halaman uninstall/nonaktifkan Penjaga Ketat dan aplikasi pelindung lain (daftar Lindungi + bawaan). */
     private fun showsOwnPage(root: AccessibilityNodeInfo): Boolean {
+        val guardNames = (listOf(Config.APP_LABEL) + GUARD_LABELS + protectedNames.filter { it.length >= 4 && !it.contains('.') }).distinct()
         var nameHit = false
         var actionHit = false
         for (n in collect(root, 600)) {
@@ -634,9 +641,9 @@ class GuardService : AccessibilityService() {
             val d = n.contentDescription?.toString()?.lowercase()?.trim() ?: ""
             if (t.isEmpty() && d.isEmpty()) continue
             if (t.contains(Config.SERVICE_MARKER) || d.contains(Config.SERVICE_MARKER)) return why("layanan aksesibilitas (di luar Mode Ketat)")
-            if (t.contains(Config.APP_LABEL) || d.contains(Config.APP_LABEL)) nameHit = true
+            if (!nameHit && guardNames.any { t.contains(it) || d.contains(it) }) nameHit = true
             if (isActionText(t) || isActionText(d)) actionHit = true
-            if (nameHit && actionHit) return why("uninstal/nonaktifkan Penjaga Ketat (di luar Mode Ketat)")
+            if (nameHit && actionHit) return why("uninstal/nonaktifkan aplikasi pelindung (di luar Mode Ketat)")
         }
         return false
     }

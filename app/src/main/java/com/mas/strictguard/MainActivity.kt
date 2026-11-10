@@ -1584,8 +1584,8 @@ class MainActivity : Activity() {
     }
 
     private fun renderUninstallGate(strict: Boolean) {
-        header("Uninstall Penjaga Ketat")
-        put(text("Di luar Mode Ketat, halaman uninstall dan penonaktifan Penjaga Ketat (termasuk Aksesibilitas dan Administrator perangkat) tetap ditutup. Untuk membukanya, lewati gerbang yang sama dengan keluar dari Mode Ketat.", 12f, false, C_SUB))
+        header("Uninstall Penjaga Ketat & aplikasi pelindung")
+        put(text("Di luar Mode Ketat, halaman uninstall dan penonaktifan Penjaga Ketat (termasuk Aksesibilitas dan Administrator perangkat) serta aplikasi pelindung lain (BlockP, Stay Focused, Channel Blocker, dan daftar Lindungi) tetap ditutup. Untuk membukanya, lewati gerbang yang sama dengan keluar dari Mode Ketat.", 12f, false, C_SUB))
         if (Store.uninstallWindowOpen(this)) {
             put(text("Terbuka: sisa sekitar ${Store.uninstallLeftMin(this)} menit.", 13f, true, C_BAD))
             put(button("Tutup sekarang") { Store.closeUninstallWindow(this); render() })
@@ -1593,7 +1593,7 @@ class MainActivity : Activity() {
             put(text("Mode Ketat aktif: halaman itu terkunci penuh.", 12f, true, C_SUB))
         } else {
             put(button("Izinkan uninstall (10 menit)") {
-                textGate("mengizinkan uninstall atau menonaktifkan Penjaga Ketat", { Store.openUninstallWindow(this); render() }, { render() })
+                textGate("mengizinkan uninstall atau menonaktifkan Penjaga Ketat dan aplikasi pelindung", { Store.openUninstallWindow(this); render() }, { render() })
             })
         }
     }
