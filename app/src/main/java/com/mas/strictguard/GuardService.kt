@@ -23,6 +23,27 @@ class GuardService : AccessibilityService() {
     private var lastStoreAt = 0L
     private var ipBlock = true
     private var lastScreenNodes = 0
+
+    // Penyebab blokir terakhir (untuk ditampilkan di layar blokir).
+    private var hitWord = ""
+    private var hitText = ""
+    private var hitWhere = ""
+    private var blockWord = ""
+    private var blockText = ""
+    private var blockWhere = ""
+
+    private fun noteHit(word: String, text: String, where: String) {
+        hitWord = word
+        hitText = text.replace('\n', ' ').trim().take(70)
+        hitWhere = where
+    }
+
+    /** Cocokkan [text] dengan kata kunci layar dan catat kata penyebabnya. */
+    private fun screenHit(text: String, editable: Boolean, where: String): Boolean {
+        val k = Rules.matchesKeyword(text, screenKeywords, editable) ?: return false
+        noteHit(k, text, where)
+        return true
+    }
     private var lastScreenTexts = 0
     private var lastBackAt = 0L
     private var lastProtectAt = 0L
@@ -355,13 +376,19 @@ class GuardService : AccessibilityService() {
             if (typed.isNotEmpty()) {
                 val source = event.source
                 val isUrlBar = source != null && isUrlBarNode(source)
-                val urlKwHit = isUrlBar && pkg in browsers && Rules.matchesKeyword(typed, urlKeywords, true) != null
-                val screenKwHit = Rules.matchesKeyword(typed, screenKeywords, true) != null
-                val kwHit = urlKwHit || screenKwHit
+                val urlKw = if (isUrlBar && pkg in browsers) Rules.matchesKeyword(typed, urlKeywords, true) else null
+                val screenKw = Rules.matchesKeyword(typed, screenKeywords, true)
+                val kwHit = urlKw != null || screenKw != null
                 val dmHit = if (isUrlBar && pkg in browsers) Rules.matchesDomain(typed, domains) else null
                 val domainBlocked = dmHit != null && SiteTracker.shouldDnsBlock(this, dmHit)
                 val ipHit = ipBlock && isUrlBar && pkg in browsers && Rules.isPublicIpUrl(typed)
                 if (kwHit || domainBlocked || ipHit) {
+                    when {
+                        urlKw != null -> noteHit(urlKw, typed, "yang kamu ketik di kolom alamat")
+                        screenKw != null -> noteHit(screenKw, typed, "yang kamu ketik")
+                        domainBlocked -> noteHit(dmHit ?: "", typed, "situs terblokir di kolom alamat")
+                        else -> noteHit("alamat IP publik", typed, "kolom alamat")
+                    }
                     startBlock("typed", "")
                 }
             }
@@ -748,9 +775,10 @@ class GuardService : AccessibilityService() {
             val txt = n.text?.toString() ?: n.contentDescription?.toString() ?: continue
             if (txt.isEmpty()) continue
             val hit = Rules.matchesDomain(txt, domains)
-            if (hit != null && SiteTracker.shouldDnsBlock(this, hit)) return true
-            if (Rules.matchesKeyword(txt, urlKeywords) != null) return true
-            if (ipBlock && Rules.isPublicIpUrl(txt)) return true
+            if (hit != null && SiteTracker.shouldDnsBlock(this, hit)) { noteHit(hit, txt, "situs di kolom alamat"); return true }
+            val uk = Rules.matchesKeyword(txt, urlKeywords)
+            if (uk != null) { noteHit(uk, txt, "di kolom alamat"); return true }
+            if (ipBlock && Rules.isPublicIpUrl(txt)) { noteHit("alamat IP publik", txt, "kolom alamat"); return true }
         }
         return false
     }
@@ -768,7 +796,7 @@ class GuardService : AccessibilityService() {
             val f = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
             if (f != null && !isUrlBarNode(f)) {
                 val ft = f.text?.toString()?.trim() ?: ""
-                if (ft.isNotEmpty() && Rules.matchesKeyword(ft, screenKeywords, true) != null) return true
+                if (ft.isNotEmpty() && screenHit(ft, true, "di kolom input")) return true
             }
         } catch (t: Throwable) {
             // abaikan
@@ -788,10 +816,10 @@ class GuardService : AccessibilityService() {
             if (!n.isVisibleToUser && !n.isEditable && !n.isFocused) continue
 
             val txt = n.text?.toString()?.trim() ?: ""
-            if (txt.isNotEmpty() && Rules.matchesKeyword(txt, screenKeywords, n.isEditable) != null) return true
+            if (txt.isNotEmpty() && screenHit(txt, n.isEditable, "di layar")) return true
 
             val desc = n.contentDescription?.toString()?.trim() ?: ""
-            if (desc.isNotEmpty() && Rules.matchesKeyword(desc, screenKeywords) != null) return true
+            if (desc.isNotEmpty() && screenHit(desc, false, "di layar")) return true
         }
         return false
     }
@@ -826,6 +854,12 @@ class GuardService : AccessibilityService() {
         if (backing || now - lastBlockAt < 800L) return
         lastBlockAt = now
         backing = true
+        blockWord = if (mode == "typed" || mode == "content" || mode == "screen_keyword") hitWord else ""
+        blockText = hitText
+        blockWhere = hitWhere
+        hitWord = ""
+        hitText = ""
+        hitWhere = ""
         val statTarget = if ((mode == "site" || mode == "site_wait") && blockDomain.isNotEmpty()) blockDomain else pkg
         StatsDb.addBlock(this, if (mode == "typed") "content" else if (mode == "protect_click") "protect" else mode, statTarget)
         if (mode == "protect" || mode == "protect_click") Store.log(this, "Proteksi ($mode, $pkg): " + lastProtectWhy.ifEmpty { "klik pada nama terlindung" })
@@ -866,6 +900,9 @@ class GuardService : AccessibilityService() {
             .putExtra("mode", shown)
             .putExtra("pkg", pkg)
             .putExtra("domain", domain)
+            .putExtra("word", blockWord)
+            .putExtra("wordText", blockText)
+            .putExtra("wordWhere", blockWhere)
         handler.postDelayed({
             try {
                 startActivity(i)

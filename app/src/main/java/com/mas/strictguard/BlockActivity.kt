@@ -28,12 +28,24 @@ class BlockActivity : Activity() {
     private lateinit var why: TextView
     private var pauseLeft = 0
 
+    /** Baris penyebab blokir: kata kunci yang cocok dan di mana ia muncul. */
+    private fun causeLine(word: String, text: String, where: String): String {
+        if (word.isEmpty()) return ""
+        val sb = StringBuilder("\n\nKata penyebab: \"").append(word).append("\"")
+        if (where.isNotEmpty()) sb.append("\nMuncul ").append(where)
+        if (text.isNotEmpty() && !text.equals(word, ignoreCase = true)) sb.append(":\n\"").append(text).append("\"")
+        return sb.toString()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val mode = intent.getStringExtra("mode") ?: "content"
         pkg = intent.getStringExtra("pkg") ?: ""
         modeName = mode
         siteDomain = intent.getStringExtra("domain") ?: ""
+        val hitWord = intent.getStringExtra("word") ?: ""
+        val hitText = intent.getStringExtra("wordText") ?: ""
+        val hitWhere = intent.getStringExtra("wordWhere") ?: ""
 
         val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         val cBg = if (night) Color.parseColor("#12161C") else Color.WHITE
@@ -137,8 +149,8 @@ class BlockActivity : Activity() {
         when (mode) {
             "protect" -> info.text = if (Store.strictOn(this)) "Mode Ketat aktif.\nHalaman ini tidak bisa dibuka."
                 else "Penjaga Ketat dilindungi.\nUntuk mencopot atau menonaktifkannya, buka aplikasi lalu Setelan > Uninstall Penjaga Ketat dan lewati gerbangnya."
-            "content" -> info.text = "Konten ini diblokir oleh Penjaga Ketat."
-            "screen_keyword" -> info.text = "Konten ini diblokir karena mengandung kata kunci layar yang dibatasi."
+            "content" -> info.text = "Konten ini diblokir oleh Penjaga Ketat." + causeLine(hitWord, hitText, hitWhere)
+            "screen_keyword" -> info.text = "Konten ini diblokir karena mengandung kata kunci layar yang dibatasi." + causeLine(hitWord, hitText, hitWhere)
             "profile" -> info.text = "Aplikasi ini diblokir oleh profil yang sedang aktif."
             "focus" -> {
                 val left = Focus.leftMs(this) / 60000L + 1L
