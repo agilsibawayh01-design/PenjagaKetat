@@ -713,6 +713,7 @@ class MainActivity : Activity() {
                     renderStrict(strict, acc && adm)
                     renderProtection(strict)
                     renderBypassGuard(strict)
+                    renderNsfwAi(strict)
                     renderNight(strict)
                 }
                 "apps" -> {
@@ -747,7 +748,6 @@ class MainActivity : Activity() {
                     renderBackup(strict)
                     sectionLabel("DETEKSI & TAMPILAN")
                     renderSelfTest()
-                    renderDetection()
                     renderMotivation(strict)
                     sectionLabel("RIWAYAT")
                     renderLog()
@@ -1803,6 +1803,28 @@ class MainActivity : Activity() {
         }
         put(text("Jam HP diubah saat Mode Ketat aktif: jadwal diabaikan dan blokir berlaku penuh 30 menit.", 12f))
         put(text("Pemulihan darurat: keluar Mode Ketat lewat tombol di atas (tunggu lalu ketik teks acak). Itu jalur pemulihan yang selalu tersedia, tanpa PC.", 12f))
+    }
+
+    // ---------- Deteksi gambar AI ----------
+    private fun renderNsfwAi(strict: Boolean) {
+        header("Deteksi gambar AI (NSFW)")
+        put(text("Layar difoto tiap sekitar 1 detik saat HP menyala, lalu dianalisis di HP oleh model AI (tanpa internet, tidak ada gambar yang disimpan atau dikirim). Bila ada gambar telanjang, layar langsung ditutup dan kamu dikembalikan ke beranda. Berlaku di semua aplikasi. Butuh Android 11 ke atas. Salah blokir bisa terjadi.", 12f))
+        val cb = CheckBox(this)
+        cb.text = "Aktifkan deteksi gambar AI"
+        cb.isChecked = Store.nsfwAi(this)
+        cb.setOnClickListener {
+            val v = cb.isChecked
+            if (!v && strict) {
+                toast("Mode Ketat aktif: tidak bisa dimatikan")
+            } else {
+                gateOff(!v, "mematikan deteksi gambar AI") { Store.setNsfwAi(this, v) }
+            }
+            render()
+        }
+        put(cb)
+        put(text(NsfwAi.status(this), 11f))
+        if (android.os.Build.VERSION.SDK_INT < 30) put(text("HP ini di bawah Android 11: tangkapan layar tidak tersedia.", 11f))
+        put(text("Bila status tidak menunjukkan pemindaian setelah beberapa menit, matikan lalu hidupkan lagi layanan Aksesibilitas Penjaga Ketat (izin tangkapan layar baru dibaca saat layanan dimulai ulang).", 11f))
     }
 
     // ---------- Celah pemasangan (saklar terpisah) ----------

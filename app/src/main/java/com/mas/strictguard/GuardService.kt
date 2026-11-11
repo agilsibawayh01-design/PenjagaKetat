@@ -67,6 +67,75 @@ class GuardService : AccessibilityService() {
     private var lastPauseAt = 0L
     private var pausedNow = false
     private var selfGuardNow = false
+
+    // ---- Deteksi gambar AI (tangkapan layar berkala, hanya Android 11+) ----
+    @Volatile private var fgPkg = ""
+    @Volatile private var nsfwBusy = false
+    private val nsfwExec = java.util.concurrent.Executors.newSingleThreadExecutor()
+    private val nsfwRunnable = object : Runnable {
+        override fun run() {
+            try {
+                nsfwTick()
+            } catch (t: Throwable) {
+                // abaikan
+            }
+            handler.postDelayed(this, 1200L)
+        }
+    }
+
+    private fun nsfwTick() {
+        if (android.os.Build.VERSION.SDK_INT < 30) return
+        if (!Store.nsfwAi(this) || selfTesting || backing || nsfwBusy) return
+        val pm = getSystemService(POWER_SERVICE) as android.os.PowerManager
+        if (!pm.isInteractive) return
+        val p = fgPkg
+        if (p.isEmpty() || p == packageName || p == "com.android.systemui") return
+        if (!NsfwAi.ready(this)) return
+        shootAndScore(p)
+    }
+
+    @android.annotation.TargetApi(30)
+    private fun shootAndScore(p: String) {
+        nsfwBusy = true
+        try {
+            takeScreenshot(android.view.Display.DEFAULT_DISPLAY, nsfwExec, object : AccessibilityService.TakeScreenshotCallback {
+                override fun onSuccess(screenshot: AccessibilityService.ScreenshotResult) {
+                    try {
+                        val hb = screenshot.hardwareBuffer
+                        val hw = android.graphics.Bitmap.wrapHardwareBuffer(hb, screenshot.colorSpace)
+                        val soft = hw?.copy(android.graphics.Bitmap.Config.ARGB_8888, false)
+                        hb.close()
+                        if (soft != null) {
+                            val s = NsfwAi.score(this@GuardService, soft)
+                            soft.recycle()
+                            NsfwAi.lastFail = ""
+                            if (s >= NsfwAi.THRESHOLD) handler.post { onNsfwHit(p, s) }
+                        }
+                    } catch (t: Throwable) {
+                        NsfwAi.lastFail = "gagal memproses: " + (t.message ?: t.javaClass.simpleName)
+                    } finally {
+                        nsfwBusy = false
+                    }
+                }
+
+                override fun onFailure(errorCode: Int) {
+                    NsfwAi.lastFail = "tangkapan layar gagal (kode $errorCode)"
+                    nsfwBusy = false
+                }
+            })
+        } catch (t: Throwable) {
+            NsfwAi.lastFail = "tangkapan layar tidak tersedia: " + (t.message ?: t.javaClass.simpleName)
+            nsfwBusy = false
+        }
+    }
+
+    private fun onNsfwHit(p: String, score: Float) {
+        if (backing) return
+        NsfwAi.hits++
+        Store.log(this, "Gambar AI: skor " + String.format("%.2f", score) + " di " + p)
+        startBlock("nsfw", p)
+    }
+
     private var blockedBrowsers: Set<String> = emptySet()
     private var browsersAt = 0L
 
@@ -183,6 +252,8 @@ class GuardService : AccessibilityService() {
         }
         BrowserScanner.scan(this)
         TgClients.sweep(this)
+        handler.removeCallbacks(nsfwRunnable)
+        handler.postDelayed(nsfwRunnable, 3000L)
         TimeGuard.check(this)
         if (Store.strictRaw(this)) WatchdogService.start(this)
         handler.removeCallbacks(timerRunnable)
@@ -199,6 +270,7 @@ class GuardService : AccessibilityService() {
         }
         watcher = null
         handler.removeCallbacks(timerRunnable)
+        handler.removeCallbacks(nsfwRunnable)
         handler.removeCallbacks(limitRunnable)
         TimerNotifier.cancel(this)
         super.onDestroy()
@@ -258,6 +330,7 @@ class GuardService : AccessibilityService() {
         // sebagai layar aplikasi, supaya input keyword di PenjagaKetat tidak memicu blokir.
         if (selfTesting) return
         if (pkg == packageName || pkg in Config.IGNORED || pkg in inputMethodPackages) return
+        fgPkg = pkg
         if (pkg == BrowserStoreGuard.STORE) {
             BrowserStoreGuard.seenCount++
             BrowserStoreGuard.seenInfo = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date()) +
@@ -901,7 +974,7 @@ class GuardService : AccessibilityService() {
         if (backing || now - lastBlockAt < 800L) return
         lastBlockAt = now
         backing = true
-        if (mode == "screen_keyword" || mode == "content" || mode == "typed") showShield()
+        if (mode == "screen_keyword" || mode == "content" || mode == "typed" || mode == "nsfw") showShield()
         blockWord = if (mode == "typed" || mode == "content" || mode == "screen_keyword") hitWord else ""
         blockText = hitText
         blockWhere = hitWhere
@@ -919,6 +992,7 @@ class GuardService : AccessibilityService() {
         try {
             val bad = when (mode) {
                 "typed" -> n < maxSteps(mode)
+                "nsfw" -> false
                 "protect_click" -> n == 0 || (n < maxSteps(mode) && stillBad("protect", pkg))
                 else -> stillBad(mode, pkg)
             }
