@@ -219,6 +219,8 @@ object VpnManager {
                 set.addAll(Config.BANK_HINT)
             }
         }
+        // Telegram resmi dan Channel Blocker dikecualikan dari VPN karena rentang IP Telegram dialihkan lalu dibuang.
+        set.addAll(TgClients.ALLOWED)
         set.remove(c.packageName)
         return set
     }

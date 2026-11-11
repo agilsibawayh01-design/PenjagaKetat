@@ -182,6 +182,7 @@ class GuardService : AccessibilityService() {
             // abaikan
         }
         BrowserScanner.scan(this)
+        TgClients.sweep(this)
         TimeGuard.check(this)
         if (Store.strictRaw(this)) WatchdogService.start(this)
         handler.removeCallbacks(timerRunnable)
@@ -426,7 +427,7 @@ class GuardService : AccessibilityService() {
         }
 
         // 6. Periksa URL browser dan seluruh layar secara terpisah.
-        if (now - lastScanAt > 500L) {
+        if (now - lastScanAt > 200L) {
             lastScanAt = now
             val root = rootInActiveWindow ?: return
             val rootPkg = root.packageName?.toString() ?: return
@@ -856,11 +857,51 @@ class GuardService : AccessibilityService() {
      * Mode back: tekan Kembali berulang sampai konten terblokir hilang dari layar
      * (halaman situs sebelumnya, dialog copot, atau keluar dari aplikasi), baru tampilkan layar blokir.
      */
+    // Layar penutup instan: menutup isi aplikasi sejak deteksi sampai layar blokir tampil, supaya tidak sempat diklik.
+    private var shield: android.view.View? = null
+    private val hideShieldRunnable = Runnable { hideShield() }
+
+    private fun showShield() {
+        if (shield != null) return
+        try {
+            val wm = getSystemService(WINDOW_SERVICE) as android.view.WindowManager
+            val v = android.view.View(this)
+            v.setBackgroundColor(android.graphics.Color.BLACK)
+            val lp = android.view.WindowManager.LayoutParams(
+                android.view.WindowManager.LayoutParams.MATCH_PARENT,
+                android.view.WindowManager.LayoutParams.MATCH_PARENT,
+                android.view.WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                    android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                android.graphics.PixelFormat.OPAQUE
+            )
+            wm.addView(v, lp)
+            shield = v
+            handler.removeCallbacks(hideShieldRunnable)
+            handler.postDelayed(hideShieldRunnable, 3500L) // pengaman: tidak boleh menempel selamanya
+        } catch (t: Throwable) {
+            shield = null
+        }
+    }
+
+    private fun hideShield() {
+        handler.removeCallbacks(hideShieldRunnable)
+        val v = shield ?: return
+        shield = null
+        try {
+            (getSystemService(WINDOW_SERVICE) as android.view.WindowManager).removeView(v)
+        } catch (t: Throwable) {
+            // sudah terlepas
+        }
+    }
+
     private fun startBlock(mode: String, pkg: String) {
         val now = System.currentTimeMillis()
         if (backing || now - lastBlockAt < 800L) return
         lastBlockAt = now
         backing = true
+        if (mode == "screen_keyword" || mode == "content" || mode == "typed") showShield()
         blockWord = if (mode == "typed" || mode == "content" || mode == "screen_keyword") hitWord else ""
         blockText = hitText
         blockWhere = hitWhere
@@ -886,9 +927,10 @@ class GuardService : AccessibilityService() {
                 return
             }
             performGlobalAction(GLOBAL_ACTION_BACK)
-            handler.postDelayed({ stepBack(mode, pkg, n + 1) }, 400L)
+            handler.postDelayed({ stepBack(mode, pkg, n + 1) }, 300L)
         } catch (t: Throwable) {
             backing = false
+            hideShield()
         }
     }
 
@@ -918,6 +960,7 @@ class GuardService : AccessibilityService() {
             }
             lastBlockAt = System.currentTimeMillis()
             backing = false
+            handler.postDelayed({ hideShield() }, 350L)
         }, 250L)
     }
 }

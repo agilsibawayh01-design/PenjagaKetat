@@ -16,7 +16,12 @@ object BrowserStoreGuard {
     private val DEFAULT_NAMES = listOf(
         "firefox", "brave", "opera", "microsoft edge", "duckduckgo", "kiwi browser", "vivaldi",
         "uc browser", "via browser", "tor browser", "samsung internet", "puffin", "dolphin",
-        "ecosia", "aloha", "yandex browser", "mi browser", "bromite", "fennec", "waterfox"
+        "ecosia", "aloha", "yandex browser", "mi browser", "bromite", "fennec", "waterfox",
+        // Klien Telegram pihak ketiga (API Telegram) yang bisa menembus penjaga Telegram resmi.
+        "telegram x", "nekogram", "nekox", "plus messenger", "telegraph", "graph messenger", "turrit",
+        "exteragram", "forkgram", "nicegram", "ayugram", "colibri", "kotatogram", "unigram",
+        "telegram lite", "cherrygram", "swiftgram", "vidogram", "mytelegram", "telegram fork",
+        "messenger for telegram", "client for telegram", "unofficial telegram", "tg client"
     )
     private val GENERIC = listOf("browser", "peramban")
     private val INSTALL = setOf("instal", "install", "pasang")

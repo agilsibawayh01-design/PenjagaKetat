@@ -40,6 +40,13 @@ class VpnTunnel(
                 .setMetered(false)
                 .allowFamily(OsConstants.AF_INET)
                 .allowFamily(OsConstants.AF_INET6)
+            // Semua aplikasi selain Telegram resmi tidak bisa menjangkau server Telegram (paket dibuang di readLoop).
+            for ((ip, len) in TgClients.NET_V4) {
+                try { b.addRoute(ip, len) } catch (e: Exception) { /* lewati */ }
+            }
+            for ((ip, len) in TgClients.NET_V6) {
+                try { b.addRoute(ip, len) } catch (e: Exception) { /* lewati */ }
+            }
             var skipped = 0
             for (p in excluded) {
                 if (p == svc.packageName) continue

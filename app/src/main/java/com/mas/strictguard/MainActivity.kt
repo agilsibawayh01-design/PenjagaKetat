@@ -2998,6 +2998,11 @@ class MainActivity : Activity() {
                     limitMin = (limit.text.toString().toIntOrNull() ?: 0).coerceIn(0, 1440)
                 )
                 if (strict) np = ProfileStore.mergeStrict(p, np)
+                // Menyimpan profil yang berisi aturan otomatis mengaktifkannya (lebih ketat, tidak pernah mematikan).
+                if (!np.enabled && (np.apps.isNotEmpty() || np.keywords.isNotEmpty() || np.domains.isNotEmpty())) {
+                    np = np.copy(enabled = true)
+                    toast("Profil ${np.name} diaktifkan")
+                }
                 ProfileStore.replace(this, np)
                 render()
             }

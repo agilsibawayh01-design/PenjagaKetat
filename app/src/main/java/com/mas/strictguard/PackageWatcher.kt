@@ -24,6 +24,7 @@ class PackageWatcher : BroadcastReceiver() {
     }
 
     private fun onAdded(c: Context, pkg: String) {
+        TgClients.sweep(c)
         val pm = c.packageManager
         if (pm.getLaunchIntentForPackage(pkg) == null) return
         val label = try {
