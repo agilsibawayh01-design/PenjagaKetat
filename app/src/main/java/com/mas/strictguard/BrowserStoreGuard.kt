@@ -21,7 +21,18 @@ object BrowserStoreGuard {
         "telegram x", "nekogram", "nekox", "plus messenger", "telegraph", "graph messenger", "turrit",
         "exteragram", "forkgram", "nicegram", "ayugram", "colibri", "kotatogram", "unigram",
         "telegram lite", "cherrygram", "swiftgram", "vidogram", "mytelegram", "telegram fork",
-        "messenger for telegram", "client for telegram", "unofficial telegram", "tg client"
+        "messenger for telegram", "client for telegram", "unofficial telegram", "tg client",
+        // Dari hasil pencarian Play Store "telegram": klien/modifikasi
+        "mistygram", "velogram", "ime: telegram", "octogram", "novagram", "bestgram", "vidogram lite",
+        "aka lite", "aka messenger", "pretel", "televip", "telegraf", "colibri", "blindgram", "hudgram",
+        "ofgram", "nullgram", "telejet", "telegram ganda", "telegram tanpa vpn", "telegram without vpn",
+        "telegram web3", "telegram ai messenger", "tg ai", "beeper",
+        // Pengunduh, pemutar, dan penyimpanan Telegram (bisa membuka channel dan video)
+        "telegram media saver", "unduh video telegram", "pengunduh media tg", "telegram downloader",
+        "downloader untuk telegram", "downloader for telegram", "kinodrop", "telepro", "tdownloader",
+        "tdrive", "televault", "televideo", "telegram player", "player for telegram", "echogram",
+        "tvgram", "telev:", "velatv", "telegram untuk tv", "telegram storage", "drive for telegram",
+        "telegram sync", "telegram widget", "lastseen on telegram", "telegram groups directory"
     )
     private val GENERIC = listOf("browser", "peramban")
     private val INSTALL = setOf("instal", "install", "pasang")
