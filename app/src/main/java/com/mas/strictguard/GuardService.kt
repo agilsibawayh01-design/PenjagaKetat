@@ -268,6 +268,7 @@ class GuardService : AccessibilityService() {
     // ---- Deteksi gambar AI (tangkapan layar berkala, hanya Android 11+) ----
     @Volatile private var fgPkg = ""
     @Volatile private var nsfwBusy = false
+    @Volatile private var nsfwBusySince = 0L
     private val nsfwExec = java.util.concurrent.Executors.newSingleThreadExecutor()
     private val nsfwRunnable = object : Runnable {
         override fun run() {
@@ -282,6 +283,7 @@ class GuardService : AccessibilityService() {
 
     private fun nsfwTick() {
         if (android.os.Build.VERSION.SDK_INT < 30) return
+        if (nsfwBusy && System.currentTimeMillis() - nsfwBusySince > 5000L) nsfwBusy = false // pengaman bila panggilan balik tidak pernah datang
         if (!Store.nsfwAi(this) || selfTesting || backing || nsfwBusy) return
         val pm = getSystemService(POWER_SERVICE) as android.os.PowerManager
         if (!pm.isInteractive) return
@@ -294,6 +296,7 @@ class GuardService : AccessibilityService() {
     @android.annotation.TargetApi(30)
     private fun shootAndScore(p: String) {
         nsfwBusy = true
+        nsfwBusySince = System.currentTimeMillis()
         try {
             takeScreenshot(android.view.Display.DEFAULT_DISPLAY, nsfwExec, object : AccessibilityService.TakeScreenshotCallback {
                 override fun onSuccess(screenshot: AccessibilityService.ScreenshotResult) {

@@ -13,7 +13,7 @@ import java.nio.ByteOrder
  * Label model: "nonnude" dan "nude". Skor = peluang label "nude".
  */
 object NsfwAi {
-    const val THRESHOLD = 0.75f
+    const val THRESHOLD = 0.5f
 
     @Volatile var loadError = ""
     @Volatile var scans = 0
@@ -70,16 +70,25 @@ object NsfwAi {
     fun score(c: Context, bmp: Bitmap): Float {
         if (!ready(c)) return 0f
         var best = run(bmp)
+        // Potongan persegi sepanjang layar (tumpang tindih setengah), supaya video/gambar yang
+        // kecil atau terbelah di tengah layar tetap terbaca utuh dan tidak gepeng.
+        val w = bmp.width
         val h = bmp.height
-        if (h >= 2) {
-            val half = h / 2
-            try {
-                val top = Bitmap.createBitmap(bmp, 0, 0, bmp.width, half)
-                best = Math.max(best, run(top))
-                val bottom = Bitmap.createBitmap(bmp, 0, half, bmp.width, h - half)
-                best = Math.max(best, run(bottom))
-            } catch (t: Throwable) {
-                // lewati potongan
+        val side = Math.min(w, h)
+        if (side > 0 && h > side) {
+            val step = Math.max(side / 2, 1)
+            var y = 0
+            while (true) {
+                val yy = Math.min(y, h - side)
+                try {
+                    val t = Bitmap.createBitmap(bmp, 0, yy, side, side)
+                    best = Math.max(best, run(t))
+                    if (t !== bmp) t.recycle()
+                } catch (t: Throwable) {
+                    // lewati potongan
+                }
+                if (yy >= h - side) break
+                y += step
             }
         }
         scans++
