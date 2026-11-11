@@ -68,6 +68,117 @@ class GuardService : AccessibilityService() {
     private var pausedNow = false
     private var selfGuardNow = false
 
+    // ---- Penutup jendela Picture-in-Picture (PiP) setelah gambar tidak pantas terdeteksi ----
+    @Volatile private var pipArmed = false
+    private var pipMiss = 0
+    private var pipCover: android.view.View? = null
+    private val pipRunnable = object : Runnable {
+        override fun run() {
+            var again = false
+            try {
+                again = pipCheck()
+            } catch (t: Throwable) {
+                // abaikan
+            }
+            if (again) handler.postDelayed(this, 400L) else removePipCover()
+        }
+    }
+
+    private fun armPip() {
+        pipArmed = true
+        pipMiss = 0
+        handler.removeCallbacks(pipRunnable)
+        handler.post(pipRunnable)
+    }
+
+    /** true = terus periksa. */
+    private fun pipCheck(): Boolean {
+        if (!pipArmed) return false
+        var pip: android.view.accessibility.AccessibilityWindowInfo? = null
+        try {
+            for (w in windows) {
+                if (w.isInPictureInPictureMode) { pip = w; break }
+            }
+        } catch (t: Throwable) {
+            return false
+        }
+        if (pip == null) {
+            pipMiss++
+            removePipCover()
+            if (pipMiss >= 8) { pipArmed = false; return false }
+            return true
+        }
+        pipMiss = 0
+        val r = android.graphics.Rect()
+        pip.getBoundsInScreen(r)
+        showPipCover(r)
+        tryClosePip(pip)
+        return true
+    }
+
+    private fun tryClosePip(w: android.view.accessibility.AccessibilityWindowInfo) {
+        try {
+            val root = w.root ?: return
+            val q = listOf("close", "tutup", "dismiss", "exit", "keluar")
+            val stack = java.util.ArrayDeque<android.view.accessibility.AccessibilityNodeInfo>()
+            stack.add(root)
+            var n = 0
+            while (stack.isNotEmpty() && n < 60) {
+                val node = stack.removeFirst()
+                n++
+                val d = ((node.contentDescription?.toString() ?: "") + " " + (node.text?.toString() ?: "")).lowercase()
+                if (node.isClickable && q.any { d.contains(it) }) {
+                    node.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)
+                    return
+                }
+                for (i in 0 until node.childCount) node.getChild(i)?.let { stack.add(it) }
+            }
+        } catch (t: Throwable) {
+            // abaikan
+        }
+    }
+
+    private fun showPipCover(r: android.graphics.Rect) {
+        try {
+            val wm = getSystemService(WINDOW_SERVICE) as android.view.WindowManager
+            val pad = 12
+            val lp = android.view.WindowManager.LayoutParams(
+                r.width() + pad * 2,
+                r.height() + pad * 2,
+                android.view.WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                    android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                    android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                android.graphics.PixelFormat.OPAQUE
+            )
+            lp.gravity = android.view.Gravity.TOP or android.view.Gravity.START
+            lp.x = r.left - pad
+            lp.y = r.top - pad
+            val v = pipCover
+            if (v == null) {
+                val nv = android.view.View(this)
+                nv.setBackgroundColor(android.graphics.Color.BLACK)
+                wm.addView(nv, lp)
+                pipCover = nv
+            } else {
+                wm.updateViewLayout(v, lp)
+            }
+        } catch (t: Throwable) {
+            pipCover = null
+        }
+    }
+
+    private fun removePipCover() {
+        val v = pipCover ?: return
+        pipCover = null
+        try {
+            (getSystemService(WINDOW_SERVICE) as android.view.WindowManager).removeView(v)
+        } catch (t: Throwable) {
+            // sudah terlepas
+        }
+    }
+
     // ---- Deteksi gambar AI (tangkapan layar berkala, hanya Android 11+) ----
     @Volatile private var fgPkg = ""
     @Volatile private var nsfwBusy = false
@@ -130,6 +241,7 @@ class GuardService : AccessibilityService() {
     }
 
     private fun onNsfwHit(p: String, score: Float) {
+        armPip()
         if (backing) return
         NsfwAi.hits++
         Store.log(this, "Gambar AI: skor " + String.format("%.2f", score) + " di " + p)
@@ -271,6 +383,8 @@ class GuardService : AccessibilityService() {
         watcher = null
         handler.removeCallbacks(timerRunnable)
         handler.removeCallbacks(nsfwRunnable)
+        handler.removeCallbacks(pipRunnable)
+        removePipCover()
         handler.removeCallbacks(limitRunnable)
         TimerNotifier.cancel(this)
         super.onDestroy()
