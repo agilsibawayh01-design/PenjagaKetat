@@ -80,13 +80,61 @@ class GuardService : AccessibilityService() {
             } catch (t: Throwable) {
                 // abaikan
             }
-            if (again) handler.postDelayed(this, 400L) else removePipCover()
+            if (again) handler.postDelayed(this, 400L) else { removePipCover(); restoreMedia() }
+        }
+    }
+
+    private var savedVol = -1
+    private var focusReq: android.media.AudioFocusRequest? = null
+
+    /** Menghentikan suara media: tekan tombol jeda media, ambil fokus audio, dan bisukan volume media selama PiP ada. */
+    private fun silenceMedia() {
+        try {
+            val am = getSystemService(AUDIO_SERVICE) as android.media.AudioManager
+            if (savedVol < 0) {
+                val cur = am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
+                if (cur > 0) {
+                    savedVol = cur
+                    am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, 0, 0)
+                }
+            }
+            am.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_MEDIA_PAUSE))
+            am.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_MEDIA_PAUSE))
+            if (focusReq == null && android.os.Build.VERSION.SDK_INT >= 26) {
+                val fr = android.media.AudioFocusRequest.Builder(android.media.AudioManager.AUDIOFOCUS_GAIN)
+                    .setAudioAttributes(android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_MEDIA).build())
+                    .setOnAudioFocusChangeListener { }
+                    .build()
+                am.requestAudioFocus(fr)
+                focusReq = fr
+            }
+        } catch (t: Throwable) {
+            // abaikan
+        }
+    }
+
+    private fun restoreMedia() {
+        try {
+            val am = getSystemService(AUDIO_SERVICE) as android.media.AudioManager
+            if (savedVol >= 0) {
+                if (am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) == 0) {
+                    am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, savedVol, 0)
+                }
+                savedVol = -1
+            }
+            val fr = focusReq
+            if (fr != null && android.os.Build.VERSION.SDK_INT >= 26) am.abandonAudioFocusRequest(fr)
+            focusReq = null
+        } catch (t: Throwable) {
+            // abaikan
         }
     }
 
     private fun armPip() {
         pipArmed = true
         pipMiss = 0
+        pipTaps = 0
+        pipTapAt = 0L
         handler.removeCallbacks(pipRunnable)
         handler.post(pipRunnable)
     }
@@ -105,10 +153,11 @@ class GuardService : AccessibilityService() {
         if (pip == null) {
             pipMiss++
             removePipCover()
-            if (pipMiss >= 8) { pipArmed = false; return false }
+            if (pipMiss >= 8) { pipArmed = false; restoreMedia(); return false }
             return true
         }
         pipMiss = 0
+        silenceMedia()
         val r = android.graphics.Rect()
         pip.getBoundsInScreen(r)
         showPipCover(r)
@@ -116,10 +165,36 @@ class GuardService : AccessibilityService() {
         return true
     }
 
+    private var pipTapAt = 0L
+    private var pipTaps = 0
+
+    private fun pipGesture(r: android.graphics.Rect, drag: Boolean) {
+        try {
+            val path = android.graphics.Path()
+            val cx = r.exactCenterX()
+            val cy = r.exactCenterY()
+            path.moveTo(cx, cy)
+            val dur: Long
+            if (drag) {
+                path.lineTo(cx, resources.displayMetrics.heightPixels - 5f)
+                dur = 500L
+            } else {
+                dur = 50L
+            }
+            val g = android.accessibilityservice.GestureDescription.Builder()
+                .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(path, 0L, dur))
+                .build()
+            dispatchGesture(g, null, null)
+        } catch (t: Throwable) {
+            // abaikan
+        }
+    }
+
     private fun tryClosePip(w: android.view.accessibility.AccessibilityWindowInfo) {
+        var clicked = false
         try {
             val root = w.root ?: return
-            val q = listOf("close", "tutup", "dismiss", "exit", "keluar")
+            val q = listOf("close", "tutup", "dismiss", "exit", "keluar", "pause", "jeda", "berhenti", "stop")
             val stack = java.util.ArrayDeque<android.view.accessibility.AccessibilityNodeInfo>()
             stack.add(root)
             var n = 0
@@ -129,13 +204,24 @@ class GuardService : AccessibilityService() {
                 val d = ((node.contentDescription?.toString() ?: "") + " " + (node.text?.toString() ?: "")).lowercase()
                 if (node.isClickable && q.any { d.contains(it) }) {
                     node.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)
-                    return
+                    clicked = true
+                    break
                 }
                 for (i in 0 until node.childCount) node.getChild(i)?.let { stack.add(it) }
             }
         } catch (t: Throwable) {
             // abaikan
         }
+        if (clicked) return
+        // Tombol tutup tidak terlihat sampai PiP disentuh: sentuh dulu agar kontrol muncul, lalu coba lagi.
+        // Bila tetap tidak ketemu, seret PiP ke tepi bawah layar (cara Android menutup PiP).
+        val now = System.currentTimeMillis()
+        if (now - pipTapAt < 2500L) return
+        pipTapAt = now
+        val r = android.graphics.Rect()
+        w.getBoundsInScreen(r)
+        pipTaps++
+        pipGesture(r, pipTaps % 3 == 0)
     }
 
     private fun showPipCover(r: android.graphics.Rect) {
@@ -385,6 +471,7 @@ class GuardService : AccessibilityService() {
         handler.removeCallbacks(nsfwRunnable)
         handler.removeCallbacks(pipRunnable)
         removePipCover()
+        restoreMedia()
         handler.removeCallbacks(limitRunnable)
         TimerNotifier.cancel(this)
         super.onDestroy()
