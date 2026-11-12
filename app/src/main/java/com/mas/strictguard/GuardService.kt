@@ -69,8 +69,7 @@ class GuardService : AccessibilityService() {
     private var selfGuardNow = false
 
     // ---- Penutup jendela Picture-in-Picture (PiP) setelah gambar tidak pantas terdeteksi ----
-    @Volatile private var pipArmed = false
-    private var pipMiss = 0
+    @Volatile private var pipUntil = 0L
     private var pipCover: android.view.View? = null
     private val pipRunnable = object : Runnable {
         override fun run() {
@@ -80,7 +79,7 @@ class GuardService : AccessibilityService() {
             } catch (t: Throwable) {
                 // abaikan
             }
-            if (again) handler.postDelayed(this, 400L) else { removePipCover(); restoreMedia() }
+            if (again) handler.postDelayed(this, 500L) else { removePipCover(); restoreMedia() }
         }
     }
 
@@ -130,33 +129,41 @@ class GuardService : AccessibilityService() {
         }
     }
 
+    /** Aktifkan penutup PiP selama 10 menit sejak pemindaian yang positif terakhir. */
     private fun armPip() {
-        pipArmed = true
-        pipMiss = 0
-        pipTaps = 0
-        pipTapAt = 0L
-        handler.removeCallbacks(pipRunnable)
-        handler.post(pipRunnable)
+        val wasOff = System.currentTimeMillis() > pipUntil
+        pipUntil = System.currentTimeMillis() + 10 * 60_000L
+        if (wasOff) {
+            pipTaps = 0
+            pipTapAt = 0L
+            handler.removeCallbacks(pipRunnable)
+            handler.post(pipRunnable)
+        }
+    }
+
+    private fun findPip(): android.view.accessibility.AccessibilityWindowInfo? {
+        return try {
+            windows.firstOrNull { it.isInPictureInPictureMode }
+        } catch (t: Throwable) {
+            null
+        }
+    }
+
+    /** Paket pemilik jendela PiP (mis. YouTube/Telegram/pemutar video), bila ada. */
+    private fun pipOwnerPkg(): String? = try {
+        findPip()?.root?.packageName?.toString()
+    } catch (t: Throwable) {
+        null
     }
 
     /** true = terus periksa. */
     private fun pipCheck(): Boolean {
-        if (!pipArmed) return false
-        var pip: android.view.accessibility.AccessibilityWindowInfo? = null
-        try {
-            for (w in windows) {
-                if (w.isInPictureInPictureMode) { pip = w; break }
-            }
-        } catch (t: Throwable) {
-            return false
-        }
+        if (System.currentTimeMillis() > pipUntil) return false
+        val pip = findPip()
         if (pip == null) {
-            pipMiss++
             removePipCover()
-            if (pipMiss >= 8) { pipArmed = false; restoreMedia(); return false }
             return true
         }
-        pipMiss = 0
         silenceMedia()
         val r = android.graphics.Rect()
         pip.getBoundsInScreen(r)
@@ -168,18 +175,23 @@ class GuardService : AccessibilityService() {
     private var pipTapAt = 0L
     private var pipTaps = 0
 
-    private fun pipGesture(r: android.graphics.Rect, drag: Boolean) {
+    private fun pipGesture(r: android.graphics.Rect, kind: Int) {
         try {
             val path = android.graphics.Path()
             val cx = r.exactCenterX()
             val cy = r.exactCenterY()
             path.moveTo(cx, cy)
             val dur: Long
-            if (drag) {
-                path.lineTo(cx, resources.displayMetrics.heightPixels - 5f)
-                dur = 500L
-            } else {
-                dur = 50L
+            when (kind) {
+                1 -> { // lempar cepat ke bawah
+                    path.lineTo(cx, resources.displayMetrics.heightPixels - 5f)
+                    dur = 120L
+                }
+                2 -> { // seret pelan ke target tutup di bawah
+                    path.lineTo(cx, resources.displayMetrics.heightPixels - 5f)
+                    dur = 700L
+                }
+                else -> dur = 50L // ketuk agar tombol X muncul
             }
             val g = android.accessibilityservice.GestureDescription.Builder()
                 .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(path, 0L, dur))
@@ -190,38 +202,49 @@ class GuardService : AccessibilityService() {
         }
     }
 
-    private fun tryClosePip(w: android.view.accessibility.AccessibilityWindowInfo) {
-        var clicked = false
+    /** Tombol X/kontrol PiP digambar SystemUI di jendela terpisah, jadi cari di semua jendela yang beririsan dengan PiP. */
+    private fun clickPipButton(pipRect: android.graphics.Rect): Boolean {
+        val q = listOf("close", "tutup", "dismiss", "exit", "keluar", "pause", "jeda", "berhenti", "stop")
         try {
-            val root = w.root ?: return
-            val q = listOf("close", "tutup", "dismiss", "exit", "keluar", "pause", "jeda", "berhenti", "stop")
-            val stack = java.util.ArrayDeque<android.view.accessibility.AccessibilityNodeInfo>()
-            stack.add(root)
-            var n = 0
-            while (stack.isNotEmpty() && n < 60) {
-                val node = stack.removeFirst()
-                n++
-                val d = ((node.contentDescription?.toString() ?: "") + " " + (node.text?.toString() ?: "")).lowercase()
-                if (node.isClickable && q.any { d.contains(it) }) {
-                    node.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)
-                    clicked = true
-                    break
+            for (w in windows) {
+                val wr = android.graphics.Rect()
+                w.getBoundsInScreen(wr)
+                if (!android.graphics.Rect.intersects(wr, pipRect) && !w.isInPictureInPictureMode) continue
+                val root = w.root ?: continue
+                val stack = java.util.ArrayDeque<android.view.accessibility.AccessibilityNodeInfo>()
+                stack.add(root)
+                var n = 0
+                while (stack.isNotEmpty() && n < 80) {
+                    val node = stack.removeFirst()
+                    n++
+                    val d = ((node.contentDescription?.toString() ?: "") + " " + (node.text?.toString() ?: "")).lowercase()
+                    if (node.isClickable && q.any { d.contains(it) }) {
+                        val nr = android.graphics.Rect()
+                        node.getBoundsInScreen(nr)
+                        if (android.graphics.Rect.intersects(nr, pipRect) || w.isInPictureInPictureMode) {
+                            if (node.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)) return true
+                        }
+                    }
+                    for (i in 0 until node.childCount) node.getChild(i)?.let { stack.add(it) }
                 }
-                for (i in 0 until node.childCount) node.getChild(i)?.let { stack.add(it) }
             }
         } catch (t: Throwable) {
             // abaikan
         }
-        if (clicked) return
-        // Tombol tutup tidak terlihat sampai PiP disentuh: sentuh dulu agar kontrol muncul, lalu coba lagi.
-        // Bila tetap tidak ketemu, seret PiP ke tepi bawah layar (cara Android menutup PiP).
-        val now = System.currentTimeMillis()
-        if (now - pipTapAt < 2500L) return
-        pipTapAt = now
+        return false
+    }
+
+    private fun tryClosePip(w: android.view.accessibility.AccessibilityWindowInfo) {
         val r = android.graphics.Rect()
         w.getBoundsInScreen(r)
+        if (clickPipButton(r)) return
+        // Tombol tutup tidak terlihat sampai PiP disentuh: ketuk dulu agar kontrol muncul, lalu coba lagi.
+        // Bila tetap tidak ketemu, lempar PiP ke bawah, lalu seret pelan ke target tutup.
+        val now = System.currentTimeMillis()
+        if (now - pipTapAt < 1800L) return
+        pipTapAt = now
         pipTaps++
-        pipGesture(r, pipTaps % 3 == 0)
+        pipGesture(r, when (pipTaps % 4) { 3 -> 1; 0 -> 2; else -> 0 })
     }
 
     private fun showPipCover(r: android.graphics.Rect) {
@@ -315,12 +338,15 @@ class GuardService : AccessibilityService() {
         performGlobalAction(GLOBAL_ACTION_HOME)
         if (now - nsfwLockScreenAt >= NSFW_LOCK_SCREEN_COOLDOWN_MS) {
             nsfwLockScreenAt = now
+            // Membuka lagi aplikasi yang sedang dikunci juga dihitung sebagai layar blokir muncul (kunci layar 5 menit pada kali ke-5).
+            Strikes.record(this)
+            val locked = Strikes.lockLeftMs(this) > 0L
             handler.postDelayed({
                 try {
                     val remaining = (nsfwLockUntil - System.currentTimeMillis()).coerceAtLeast(0L) / 1000L
                     val intent = Intent(this, BlockActivity::class.java)
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-                        .putExtra("mode", "nsfw")
+                        .putExtra("mode", if (locked) "lock" else "nsfw")
                         .putExtra("pkg", pkg)
                         .putExtra("wordText", "Konten tidak pantas terdeteksi. Aplikasi ini dijeda selama $remaining detik agar kamu punya waktu untuk berhenti.")
                     startActivity(intent)
@@ -405,6 +431,8 @@ class GuardService : AccessibilityService() {
      * Perlu minimal 2 hasil >= ambang dari 3 pemindaian terakhir pada aplikasi yang sama.
      */
     private fun recordNsfwSample(pkg: String, score: Float, src: NsfwSource.Src?) {
+        // Satu sampel positif saja sudah cukup untuk menutup jendela PiP (konfirmasi blokir tetap butuh 2 dari 3).
+        if (score >= NsfwAi.THRESHOLD) armPip()
         if (backing || !Store.nsfwAi(this)) return
         if (nsfwLastPackage != pkg) {
             nsfwSamples.clear()
@@ -430,7 +458,9 @@ class GuardService : AccessibilityService() {
         NsfwAi.hits++
         NsfwAi.hitInfo = "Skor " + String.format("%.2f", score) + " (ambang " + String.format("%.2f", NsfwAi.THRESHOLD) + "), " + NsfwAi.lastWhere + ", aplikasi " + p
         Store.log(this, "Gambar AI: " + NsfwAi.hitInfo)
-        activateNsfwAppLock(p)
+        // Bila gambar berasal dari jendela PiP di layar utama, kunci aplikasi pemilik PiP, bukan peluncur.
+        val owner = pipOwnerPkg()
+        activateNsfwAppLock(if (owner != null && p in lockAllowed()) owner else p)
         // Blokir permanen otomatis per sumber (domain/channel), bukan per aplikasi.
         val src = nsfwHitSrc
         nsfwHitSrc = null
