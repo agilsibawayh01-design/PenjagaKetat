@@ -17,7 +17,7 @@ import java.nio.ByteOrder
  * Label model: drawings, hentai, neutral, porn, sexy. Skor = porn + hentai + setengah sexy.
  */
 object NsfwAi {
-    const val THRESHOLD = 0.5f
+    const val THRESHOLD = 0.7f
 
     @Volatile var loadError = ""
     @Volatile var scans = 0
