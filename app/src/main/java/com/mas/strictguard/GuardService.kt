@@ -275,6 +275,60 @@ class GuardService : AccessibilityService() {
     private val nsfwExec = java.util.concurrent.Executors.newSingleThreadExecutor()
     private val NSFW_SCAN_INTERVAL_MS = 4500L
     private var nsfwLastScanAt = 0L
+
+    // Setelah konten NSFW terdeteksi, aplikasi sumber dikunci sementara.
+    // Menekan Back pada layar blokir tidak boleh langsung mengembalikan video.
+    private val nsfwLockPrefs by lazy {
+        getSharedPreferences("nsfw_session_lock", android.content.Context.MODE_PRIVATE)
+    }
+    @Volatile private var nsfwLockedPackage: String = ""
+    @Volatile private var nsfwLockUntil: Long = 0L
+    @Volatile private var nsfwLockScreenAt: Long = 0L
+    private val NSFW_APP_LOCK_MS = 2 * 60 * 1000L
+    private val NSFW_LOCK_SCREEN_COOLDOWN_MS = 1800L
+
+    private fun activateNsfwAppLock(pkg: String) {
+        val until = System.currentTimeMillis() + NSFW_APP_LOCK_MS
+        nsfwLockedPackage = pkg
+        nsfwLockUntil = until
+        nsfwLockPrefs.edit()
+            .putString("package", pkg)
+            .putLong("until", until)
+            .apply()
+        Store.log(this, "AI NSFW: aplikasi dikunci sementara selama 2 menit: $pkg")
+    }
+
+    /** Menghalangi aplikasi sumber dibuka kembali selama masa jeda setelah deteksi NSFW. */
+    private fun enforceNsfwAppLock(pkg: String): Boolean {
+        if (pkg != nsfwLockedPackage || pkg.isEmpty()) return false
+        val now = System.currentTimeMillis()
+        if (now >= nsfwLockUntil) {
+            nsfwLockedPackage = ""
+            nsfwLockUntil = 0L
+            nsfwLockPrefs.edit().clear().apply()
+            return false
+        }
+
+        // Langsung tinggalkan aplikasi sumber. Jangan tunggu pemindaian AI berikutnya.
+        performGlobalAction(GLOBAL_ACTION_HOME)
+        if (now - nsfwLockScreenAt >= NSFW_LOCK_SCREEN_COOLDOWN_MS) {
+            nsfwLockScreenAt = now
+            handler.postDelayed({
+                try {
+                    val remaining = (nsfwLockUntil - System.currentTimeMillis()).coerceAtLeast(0L) / 1000L
+                    val intent = Intent(this, BlockActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+                        .putExtra("mode", "nsfw")
+                        .putExtra("pkg", pkg)
+                        .putExtra("wordText", "Konten tidak pantas terdeteksi. Aplikasi ini dijeda selama $remaining detik agar kamu punya waktu untuk berhenti.")
+                    startActivity(intent)
+                } catch (_: Throwable) {
+                    // HOME tetap sudah dijalankan sebagai tindakan utama.
+                }
+            }, 180L)
+        }
+        return true
+    }
     private val nsfwRunnable = object : Runnable {
         override fun run() {
             try {
@@ -365,6 +419,7 @@ class GuardService : AccessibilityService() {
         NsfwAi.hits++
         NsfwAi.hitInfo = "Skor " + String.format("%.2f", score) + " (ambang " + String.format("%.2f", NsfwAi.THRESHOLD) + "), " + NsfwAi.lastWhere + ", aplikasi " + p
         Store.log(this, "Gambar AI: " + NsfwAi.hitInfo)
+        activateNsfwAppLock(p)
         startBlock("nsfw", p)
     }
 
@@ -558,12 +613,31 @@ class GuardService : AccessibilityService() {
         protectedNames = names
     }
 
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        try {
+            val until = nsfwLockPrefs.getLong("until", 0L)
+            val pkg = nsfwLockPrefs.getString("package", "") ?: ""
+            if (pkg.isNotEmpty() && until > System.currentTimeMillis()) {
+                nsfwLockedPackage = pkg
+                nsfwLockUntil = until
+            } else {
+                nsfwLockPrefs.edit().clear().apply()
+            }
+        } catch (_: Throwable) {
+            // Pemulihan lock tidak boleh menggagalkan service.
+        }
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
         val pkg = event.packageName?.toString() ?: return
         // Keyboard/IME mengirim event saat pengguna mengetik. Jangan memindai UI keyboard
         // sebagai layar aplikasi, supaya input keyword di PenjagaKetat tidak memicu blokir.
         if (selfTesting) return
+        // Cek latch sebelum filter package. Jika pengguna kembali ke aplikasi yang
+        // memicu deteksi, langsung keluarkan lagi tanpa menunggu screenshot berikutnya.
+        if (enforceNsfwAppLock(pkg)) return
         if (pkg == packageName || pkg in Config.IGNORED || pkg in inputMethodPackages) return
         fgPkg = pkg
         if (pkg == BrowserStoreGuard.STORE) {
