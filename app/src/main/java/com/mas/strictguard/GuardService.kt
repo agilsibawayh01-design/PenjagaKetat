@@ -269,7 +269,12 @@ class GuardService : AccessibilityService() {
     @Volatile private var fgPkg = ""
     @Volatile private var nsfwBusy = false
     @Volatile private var nsfwBusySince = 0L
+    @Volatile private var nsfwLastPackage = ""
+    @Volatile private var nsfwLastBlockAt = 0L
+    private val nsfwSamples = java.util.ArrayDeque<Pair<String, Float>>()
     private val nsfwExec = java.util.concurrent.Executors.newSingleThreadExecutor()
+    private val NSFW_SCAN_INTERVAL_MS = 4500L
+    private var nsfwLastScanAt = 0L
     private val nsfwRunnable = object : Runnable {
         override fun run() {
             try {
@@ -277,19 +282,24 @@ class GuardService : AccessibilityService() {
             } catch (t: Throwable) {
                 // abaikan
             }
-            handler.postDelayed(this, 1200L)
+            handler.postDelayed(this, NSFW_SCAN_INTERVAL_MS)
         }
     }
 
     private fun nsfwTick() {
         if (android.os.Build.VERSION.SDK_INT < 30) return
-        if (nsfwBusy && System.currentTimeMillis() - nsfwBusySince > 5000L) nsfwBusy = false // pengaman bila panggilan balik tidak pernah datang
+        // Jangan lepaskan busy hanya karena timeout: callback lama bisa masih antre di executor
+        // dan menghasilkan screenshot/inferensi bertumpuk yang menguras baterai.
         if (!Store.nsfwAi(this) || selfTesting || backing || nsfwBusy) return
         val pm = getSystemService(POWER_SERVICE) as android.os.PowerManager
         if (!pm.isInteractive) return
         val p = fgPkg
-        if (p.isEmpty() || p == packageName || p == "com.android.systemui") return
+        if (p.isEmpty() || p == packageName || p == "com.android.systemui" ||
+            p in Config.PROTECTED || p in inputMethodPackages) return
+        val now = System.currentTimeMillis()
+        if (now - nsfwLastScanAt < NSFW_SCAN_INTERVAL_MS) return
         if (!NsfwAi.ready(this)) return
+        nsfwLastScanAt = now
         shootAndScore(p)
     }
 
@@ -309,7 +319,7 @@ class GuardService : AccessibilityService() {
                             val s = NsfwAi.score(this@GuardService, soft)
                             soft.recycle()
                             NsfwAi.lastFail = ""
-                            if (s >= NsfwAi.THRESHOLD) handler.post { onNsfwHit(p, s) }
+                            handler.post { recordNsfwSample(p, s) }
                         }
                     } catch (t: Throwable) {
                         NsfwAi.lastFail = "gagal memproses: " + (t.message ?: t.javaClass.simpleName)
@@ -326,6 +336,26 @@ class GuardService : AccessibilityService() {
         } catch (t: Throwable) {
             NsfwAi.lastFail = "tangkapan layar tidak tersedia: " + (t.message ?: t.javaClass.simpleName)
             nsfwBusy = false
+        }
+    }
+
+    /**
+     * Satu screenshot bukan bukti yang cukup untuk memblokir.
+     * Perlu minimal 2 hasil >= ambang dari 3 pemindaian terakhir pada aplikasi yang sama.
+     */
+    private fun recordNsfwSample(pkg: String, score: Float) {
+        if (backing || !Store.nsfwAi(this)) return
+        if (nsfwLastPackage != pkg) {
+            nsfwSamples.clear()
+            nsfwLastPackage = pkg
+        }
+        nsfwSamples.addLast(pkg to score)
+        while (nsfwSamples.size > 3) nsfwSamples.removeFirst()
+        val hits = nsfwSamples.count { it.first == pkg && it.second >= NsfwAi.THRESHOLD }
+        val now = System.currentTimeMillis()
+        if (hits >= 2 && now - nsfwLastBlockAt >= 30000L) {
+            nsfwLastBlockAt = now
+            onNsfwHit(pkg, score)
         }
     }
 

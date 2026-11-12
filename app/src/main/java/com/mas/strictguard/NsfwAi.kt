@@ -122,6 +122,8 @@ object NsfwAi {
     }
     private var pornIdx = 0
     private var hentaiIdx = -1
+    // Label "sexy" sering mencakup foto orang berpakaian normal/renang.
+    // Tidak dipakai sebagai dasar pemblokiran otomatis; hanya porn + hentai.
     private var sexyIdx = -1
     private var inW = 224
     private var inH = 224
@@ -177,16 +179,15 @@ object NsfwAi {
         if (!ready(c)) return 0f
         var best = run(bmp)
         var where = "seluruh layar"
-        // Potongan persegi selebar layar digeser setengah-setengah dari atas ke bawah, supaya gambar
-        // yang kecil atau terbelah di tengah layar tetap terbaca utuh dan tidak gepeng.
+        // Maksimal tiga crop (atas, tengah, bawah), bukan loop setengah-geser
+        // yang dapat menjalankan 4-6 inferensi untuk setiap screenshot.
         val w = bmp.width
         val h = bmp.height
         val side = Math.min(w, h)
         if (side > 0 && h > side) {
-            val step = Math.max(side / 2, 1)
-            var y = 0
-            while (true) {
-                val yy = Math.min(y, h - side)
+            val maxY = h - side
+            val positions = intArrayOf(0, maxY / 2, maxY).distinct()
+            for (yy in positions) {
                 try {
                     val t = Bitmap.createBitmap(bmp, 0, yy, side, side)
                     val sc = run(t)
@@ -196,10 +197,8 @@ object NsfwAi {
                     }
                     if (t !== bmp) t.recycle()
                 } catch (t: Throwable) {
-                    // lewati potongan
+                    // lewati potongan yang gagal
                 }
-                if (yy >= h - side) break
-                y += step
             }
         }
         lastWhere = where
@@ -243,10 +242,10 @@ object NsfwAi {
             i.run(input, out)
             for (k in 0 until outN) p[k] = (out[0][k].toInt() and 0xFF) / 255f
         }
-        // Skor: porno + hentai penuh, "sexy" (setengah telanjang/pakaian dalam) dihitung setengah.
+        // Pemblokiran otomatis hanya berdasarkan kelas eksplisit.
+        // Kelas "sexy" sengaja tidak dijumlahkan karena sering memicu false positive.
         var sc = p[pornIdx]
         if (hentaiIdx >= 0) sc += p[hentaiIdx]
-        if (sexyIdx >= 0) sc += 0.5f * p[sexyIdx]
         return sc.coerceIn(0f, 1f)
     }
 
