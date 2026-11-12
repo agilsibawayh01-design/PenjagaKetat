@@ -11,7 +11,7 @@ class NotifGuard : NotificationListenerService() {
         if (pkg == packageName) return
         try {
             if (Store.pausedNow(this)) return
-            val apps = Store.apps(this)
+            val apps = if (Store.featureOn(this, "apps")) Store.apps(this) else emptySet()
             if (pkg in apps && !Store.appCfg(this, pkg).notif) return
             val verdict = BlockEngine.check(this, pkg, System.currentTimeMillis(), apps, ProfileStore.load(this))
             if (verdict != null) cancelNotification(s.key)

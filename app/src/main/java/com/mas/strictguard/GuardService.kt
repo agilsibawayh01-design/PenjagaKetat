@@ -475,7 +475,7 @@ class GuardService : AccessibilityService() {
                                 handler.postDelayed(this, 2000L)
                                 return
                             }
-                            val configured = Store.domains(this@GuardService) + Focus.activeDomains(this@GuardService) +
+                            val configured = (if (Store.featureOn(this@GuardService, "sites")) Store.domains(this@GuardService) else emptySet()) + Focus.activeDomains(this@GuardService) +
                                 ProfileStore.load(this@GuardService).filter { ProfileEngine.isActive(this@GuardService, it) }.flatMap { it.domains }
                             val domain = SiteTracker.currentDomain(rootInActiveWindow, configured)
                             if (domain != null) {
@@ -622,14 +622,15 @@ class GuardService : AccessibilityService() {
             browsersAt = now
             blockedBrowsers = if (Store.blockOtherBrowsers(this)) Store.unsupportedBrowsers(this) else emptySet()
         }
-        apps = Store.apps(this)
+        apps = if (Store.featureOn(this, "apps")) Store.apps(this) else emptySet()
         profiles = ProfileStore.load(this)
         val active = profiles.filter { ProfileEngine.isActive(this, it) }
         val profileKeywords = active.flatMap { it.keywords }.toSet()
         val categoryKeywords = Categories.keywords(this)
-        urlKeywords = Store.urlKeywords(this) + categoryKeywords + profileKeywords
-        screenKeywords = Store.screenKeywords(this) + categoryKeywords + profileKeywords
-        domains = Store.domains(this) + Categories.domains(this) + Focus.activeDomains(this) + active.flatMap { it.domains }
+        val kwOn = Store.featureOn(this, "keywords")
+        urlKeywords = (if (kwOn) Store.urlKeywords(this) else emptySet()) + categoryKeywords + profileKeywords
+        screenKeywords = (if (kwOn) Store.screenKeywords(this) else emptySet()) + categoryKeywords + profileKeywords
+        domains = (if (Store.featureOn(this, "sites")) Store.domains(this) else emptySet()) + Categories.domains(this) + Focus.activeDomains(this) + active.flatMap { it.domains }
         browsers = Config.BROWSERS + Store.extraBrowsers(this)
         inputMethodPackages = try {
             val imm = getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager
@@ -692,6 +693,12 @@ class GuardService : AccessibilityService() {
         // membaca kembali kolom input PenjagaKetat dan memblokirnya sendiri.
         val foregroundRoot = rootInActiveWindow
         if (foregroundRoot?.packageName?.toString() == packageName) return
+
+        // Kunci layar sementara (5 kali layar blokir dalam 10 menit): semua aplikasi ditutup, kecuali telepon dan layar utama.
+        if (Strikes.lockLeftMs(this) > 0L && pkg !in lockAllowed()) {
+            startBlock("lock", pkg)
+            return
+        }
 
         // Jam rawan: Play Store / Pengaturan ditutup total bila saklarnya aktif.
         if (pkg in nightLocked && !selfTesting) {
@@ -870,7 +877,7 @@ class GuardService : AccessibilityService() {
 
     /** Menutup bagian sosmed yang dinyalakan. Dipakai juga saat Mode Off (jeda). */
     private fun checkFeeds(pkg: String, now: Long) {
-        val feats = Features.activeFor(this, pkg)
+        val feats = if (Store.featureOn(this, "social")) Features.activeFor(this, pkg) else emptyList()
         if (feats.isNotEmpty() && now - lastFeedAt > 600L) {
             lastFeedAt = now
             val root = rootInActiveWindow ?: return
@@ -1147,7 +1154,7 @@ class GuardService : AccessibilityService() {
     }
 
     private fun checkWebsiteRule(pkg: String, root: AccessibilityNodeInfo?, now: Long): Boolean {
-        val configured = Store.domains(this) + Focus.activeDomains(this) + ProfileStore.load(this).filter { ProfileEngine.isActive(this, it) }.flatMap { it.domains }
+        val configured = (if (Store.featureOn(this, "sites")) Store.domains(this) else emptySet()) + Focus.activeDomains(this) + ProfileStore.load(this).filter { ProfileEngine.isActive(this, it) }.flatMap { it.domains }
         val domain = SiteTracker.currentDomain(root, configured) ?: run {
             SiteTracker.stop(this)
             return false
@@ -1266,6 +1273,25 @@ class GuardService : AccessibilityService() {
         }
     }
 
+    private var lockAllowedCache: Set<String>? = null
+
+    private fun lockAllowed(): Set<String> {
+        lockAllowedCache?.let { return it }
+        val s = mutableSetOf(
+            "com.samsung.android.dialer", "com.google.android.dialer", "com.android.dialer", "com.android.phone",
+            "com.samsung.android.incallui", "com.android.incallui", "com.android.server.telecom", "com.android.emergency",
+            "com.sec.android.app.launcher", "com.google.android.apps.nexuslauncher", "com.android.launcher3"
+        )
+        try {
+            val i = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+            packageManager.queryIntentActivities(i, 0).forEach { s.add(it.activityInfo.packageName) }
+        } catch (t: Throwable) {
+            // pakai daftar bawaan
+        }
+        lockAllowedCache = s
+        return s
+    }
+
     private fun maxSteps(mode: String): Int = when (mode) {
         "typed" -> 2
         "protect_click" -> 2
@@ -1319,12 +1345,15 @@ class GuardService : AccessibilityService() {
         }
     }
 
-    private fun startBlock(mode: String, pkg: String) {
+    private fun startBlock(mode0: String, pkg: String) {
         val now = System.currentTimeMillis()
         if (backing || now - lastBlockAt < 800L) return
+        var mode = mode0
+        // Layar blokir berulang dalam waktu dekat = ada upaya akses konten terlarang: kunci layar sementara.
+        if (mode0 != "lock" && mode0 != "pause" && Strikes.record(this) >= Strikes.LOCK_AT) mode = "lock"
         lastBlockAt = now
         backing = true
-        if (mode == "screen_keyword" || mode == "content" || mode == "typed" || mode == "nsfw") showShield()
+        if (mode == "screen_keyword" || mode == "content" || mode == "typed" || mode == "nsfw" || mode == "lock") showShield()
         blockWord = if (mode == "typed" || mode == "content" || mode == "screen_keyword") hitWord else ""
         blockText = hitText
         blockWhere = hitWhere
@@ -1342,7 +1371,7 @@ class GuardService : AccessibilityService() {
         try {
             val bad = when (mode) {
                 "typed" -> n < maxSteps(mode)
-                "nsfw" -> false
+                "nsfw", "lock" -> false
                 "protect_click" -> n == 0 || (n < maxSteps(mode) && stillBad("protect", pkg))
                 else -> stillBad(mode, pkg)
             }

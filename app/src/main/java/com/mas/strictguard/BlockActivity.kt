@@ -150,6 +150,10 @@ class BlockActivity : Activity() {
             "protect" -> info.text = if (Store.strictOn(this)) "Mode Ketat aktif.\nHalaman ini tidak bisa dibuka."
                 else "Penjaga Ketat dilindungi.\nUntuk mencopot atau menonaktifkannya, buka aplikasi lalu Setelan > Uninstall Penjaga Ketat dan lewati gerbangnya."
             "content" -> info.text = "Konten ini diblokir oleh Penjaga Ketat." + causeLine(hitWord, hitText, hitWhere)
+            "lock" -> {
+                title.text = "Layar terkunci"
+                showLockCountdown()
+            }
             "channel" -> info.text = "Channel ini diblokir permanen karena berulang kali menampilkan gambar tidak pantas.\nTelegram tetap bisa dipakai untuk channel lain."
             "nsfw" -> info.text = "Gambar tidak pantas terdeteksi di layar.\nLayar ditutup oleh pendeteksi gambar AI.\n\n" + NsfwAi.hitInfo
             "screen_keyword" -> info.text = "Konten ini diblokir karena mengandung kata kunci layar yang dibatasi." + causeLine(hitWord, hitText, hitWhere)
@@ -229,7 +233,23 @@ class BlockActivity : Activity() {
             else -> startTimerFlow(mode)
         }
         why.text = if (mode == "pause") appLabel() else reasonText(mode)
+        if (mode != "lock" && mode != "pause") {
+            val warn = Strikes.warning(this)
+            if (warn.isNotEmpty()) info.text = info.text.toString() + "\n\n" + warn
+        }
         setupEmergency(mode)
+    }
+
+    private fun showLockCountdown() {
+        val left = Strikes.lockLeftMs(this)
+        if (left <= 0L) {
+            info.text = "Kunci layar selesai. Fokus pada tujuanmu."
+            return
+        }
+        val sec = left / 1000L
+        info.text = "Layar blokir muncul " + Strikes.LOCK_AT + " kali dalam " + (Strikes.WINDOW_MS / 60000L) + " menit: ada upaya membuka konten terlarang.\n\nLayar terkunci. Sisa " +
+            String.format("%d:%02d", sec / 60L, sec % 60L) + "."
+        info.postDelayed({ showLockCountdown() }, 1000L)
     }
 
     private fun appLabel(): String =
@@ -266,6 +286,7 @@ class BlockActivity : Activity() {
             "screen_keyword" -> "Kata kunci layar"
             "nsfw" -> "Gambar tidak pantas"
             "channel" -> "Channel diblokir"
+            "lock" -> "Terlalu sering memicu layar blokir"
             "protect", "protect_click" -> "Perlindungan Penjaga Ketat"
             "browser" -> "Browser tidak didukung"
             else -> "Aturan Penjaga Ketat"

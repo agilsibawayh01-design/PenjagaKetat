@@ -260,6 +260,13 @@ object Store {
         val n = Rules.normalizeDomain(d)
         if (n.isNotEmpty()) putSet(c, "domains", domains(c) + n)
     }
+    /**
+     * Saklar per fitur blokir ("apps", "keywords", "sites", "social"). Bawaan: aktif. Mematikan satu fitur
+     * hanya lewat gerbang yang sama dengan keluar dari Mode Ketat (lihat layar Mode Ketat).
+     */
+    fun featureOn(c: Context, key: String): Boolean = sp(c).getBoolean("fsw_$key", true)
+    fun setFeatureOn(c: Context, key: String, v: Boolean) { sp(c).edit().putBoolean("fsw_$key", v).commit() }
+
     /** Channel Telegram yang diblokir (nama channel, huruf kecil). Diisi blokir otomatis NSFW atau manual. */
     fun channels(c: Context): Set<String> = getSet(c, "channels")
     fun addChannel(c: Context, name: String) {

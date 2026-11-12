@@ -24,8 +24,8 @@ class DnsBlocklist(private val ctx: Context) {
         loadedAt = now
         try {
             val act = ProfileStore.load(ctx).filter { ProfileEngine.isActive(ctx, it) }
-            domains = Store.domains(ctx) + Categories.domains(ctx) + Focus.activeDomains(ctx) + act.flatMap { it.domains }
-            keywords = Store.keywords(ctx) + Categories.keywords(ctx) + act.flatMap { it.keywords }
+            domains = (if (Store.featureOn(ctx, "sites")) Store.domains(ctx) else emptySet()) + Categories.domains(ctx) + Focus.activeDomains(ctx) + act.flatMap { it.domains }
+            keywords = (if (Store.featureOn(ctx, "keywords")) Store.keywords(ctx) else emptySet()) + Categories.keywords(ctx) + act.flatMap { it.keywords }
             blockDoh = Store.vpnDoh(ctx)
             paused = Store.pausedNow(ctx)
         } catch (t: Throwable) {
