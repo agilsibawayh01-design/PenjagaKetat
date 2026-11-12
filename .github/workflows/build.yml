@@ -36,6 +36,34 @@ jobs:
           done
           test "$ok" = 1
 
+      # Model deteksi gambar AI utama (ONNX, lisensi MIT) diunduh saat build, tidak disimpan di repo.
+      # Dicoba berurutan: m (akurasi 98,06%), s, xs. Bila semua gagal, APK tetap dibuat dan memakai model TFLite cadangan.
+      - name: Unduh model deteksi gambar AI
+        continue-on-error: true
+        run: |
+          mkdir -p app/src/main/assets/nsfw
+          got=""
+          for v in m s xs; do
+            for path in "onnx/image-safety-classifier-$v.onnx" "image-safety-classifier-$v.onnx"; do
+              url="https://huggingface.co/OwenElliott/image-safety-classifier-$v/resolve/main/$path"
+              echo "Mencoba $url"
+              if curl -fL --retry 3 --retry-delay 5 -o /tmp/safety.onnx "$url"; then
+                size=$(stat -c %s /tmp/safety.onnx)
+                if [ "$size" -gt 5000000 ]; then
+                  mv /tmp/safety.onnx app/src/main/assets/nsfw/safety.onnx
+                  got="$v ($size byte)"
+                  break 2
+                fi
+              fi
+            done
+          done
+          if [ -n "$got" ]; then
+            echo "MODEL_AI=$got" >> "$GITHUB_STEP_SUMMARY"
+            echo "Model AI terpasang: $got"
+          else
+            echo "MODEL_AI=gagal diunduh (memakai model cadangan)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       # Tes unit (logika murni). Gagal tes TIDAK menghentikan pembuatan APK; lihat artifact laporan tes.
       - name: Unit tests
         id: tests
