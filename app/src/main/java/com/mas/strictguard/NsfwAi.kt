@@ -9,8 +9,8 @@ import java.nio.ByteOrder
 
 /**
  * Pendeteksi gambar tidak pantas (nude) yang berjalan sepenuhnya di HP, tanpa internet.
- * Model: NSFW.tflite dari proyek nsfw-detector-android (lisensi MIT, salinannya ada di assets/nsfw).
- * Label model: "nonnude" dan "nude". Skor = peluang label "nude".
+ * Model: NSFW.tflite dari proyek GantMan/nsfw_model, MobileNetV2 (lisensi MIT, salinannya ada di assets/nsfw).
+ * Label model: drawings, hentai, neutral, porn, sexy. Skor = porn + hentai + setengah sexy.
  */
 object NsfwAi {
     const val THRESHOLD = 0.5f
@@ -25,7 +25,9 @@ object NsfwAi {
     @Volatile var hitInfo = ""
 
     private var interp: Interpreter? = null
-    private var nudeIdx = 1
+    private var pornIdx = 0
+    private var hentaiIdx = -1
+    private var sexyIdx = -1
     private var inW = 224
     private var inH = 224
     private var inType = DataType.UINT8
@@ -42,9 +44,11 @@ object NsfwAi {
             bb.put(bytes)
             bb.rewind()
             val labels = c.assets.open("nsfw/dict.txt").bufferedReader().readLines().map { it.trim() }.filter { it.isNotEmpty() }
-            nudeIdx = labels.indexOf("nude")
-            if (nudeIdx < 0) {
-                loadError = "label 'nude' tidak ada di dict.txt"
+            pornIdx = labels.indexOf("porn")
+            hentaiIdx = labels.indexOf("hentai")
+            sexyIdx = labels.indexOf("sexy")
+            if (pornIdx < 0) {
+                loadError = "label 'porn' tidak ada di dict.txt"
                 return false
             }
             val i = Interpreter(bb, Interpreter.Options().setNumThreads(2))
@@ -56,7 +60,7 @@ object NsfwAi {
             val ot = i.getOutputTensor(0)
             outType = ot.dataType()
             outN = ot.shape().last()
-            if (nudeIdx >= outN) {
+            if (outN != labels.size) {
                 loadError = "keluaran model tidak cocok dengan label"
                 return false
             }
@@ -118,9 +122,9 @@ object NsfwAi {
             val g = (p shr 8) and 0xFF
             val b = p and 0xFF
             if (inType == DataType.FLOAT32) {
-                input.putFloat((r - 127.5f) / 127.5f)
-                input.putFloat((g - 127.5f) / 127.5f)
-                input.putFloat((b - 127.5f) / 127.5f)
+                input.putFloat(r / 255f)
+                input.putFloat(g / 255f)
+                input.putFloat(b / 255f)
             } else {
                 input.put(r.toByte())
                 input.put(g.toByte())
@@ -128,15 +132,21 @@ object NsfwAi {
             }
         }
         input.rewind()
-        return if (outType == DataType.FLOAT32) {
+        val p = FloatArray(outN)
+        if (outType == DataType.FLOAT32) {
             val out = Array(1) { FloatArray(outN) }
             i.run(input, out)
-            out[0][nudeIdx].coerceIn(0f, 1f)
+            for (k in 0 until outN) p[k] = out[0][k]
         } else {
             val out = Array(1) { ByteArray(outN) }
             i.run(input, out)
-            (out[0][nudeIdx].toInt() and 0xFF) / 255f
+            for (k in 0 until outN) p[k] = (out[0][k].toInt() and 0xFF) / 255f
         }
+        // Skor: porno + hentai penuh, "sexy" (setengah telanjang/pakaian dalam) dihitung setengah.
+        var sc = p[pornIdx]
+        if (hentaiIdx >= 0) sc += p[hentaiIdx]
+        if (sexyIdx >= 0) sc += 0.5f * p[sexyIdx]
+        return sc.coerceIn(0f, 1f)
     }
 
     fun status(c: Context): String {
