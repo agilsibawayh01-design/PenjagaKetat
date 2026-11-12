@@ -333,7 +333,8 @@ class GuardService : AccessibilityService() {
         armPip()
         if (backing) return
         NsfwAi.hits++
-        Store.log(this, "Gambar AI: skor " + String.format("%.2f", score) + " di " + p)
+        NsfwAi.hitInfo = "Skor " + String.format("%.2f", score) + " (ambang " + String.format("%.2f", NsfwAi.THRESHOLD) + "), " + NsfwAi.lastWhere + ", aplikasi " + p
+        Store.log(this, "Gambar AI: " + NsfwAi.hitInfo)
         startBlock("nsfw", p)
     }
 

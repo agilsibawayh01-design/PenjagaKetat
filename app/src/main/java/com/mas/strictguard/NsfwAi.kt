@@ -21,6 +21,8 @@ object NsfwAi {
     @Volatile var lastScore = -1f
     @Volatile var lastAt = 0L
     @Volatile var lastFail = ""
+    @Volatile var lastWhere = ""
+    @Volatile var hitInfo = ""
 
     private var interp: Interpreter? = null
     private var nudeIdx = 1
@@ -70,8 +72,9 @@ object NsfwAi {
     fun score(c: Context, bmp: Bitmap): Float {
         if (!ready(c)) return 0f
         var best = run(bmp)
-        // Potongan persegi sepanjang layar (tumpang tindih setengah), supaya video/gambar yang
-        // kecil atau terbelah di tengah layar tetap terbaca utuh dan tidak gepeng.
+        var where = "seluruh layar"
+        // Potongan persegi selebar layar digeser setengah-setengah dari atas ke bawah, supaya gambar
+        // yang kecil atau terbelah di tengah layar tetap terbaca utuh dan tidak gepeng.
         val w = bmp.width
         val h = bmp.height
         val side = Math.min(w, h)
@@ -82,7 +85,11 @@ object NsfwAi {
                 val yy = Math.min(y, h - side)
                 try {
                     val t = Bitmap.createBitmap(bmp, 0, yy, side, side)
-                    best = Math.max(best, run(t))
+                    val sc = run(t)
+                    if (sc > best) {
+                        best = sc
+                        where = "potongan di ketinggian " + (yy * 100 / h) + "% layar"
+                    }
                     if (t !== bmp) t.recycle()
                 } catch (t: Throwable) {
                     // lewati potongan
@@ -91,6 +98,7 @@ object NsfwAi {
                 y += step
             }
         }
+        lastWhere = where
         scans++
         lastScore = best
         lastAt = System.currentTimeMillis()
