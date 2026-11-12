@@ -4002,6 +4002,29 @@ class MainActivity : Activity() {
             siteCol.addView(row)
         }
         put(if (siteCol.childCount == 0) text("Belum ada.", 12f, false, C_SUB) else scrollBox(220, siteCol))
+
+        // Channel Telegram yang diblokir (terisi otomatis oleh pendeteksi gambar AI). Melepas blokir lewat gerbang yang sama.
+        header("Channel Telegram")
+        put(text("Channel diblokir otomatis bila 5 kali terdeteksi gambar tidak pantas dalam 10 menit. Aplikasi Telegram lain tetap bisa dipakai.", 12f, false, C_SUB))
+        val chCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        for (ch in Store.channels(this).sorted()) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            row.addView(text(ch, 13f).apply {
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            row.addView(text("✕", 15f, true, C_BAD).apply {
+                setPadding(dp(10), dp(8), dp(6), dp(8))
+                setOnClickListener {
+                    if (strict) toast("Mode Ketat aktif: tidak bisa menghapus")
+                    else gateOff(true, "menghapus channel $ch") { Store.removeChannel(this@MainActivity, ch) }
+                }
+            })
+            chCol.addView(row)
+        }
+        put(if (chCol.childCount == 0) text("Belum ada.", 12f, false, C_SUB) else scrollBox(160, chCol))
     }
 
     private fun editSiteDialog(domain: String, strict: Boolean, isNew: Boolean = false) {

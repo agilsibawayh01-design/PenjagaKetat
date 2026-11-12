@@ -260,6 +260,15 @@ object Store {
         val n = Rules.normalizeDomain(d)
         if (n.isNotEmpty()) putSet(c, "domains", domains(c) + n)
     }
+    /** Channel Telegram yang diblokir (nama channel, huruf kecil). Diisi blokir otomatis NSFW atau manual. */
+    fun channels(c: Context): Set<String> = getSet(c, "channels")
+    fun addChannel(c: Context, name: String) {
+        val n = name.trim().replace(Regex("\\s+"), " ").lowercase()
+        if (n.length >= 2) putSet(c, "channels", channels(c) + n)
+    }
+    fun removeChannel(c: Context, name: String) {
+        putSet(c, "channels", channels(c) - name)
+    }
     fun removeDomain(c: Context, d: String) {
         putSet(c, "domains", domains(c) - d)
         LocationRules.set(c, "site_" + Rules.normalizeDomain(d), null)

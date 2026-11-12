@@ -271,7 +271,9 @@ class GuardService : AccessibilityService() {
     @Volatile private var nsfwBusySince = 0L
     @Volatile private var nsfwLastPackage = ""
     @Volatile private var nsfwLastBlockAt = 0L
-    private val nsfwSamples = java.util.ArrayDeque<Pair<String, Float>>()
+    private val nsfwSamples = java.util.ArrayDeque<Triple<String, Float, NsfwSource.Src?>>()
+    @Volatile private var nsfwHitSrc: NsfwSource.Src? = null
+    private var lastChannelCheckAt = 0L
     private val nsfwExec = java.util.concurrent.Executors.newSingleThreadExecutor()
     private val NSFW_SCAN_INTERVAL_MS = 4500L
     private var nsfwLastScanAt = 0L
@@ -354,11 +356,16 @@ class GuardService : AccessibilityService() {
         if (now - nsfwLastScanAt < NSFW_SCAN_INTERVAL_MS) return
         if (!NsfwAi.ready(this)) return
         nsfwLastScanAt = now
-        shootAndScore(p)
+        val src = try {
+            NsfwSource.identify(rootInActiveWindow, p, browsers, resources.displayMetrics.heightPixels)
+        } catch (t: Throwable) {
+            null
+        }
+        shootAndScore(p, src)
     }
 
     @android.annotation.TargetApi(30)
-    private fun shootAndScore(p: String) {
+    private fun shootAndScore(p: String, src: NsfwSource.Src?) {
         nsfwBusy = true
         nsfwBusySince = System.currentTimeMillis()
         try {
@@ -373,7 +380,7 @@ class GuardService : AccessibilityService() {
                             val s = NsfwAi.score(this@GuardService, soft)
                             soft.recycle()
                             NsfwAi.lastFail = ""
-                            handler.post { recordNsfwSample(p, s) }
+                            handler.post { recordNsfwSample(p, s, src) }
                         }
                     } catch (t: Throwable) {
                         NsfwAi.lastFail = "gagal memproses: " + (t.message ?: t.javaClass.simpleName)
@@ -397,18 +404,22 @@ class GuardService : AccessibilityService() {
      * Satu screenshot bukan bukti yang cukup untuk memblokir.
      * Perlu minimal 2 hasil >= ambang dari 3 pemindaian terakhir pada aplikasi yang sama.
      */
-    private fun recordNsfwSample(pkg: String, score: Float) {
+    private fun recordNsfwSample(pkg: String, score: Float, src: NsfwSource.Src?) {
         if (backing || !Store.nsfwAi(this)) return
         if (nsfwLastPackage != pkg) {
             nsfwSamples.clear()
             nsfwLastPackage = pkg
         }
-        nsfwSamples.addLast(pkg to score)
+        nsfwSamples.addLast(Triple(pkg, score, src))
         while (nsfwSamples.size > 3) nsfwSamples.removeFirst()
-        val hits = nsfwSamples.count { it.first == pkg && it.second >= NsfwAi.THRESHOLD }
+        val hitList = nsfwSamples.filter { it.first == pkg && it.second >= NsfwAi.THRESHOLD }
+        val hits = hitList.size
         val now = System.currentTimeMillis()
         if (hits >= 2 && now - nsfwLastBlockAt >= 30000L) {
             nsfwLastBlockAt = now
+            // Sumber hanya dipakai untuk blokir permanen bila SEMUA sampel yang positif menunjuk sumber yang sama.
+            val first = hitList.first().third
+            nsfwHitSrc = if (first != null && hitList.all { it.third?.key == first.key }) first else null
             onNsfwHit(pkg, score)
         }
     }
@@ -420,6 +431,20 @@ class GuardService : AccessibilityService() {
         NsfwAi.hitInfo = "Skor " + String.format("%.2f", score) + " (ambang " + String.format("%.2f", NsfwAi.THRESHOLD) + "), " + NsfwAi.lastWhere + ", aplikasi " + p
         Store.log(this, "Gambar AI: " + NsfwAi.hitInfo)
         activateNsfwAppLock(p)
+        // Blokir permanen otomatis per sumber (domain/channel), bukan per aplikasi.
+        val src = nsfwHitSrc
+        nsfwHitSrc = null
+        if (src != null) {
+            try {
+                val note = NsfwAutoBlock.record(this, src)
+                if (note != null) {
+                    Store.log(this, "AI NSFW: $note")
+                    NsfwAi.hitInfo += "\n\nOtomatis: $note"
+                }
+            } catch (t: Throwable) {
+                // jangan ganggu blokir utama
+            }
+        }
         startBlock("nsfw", p)
     }
 
@@ -723,6 +748,15 @@ class GuardService : AccessibilityService() {
             return
         }
         if (BlockEngine.hasLimit(this, pkg, apps, profiles)) scheduleLimitCheck(pkg)
+
+        // 1a. Channel Telegram yang diblokir (otomatis/manual): keluar dari channel itu saja, aplikasi Telegram tetap bisa dipakai.
+        if (pkg in NsfwSource.TG_PACKAGES && now - lastChannelCheckAt > 400L) {
+            lastChannelCheckAt = now
+            if (channelBlockedNow(foregroundRoot, pkg)) {
+                startBlock("channel", pkg)
+                return
+            }
+        }
 
         // 1b. Jeda napas + niat sebelum aplikasi tertentu dibuka (hanya gesekan, tidak memblokir).
         if (pkg in pauseAppsNow && now > Store.pauseOkUntil(this, pkg) && now - lastPauseAt > 2500L) {
@@ -1213,12 +1247,20 @@ class GuardService : AccessibilityService() {
     }
 
     /** True bila layar masih menampilkan hal yang harus ditutup, sesuai jenis blokir. */
+    private fun channelBlockedNow(root: AccessibilityNodeInfo?, pkg: String): Boolean {
+        val list = Store.channels(this)
+        if (list.isEmpty() || root == null) return false
+        val s = NsfwSource.identify(root, pkg, browsers, resources.displayMetrics.heightPixels) ?: return false
+        return s.kind == "c" && s.name.trim().lowercase() in list
+    }
+
     private fun stillBad(mode: String, pkg: String): Boolean {
         val root = rootInActiveWindow ?: return false
         val cur = root.packageName?.toString() ?: return false
         return when (mode) {
             "content" -> cur != packageName && cur in browsers && browserHasBlocked(root)
             "screen_keyword" -> cur != packageName && screenHasBlocked(root)
+            "channel" -> cur == pkg && channelBlockedNow(root, pkg)
             "protect" -> isSettingsLike(cur) && (if (strictNow) showsProtected(root) else showsOwnPage(root))
             else -> cur == pkg
         }
@@ -1228,6 +1270,7 @@ class GuardService : AccessibilityService() {
         "typed" -> 2
         "protect_click" -> 2
         "content" -> 6
+        "channel" -> 3
         "screen_keyword" -> 6
         "protect" -> 5
         else -> 4

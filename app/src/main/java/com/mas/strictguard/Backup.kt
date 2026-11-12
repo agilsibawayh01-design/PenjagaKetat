@@ -23,11 +23,11 @@ object Backup {
     private val SET_KEYS = setOf(
         "apps", "browsers", "domains", "keywords", "keywords_url", "keywords_screen",
         "keywords_builtin_disabled", "newapps", "prot", "vpn_excl", "store_names",
-        "focus_ba", "focus_bs", "focus_bc", "focus_aa", "focus_as", "pause_apps"
+        "focus_ba", "focus_bs", "focus_bc", "focus_aa", "focus_as", "pause_apps", "channels"
     )
 
     /** Himpunan yang aman digabung (union) saat Mode Ketat aktif: menambah = memperketat. */
-    private val TIGHTEN_SETS = setOf("apps", "browsers", "domains", "keywords", "keywords_url", "keywords_screen", "prot", "store_names", "focus_ba", "focus_bs", "focus_bc", "pause_apps")
+    private val TIGHTEN_SETS = setOf("apps", "browsers", "domains", "keywords", "keywords_url", "keywords_screen", "prot", "store_names", "focus_ba", "focus_bs", "focus_bc", "pause_apps", "channels")
 
     private val SCALAR_KEYS = setOf(
         "auto_new", "block_browsers", "motivation", "reels", "shorts",
