@@ -530,6 +530,19 @@ class GuardService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        // Pulihkan status lock NSFW yang masih berlaku setelah AccessibilityService aktif kembali.
+        try {
+            val until = nsfwLockPrefs.getLong("until", 0L)
+            val pkg = nsfwLockPrefs.getString("package", "") ?: ""
+            if (pkg.isNotEmpty() && until > System.currentTimeMillis()) {
+                nsfwLockedPackage = pkg
+                nsfwLockUntil = until
+            } else {
+                nsfwLockPrefs.edit().clear().apply()
+            }
+        } catch (_: Throwable) {
+            // Pemulihan lock tidak boleh menggagalkan service.
+        }
         instance = this
         Store.seed(this)
         try {
@@ -613,21 +626,6 @@ class GuardService : AccessibilityService() {
         protectedNames = names
     }
 
-    override fun onServiceConnected() {
-        super.onServiceConnected()
-        try {
-            val until = nsfwLockPrefs.getLong("until", 0L)
-            val pkg = nsfwLockPrefs.getString("package", "") ?: ""
-            if (pkg.isNotEmpty() && until > System.currentTimeMillis()) {
-                nsfwLockedPackage = pkg
-                nsfwLockUntil = until
-            } else {
-                nsfwLockPrefs.edit().clear().apply()
-            }
-        } catch (_: Throwable) {
-            // Pemulihan lock tidak boleh menggagalkan service.
-        }
-    }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
