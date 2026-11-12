@@ -1037,6 +1037,37 @@ class MainActivity : Activity() {
         startActivity(i)
     }
 
+    /** Saklar per fitur blokir. Mati = fitur itu tidak memblokir. Tidak bisa dimatikan saat Mode Ketat aktif; setelah Mode Ketat mati, wajib lewat gerbang yang sama dengan keluar Mode Ketat. */
+    private fun renderFeatureSwitches(strict: Boolean) {
+        header("Saklar per fitur")
+        put(text("Matikan satu fitur saja tanpa mematikan Mode Ketat. Menyalakan langsung. Saat Mode Ketat aktif, saklar tidak bisa dimatikan: nonaktifkan Mode Ketat dulu, lalu matikan saklar lewat gerbang (waktu tunggu, teks acak, atau kode teman) yang sama.", 12f, false, C_SUB))
+        val items = listOf(
+            Triple("apps", "Blokir aplikasi", "Daftar aplikasi diblokir (termasuk notifikasinya)"),
+            Triple("keywords", "Kata kunci", "Kata kunci layar dan URL"),
+            Triple("sites", "Situs", "Daftar situs dan VPN DNS untuk situs itu"),
+            Triple("social", "Bagian sosmed", "Reels, Shorts, Cerita, dan sejenisnya")
+        )
+        for ((key, label, hint) in items) {
+            val cb = CheckBox(this)
+            cb.text = label + " — " + hint
+            cb.isChecked = Store.featureOn(this, key)
+            cb.setOnClickListener {
+                val v = cb.isChecked
+                if (v) {
+                    Store.setFeatureOn(this, key, true)
+                    render()
+                } else if (strict) {
+                    cb.isChecked = true
+                    toast("Mode Ketat aktif: tidak bisa dimatikan")
+                } else {
+                    cb.isChecked = true
+                    textGate("mematikan fitur $label", { Store.setFeatureOn(this, key, false); render() }, { render() })
+                }
+            }
+            put(cb)
+        }
+    }
+
     private fun renderStrictStatus(acc: Boolean, adm: Boolean) {
         header("Status")
         status(acc, "Aksesibilitas Penjaga Ketat aktif")
@@ -1159,6 +1190,7 @@ class MainActivity : Activity() {
     private fun renderStrict(strict: Boolean, ready: Boolean) {
         val raw = Store.strictRaw(this)
         renderModeSwitch()
+        renderFeatureSwitches(strict)
         header("Metode penonaktifan")
         put(text(
             if (raw) "Metode di bawah berlaku untuk keluar dari Mode Ketat dan terkunci selama Mode Ketat aktif."
