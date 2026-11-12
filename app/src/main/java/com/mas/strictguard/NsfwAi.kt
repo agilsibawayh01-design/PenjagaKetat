@@ -2,6 +2,10 @@ package com.mas.strictguard
 
 import android.content.Context
 import android.graphics.Bitmap
+import ai.onnxruntime.OnnxTensor
+import ai.onnxruntime.OrtEnvironment
+import ai.onnxruntime.OrtSession
+import ai.onnxruntime.TensorInfo
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
 import java.nio.ByteBuffer
@@ -25,6 +29,97 @@ object NsfwAi {
     @Volatile var hitInfo = ""
 
     private var interp: Interpreter? = null
+
+    // Mesin utama: model ONNX "image-safety-classifier" (kelas: NSFL, NSFW, SFW). Bila tidak ada di APK,
+    // dipakai model TFLite cadangan (5 kategori).
+    private var onnxTried = false
+    private var ortEnv: OrtEnvironment? = null
+    private var ortSession: OrtSession? = null
+    private var ortIn = "image"
+    private var ortSide = 224
+    @Volatile var backend = ""
+    @Volatile var onnxNote = ""
+
+    private fun loadOnnx(c: Context) {
+        onnxTried = true
+        try {
+            val names = c.assets.list("nsfw") ?: emptyArray()
+            if (!names.contains("safety.onnx")) {
+                onnxNote = "model ONNX tidak ikut di APK (pakai model cadangan)"
+                return
+            }
+            val stamp = try {
+                c.packageManager.getPackageInfo(c.packageName, 0).lastUpdateTime
+            } catch (t: Throwable) {
+                0L
+            }
+            val f = java.io.File(c.filesDir, "safety-$stamp.onnx")
+            if (!f.exists() || f.length() < 1_000_000L) {
+                c.filesDir.listFiles()?.forEach { if (it.name.startsWith("safety-")) it.delete() }
+                val tmp = java.io.File(c.filesDir, "safety-tmp.onnx")
+                c.assets.open("nsfw/safety.onnx").use { ins -> tmp.outputStream().use { out -> ins.copyTo(out) } }
+                tmp.renameTo(f)
+            }
+            val env = OrtEnvironment.getEnvironment()
+            val opts = OrtSession.SessionOptions()
+            opts.setIntraOpNumThreads(2)
+            val sess = env.createSession(f.absolutePath, opts)
+            ortIn = sess.inputNames.iterator().next()
+            val ti = sess.inputInfo[ortIn]?.info as? TensorInfo
+            val sh = ti?.shape
+            if (sh != null && sh.size == 4 && sh[2] > 0) ortSide = sh[2].toInt()
+            ortEnv = env
+            ortSession = sess
+            backend = "ONNX (NSFW/NSFL/SFW)"
+        } catch (t: Throwable) {
+            onnxNote = "ONNX gagal: " + (t.message ?: t.javaClass.simpleName)
+        }
+    }
+
+    private fun runOrt(src: Bitmap): Float {
+        val env = ortEnv ?: return 0f
+        val sess = ortSession ?: return 0f
+        val sd = ortSide
+        val scaled = Bitmap.createScaledBitmap(src, sd, sd, true)
+        val px = IntArray(sd * sd)
+        scaled.getPixels(px, 0, sd, 0, 0, sd, sd)
+        if (scaled !== src) scaled.recycle()
+        val plane = sd * sd
+        val arr = FloatArray(3 * plane)
+        for (i in 0 until plane) {
+            val p = px[i]
+            arr[i] = ((p shr 16) and 0xFF).toFloat()
+            arr[plane + i] = ((p shr 8) and 0xFF).toFloat()
+            arr[2 * plane + i] = (p and 0xFF).toFloat()
+        }
+        val tensor = OnnxTensor.createTensor(env, java.nio.FloatBuffer.wrap(arr), longArrayOf(1, 3, sd.toLong(), sd.toLong()))
+        try {
+            val res = sess.run(mapOf(ortIn to tensor))
+            try {
+                @Suppress("UNCHECKED_CAST")
+                val o = (res.get(0).value as Array<FloatArray>)[0]
+                var sum = 0f
+                var neg = false
+                for (v in o) { sum += v; if (v < 0f) neg = true }
+                val pr = FloatArray(o.size)
+                if (neg || sum > 1.01f || sum < 0.99f) {
+                    var mx = o[0]
+                    for (v in o) if (v > mx) mx = v
+                    var z = 0f
+                    for (k in o.indices) { pr[k] = Math.exp((o[k] - mx).toDouble()).toFloat(); z += pr[k] }
+                    for (k in pr.indices) pr[k] /= z
+                } else {
+                    for (k in o.indices) pr[k] = o[k]
+                }
+                // Urutan kelas: 0 = NSFL, 1 = NSFW, 2 = SFW. Skor = NSFW + NSFL.
+                return if (pr.size >= 3) (pr[0] + pr[1]).coerceIn(0f, 1f) else pr[pr.size - 1].coerceIn(0f, 1f)
+            } finally {
+                res.close()
+            }
+        } finally {
+            tensor.close()
+        }
+    }
     private var pornIdx = 0
     private var hentaiIdx = -1
     private var sexyIdx = -1
@@ -36,7 +131,11 @@ object NsfwAi {
 
     @Synchronized
     fun ready(c: Context): Boolean {
-        if (interp != null) return true
+        if (ortSession != null || interp != null) return true
+        if (!onnxTried) {
+            loadOnnx(c)
+            if (ortSession != null) return true
+        }
         if (loadError.isNotEmpty()) return false
         try {
             val bytes = c.assets.open("nsfw/NSFW.tflite").use { it.readBytes() }
@@ -65,6 +164,7 @@ object NsfwAi {
                 return false
             }
             interp = i
+            backend = "TFLite cadangan"
             return true
         } catch (t: Throwable) {
             loadError = "gagal memuat model: " + (t.message ?: t.javaClass.simpleName)
@@ -111,6 +211,7 @@ object NsfwAi {
 
     @Synchronized
     private fun run(src: Bitmap): Float {
+        if (ortSession != null) return runOrt(src)
         val i = interp ?: return 0f
         val scaled = Bitmap.createScaledBitmap(src, inW, inH, true)
         val px = IntArray(inW * inH)
@@ -150,7 +251,7 @@ object NsfwAi {
     }
 
     fun status(c: Context): String {
-        val eng = if (interp != null) "model siap" else if (loadError.isNotEmpty()) loadError else "model belum dimuat"
+        val eng = if (interp != null || ortSession != null) "model siap: " + backend + (if (onnxNote.isNotEmpty()) " [" + onnxNote + "]" else "") else if (loadError.isNotEmpty()) loadError else "model belum dimuat"
         val last = if (lastScore >= 0f) " • skor terakhir " + String.format("%.2f", lastScore) else ""
         val fail = if (lastFail.isNotEmpty()) " • " + lastFail else ""
         return "$eng • dipindai $scans kali • diblokir $hits kali$last$fail"

@@ -62,6 +62,7 @@ android {
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.19.2")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20231013")
 }
