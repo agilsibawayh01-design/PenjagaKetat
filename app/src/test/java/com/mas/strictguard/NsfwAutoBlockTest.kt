@@ -60,3 +60,23 @@ class NsfwAutoBlockTest {
         assertFalse(NsfwSource.domainAllowed("192.168.1.1"))
     }
 }
+
+class NsfwChatTest {
+    @org.junit.Test
+    fun subtitleKinds() {
+        org.junit.Assert.assertEquals("c", NsfwSource.subtitleKind("12,3K subscribers"))
+        org.junit.Assert.assertEquals("g", NsfwSource.subtitleKind("45 anggota, 3 online"))
+        org.junit.Assert.assertEquals("b", NsfwSource.subtitleKind("bot"))
+        org.junit.Assert.assertEquals("u", NsfwSource.subtitleKind("terakhir dilihat baru saja"))
+        org.junit.Assert.assertNull(NsfwSource.subtitleKind("Pesan"))
+    }
+
+    @org.junit.Test
+    fun allowMatching() {
+        val allow = setOf("kajian dt", "mas pram")
+        org.junit.Assert.assertTrue(NsfwSource.titleAllowed("Grup Kajian DT Surabaya", allow))
+        org.junit.Assert.assertTrue(NsfwSource.titleAllowed("Mas Pram", allow))
+        org.junit.Assert.assertFalse(NsfwSource.titleAllowed("Channel Asing", allow))
+        org.junit.Assert.assertFalse(NsfwSource.titleAllowed("Apa saja", emptySet()))
+    }
+}
