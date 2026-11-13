@@ -1394,6 +1394,7 @@ class GuardService : AccessibilityService() {
         } catch (t: Throwable) {
             null
         } ?: return false
+        if (h.second == "u") return false // chat pribadi (orang) selalu boleh; yang dibatasi grup, channel, bot
         return !NsfwSource.titleAllowed(h.first, Store.tgAllow(this))
     }
 

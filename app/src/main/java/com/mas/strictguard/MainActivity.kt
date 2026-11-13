@@ -4060,7 +4060,7 @@ class MainActivity : Activity() {
 
         // Mode Telegram Kerja: daftar boleh (allowlist).
         header("Telegram Kerja (daftar boleh)")
-        put(text("Bila aktif, Telegram resmi hanya boleh membuka chat (grup, channel, bot, orang) yang namanya ada di daftar ini. Chat lain langsung ditutup, Telegram tetap bisa dipakai. Cocok jika nama chat MENGANDUNG kata yang kamu daftarkan. Selama mode belum dicentang, daftar bebas diisi. Setelah dicentang, menambah daftar dan mematikan mode wajib lewat gerbang dan tidak bisa saat Mode Ketat.", 12f, false, C_SUB))
+        put(text("Bila aktif, Telegram resmi hanya boleh membuka grup, channel, dan bot yang namanya ada di daftar ini; chat pribadi (orang) selalu boleh. Yang lain langsung ditutup, Telegram tetap bisa dipakai. Cocok jika nama chat MENGANDUNG kata yang kamu daftarkan. Selama mode belum dicentang, daftar bebas diisi. Setelah dicentang, menambah daftar dan mematikan mode wajib lewat gerbang dan tidak bisa saat Mode Ketat.", 12f, false, C_SUB))
         val twCb = CheckBox(this)
         twCb.text = "Aktifkan Mode Telegram Kerja"
         twCb.isChecked = Store.tgWorkOn(this)
