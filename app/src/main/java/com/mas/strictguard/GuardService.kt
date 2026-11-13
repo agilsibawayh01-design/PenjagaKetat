@@ -299,6 +299,11 @@ class GuardService : AccessibilityService() {
     private var lastChannelCheckAt = 0L
     private val nsfwExec = java.util.concurrent.Executors.newSingleThreadExecutor()
     private val NSFW_SCAN_INTERVAL_MS = 4500L
+
+    // Interval adaptif: layar yang berkali-kali bersih dipindai lebih jarang (maks 8 dtk); begitu ada skor mencurigakan
+    // atau pindah aplikasi, kembali ke 4,5 dtk.
+    @Volatile private var nsfwIntervalMs = NSFW_SCAN_INTERVAL_MS
+    private var nsfwLowStreak = 0
     private var nsfwLastScanAt = 0L
 
     // Setelah konten NSFW terdeteksi, aplikasi sumber dikunci sementara.
@@ -364,7 +369,7 @@ class GuardService : AccessibilityService() {
             } catch (t: Throwable) {
                 // abaikan
             }
-            handler.postDelayed(this, NSFW_SCAN_INTERVAL_MS)
+            handler.postDelayed(this, nsfwIntervalMs)
         }
     }
 
@@ -379,7 +384,7 @@ class GuardService : AccessibilityService() {
         if (p.isEmpty() || p == packageName || p == "com.android.systemui" ||
             p in Config.PROTECTED || p in inputMethodPackages) return
         val now = System.currentTimeMillis()
-        if (now - nsfwLastScanAt < NSFW_SCAN_INTERVAL_MS) return
+        if (now - nsfwLastScanAt < nsfwIntervalMs - 200L) return
         // Hemat baterai: hanya aplikasi yang bisa memuat media dan aplikasi baru; PiP tetap dipindai.
         if (!NsfwScope.shouldScan(this, p, browsers) { findPip() != null }) return
         if (!NsfwAi.ready(this)) return
@@ -435,6 +440,13 @@ class GuardService : AccessibilityService() {
     private fun recordNsfwSample(pkg: String, score: Float, src: NsfwSource.Src?) {
         // Satu sampel positif saja sudah cukup untuk menutup jendela PiP (konfirmasi blokir tetap butuh 2 dari 3).
         if (score >= NsfwAi.THRESHOLD) armPip()
+        if (nsfwLastPackage != pkg || score >= 0.4f) {
+            nsfwLowStreak = 0
+            nsfwIntervalMs = NSFW_SCAN_INTERVAL_MS
+        } else if (score < 0.2f && ++nsfwLowStreak >= 4) {
+            nsfwIntervalMs = Math.min(nsfwIntervalMs + 1500L, 8000L)
+            nsfwLowStreak = 0
+        }
         if (backing || !Store.nsfwAi(this)) return
         if (nsfwLastPackage != pkg) {
             nsfwSamples.clear()
