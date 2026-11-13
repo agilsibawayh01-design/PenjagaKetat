@@ -22,7 +22,11 @@ object NsfwScope {
         "org.videolan.vlc", "com.mxtech.videoplayer.ad", "com.mxtech.videoplayer.pro",
         "com.android.chrome", "com.sec.android.app.sbrowser", "com.samsung.android.messaging",
         "com.google.android.apps.messaging", "com.sec.android.app.myfiles", "com.android.documentsui",
-        "com.google.android.documentsui", "com.google.android.apps.nbu.files"
+        "com.google.android.documentsui", "com.google.android.apps.nbu.files",
+        // Aplikasi di HP M.A.S yang bisa menampilkan gambar/video dari luar: pencarian, asisten AI, surel, drive, pasar belanja, peta.
+        "com.google.android.googlequicksearchbox", "com.google.android.apps.bard", "com.openai.chatgpt",
+        "com.anthropic.claude", "com.google.android.apps.docs", "com.google.android.gm",
+        "com.shopee.id", "com.tokopedia.tkpd", "com.google.android.apps.maps", "com.sec.android.app.camera"
     )
 
     /** Kategori aplikasi (ApplicationInfo.category) yang memuat media. */
