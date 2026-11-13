@@ -4060,7 +4060,7 @@ class MainActivity : Activity() {
 
         // Mode Telegram Kerja: daftar boleh (allowlist).
         header("Telegram Kerja (daftar boleh)")
-        put(text("Bila aktif, Telegram resmi hanya boleh membuka chat (grup, channel, bot, orang) yang namanya ada di daftar ini. Chat lain langsung ditutup, Telegram tetap bisa dipakai. Cocok jika nama chat MENGANDUNG kata yang kamu daftarkan. Menyalakan langsung; mematikan dan menambah daftar wajib lewat gerbang dan tidak bisa saat Mode Ketat.", 12f, false, C_SUB))
+        put(text("Bila aktif, Telegram resmi hanya boleh membuka chat (grup, channel, bot, orang) yang namanya ada di daftar ini. Chat lain langsung ditutup, Telegram tetap bisa dipakai. Cocok jika nama chat MENGANDUNG kata yang kamu daftarkan. Selama mode belum dicentang, daftar bebas diisi. Setelah dicentang, menambah daftar dan mematikan mode wajib lewat gerbang dan tidak bisa saat Mode Ketat.", 12f, false, C_SUB))
         val twCb = CheckBox(this)
         twCb.text = "Aktifkan Mode Telegram Kerja"
         twCb.isChecked = Store.tgWorkOn(this)
@@ -4078,11 +4078,27 @@ class MainActivity : Activity() {
             }
         }
         put(twCb)
-        put(button("Tambah chat yang boleh") {
-            if (strict) toast("Mode Ketat aktif: tidak bisa menambah daftar boleh")
-            else textGate("menambah chat yang boleh dibuka", {
-                askName("Nama chat (boleh sebagian nama)", "") { Store.addTgAllow(this, it); render() }
-            }, { render() })
+        // Selama mode belum dicentang, menambah daftar tidak melonggarkan apa pun: bebas, tanpa gerbang dan tanpa batas waktu.
+        put(button(if (Store.tgWorkOn(this)) "Pilih dari Telegram (10 menit)" else "Pilih dari Telegram") {
+            val on = Store.tgWorkOn(this)
+            val start = {
+                val tg = NsfwSource.TG_PACKAGES.firstNotNullOfOrNull { packageManager.getLaunchIntentForPackage(it) }
+                if (tg == null) toast("Telegram tidak ditemukan")
+                else {
+                    Store.setTgPickUntil(this, if (on) System.currentTimeMillis() + 10 * 60_000L else Long.MAX_VALUE / 2)
+                    toast("Buka chat kerja, lalu tekan tombol ＋ Boleh di bawah layar. Tekan Selesai bila sudah.")
+                    startActivity(tg)
+                }
+            }
+            if (!on) start()
+            else if (strict) toast("Mode Ketat aktif: tidak bisa menambah daftar boleh")
+            else textGate("menambah chat yang boleh dibuka", { start() }, { render() })
+        })
+        put(button("Tambah chat dengan mengetik nama") {
+            val add = { askName("Nama chat (boleh sebagian nama)", "") { Store.addTgAllow(this, it); render() } }
+            if (!Store.tgWorkOn(this)) add()
+            else if (strict) toast("Mode Ketat aktif: tidak bisa menambah daftar boleh")
+            else textGate("menambah chat yang boleh dibuka", { add() }, { render() })
         })
         val awCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         for (nm in Store.tgAllow(this).sorted()) {

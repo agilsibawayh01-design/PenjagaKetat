@@ -71,6 +71,9 @@ class GuardService : AccessibilityService() {
     // ---- Penutup jendela Picture-in-Picture (PiP) setelah gambar tidak pantas terdeteksi ----
     @Volatile private var pipUntil = 0L
     private var pipCover: android.view.View? = null
+    private var pickBar: android.view.View? = null
+    private var pickLabel: android.widget.Button? = null
+    private var pickTitle: String = ""
     private val pipRunnable = object : Runnable {
         override fun run() {
             var again = false
@@ -275,6 +278,69 @@ class GuardService : AccessibilityService() {
             }
         } catch (t: Throwable) {
             pipCover = null
+        }
+    }
+
+    private fun hidePickBar() {
+        val v = pickBar ?: return
+        pickBar = null
+        pickLabel = null
+        try {
+            (getSystemService(WINDOW_SERVICE) as android.view.WindowManager).removeView(v)
+        } catch (t: Throwable) {
+            // sudah terlepas
+        }
+    }
+
+    /** Mode pilih: tombol melayang di dalam Telegram untuk menambah chat yang sedang terbuka ke daftar boleh. */
+    private fun showPickBar(title: String) {
+        pickTitle = title
+        val short = if (title.length > 28) title.take(27) + "…" else title
+        val lbl = pickLabel
+        if (pickBar != null && lbl != null) {
+            lbl.text = "＋ Boleh: $short"
+            return
+        }
+        try {
+            val wm = getSystemService(WINDOW_SERVICE) as android.view.WindowManager
+            val row = android.widget.LinearLayout(this)
+            row.orientation = android.widget.LinearLayout.HORIZONTAL
+            row.setBackgroundColor(android.graphics.Color.parseColor("#E61B2230"))
+            row.setPadding(16, 10, 16, 10)
+            val add = android.widget.Button(this)
+            add.text = "＋ Boleh: $short"
+            add.isAllCaps = false
+            add.setOnClickListener {
+                if ((Store.strictOn(this) && Store.tgWorkOn(this)) || pickTitle.isBlank()) return@setOnClickListener
+                Store.addTgAllow(this, pickTitle)
+                android.widget.Toast.makeText(this, "Ditambahkan: $pickTitle", android.widget.Toast.LENGTH_SHORT).show()
+                hidePickBar()
+            }
+            val done = android.widget.Button(this)
+            done.text = "Selesai"
+            done.isAllCaps = false
+            done.setOnClickListener {
+                Store.setTgPickUntil(this, 0L)
+                hidePickBar()
+            }
+            row.addView(add)
+            row.addView(done)
+            val lp = android.view.WindowManager.LayoutParams(
+                android.view.WindowManager.LayoutParams.WRAP_CONTENT,
+                android.view.WindowManager.LayoutParams.WRAP_CONTENT,
+                android.view.WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                android.graphics.PixelFormat.TRANSLUCENT
+            )
+            lp.gravity = android.view.Gravity.BOTTOM or android.view.Gravity.CENTER_HORIZONTAL
+            lp.y = 220
+            wm.addView(row, lp)
+            pickBar = row
+            pickLabel = add
+        } catch (t: Throwable) {
+            pickBar = null
+            pickLabel = null
         }
     }
 
@@ -810,8 +876,20 @@ class GuardService : AccessibilityService() {
             }
         }
 
+        // 1a1. Mode pilih: selama aktif, tombol "tambah chat ini" muncul di Telegram dan chat tidak ditutup.
+        val picking = pkg in NsfwSource.TG_PACKAGES && now < Store.tgPickUntil(this) && !(Store.strictOn(this) && Store.tgWorkOn(this))
+        if (picking) {
+            if (now - lastTgWorkAt > 400L) {
+                lastTgWorkAt = now
+                val h = try { foregroundRoot?.let { NsfwSource.chatHeader(it, resources.displayMetrics.heightPixels) } } catch (t: Throwable) { null }
+                if (h != null && !NsfwSource.titleAllowed(h.first, Store.tgAllow(this))) showPickBar(h.first) else hidePickBar()
+            }
+        } else {
+            hidePickBar()
+        }
+
         // 1a2. Mode Telegram Kerja: hanya chat yang namanya ada di daftar boleh yang bisa dibuka.
-        if (pkg in NsfwSource.TG_PACKAGES && Store.tgWorkOn(this) && now - lastTgWorkAt > 400L) {
+        if (!picking && pkg in NsfwSource.TG_PACKAGES && Store.tgWorkOn(this) && now - lastTgWorkAt > 400L) {
             lastTgWorkAt = now
             if (tgWorkBlockedNow(foregroundRoot, pkg)) {
                 startBlock("tgwork", pkg)

@@ -273,6 +273,9 @@ object Store {
      */
     fun tgWorkOn(c: Context): Boolean = sp(c).getBoolean("tgwork_on", false)
     fun setTgWorkOn(c: Context, v: Boolean) { sp(c).edit().putBoolean("tgwork_on", v).commit() }
+    /** Mode pilih: sampai kapan (ms) tombol "tambah chat ini" muncul di dalam Telegram. */
+    fun tgPickUntil(c: Context): Long = sp(c).getLong("tg_pick_until", 0L)
+    fun setTgPickUntil(c: Context, v: Long) { sp(c).edit().putLong("tg_pick_until", v).commit() }
     fun tgAllow(c: Context): Set<String> = getSet(c, "tg_allow")
     fun addTgAllow(c: Context, name: String) {
         val n = name.trim().replace(Regex("\\s+"), " ").lowercase()
