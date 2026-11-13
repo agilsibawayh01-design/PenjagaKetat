@@ -175,8 +175,45 @@ object NsfwAi {
     }
 
     /** Skor tertinggi (0..1) dari seluruh layar dan dua separuhnya (atas, bawah), supaya gambar kecil tetap tertangkap. */
+    // Hemat baterai: layar yang praktis tidak berubah sejak pemindaian terakhir tidak dianalisis ulang
+    // (memakai skor sebelumnya). Video yang bergerak atau halaman yang digulir tetap dianalisis penuh.
+    private var lastFp: IntArray? = null
+    @Volatile var reused = 0
+
+    private fun fingerprint(b: Bitmap): IntArray {
+        val s = Bitmap.createScaledBitmap(b, 16, 32, true)
+        val px = IntArray(16 * 32)
+        s.getPixels(px, 0, 16, 0, 0, 16, 32)
+        if (s !== b) s.recycle()
+        return IntArray(px.size) { i ->
+            val p = px[i]
+            (((p shr 16) and 0xFF) * 3 + ((p shr 8) and 0xFF) * 6 + (p and 0xFF)) / 10
+        }
+    }
+
+    /** Murni (bisa dites): rata-rata selisih absolut dua sidik layar. */
+    fun meanDiff(a: IntArray, b: IntArray): Double {
+        if (a.size != b.size || a.isEmpty()) return 255.0
+        var t = 0L
+        for (i in a.indices) t += Math.abs(a[i] - b[i])
+        return t.toDouble() / a.size
+    }
+
     fun score(c: Context, bmp: Bitmap): Float {
         if (!ready(c)) return 0f
+        val fp = try {
+            fingerprint(bmp)
+        } catch (t: Throwable) {
+            null
+        }
+        val prev = lastFp
+        if (fp != null && prev != null && lastScore >= 0f && meanDiff(prev, fp) < 2.0) {
+            reused++
+            scans++
+            lastAt = System.currentTimeMillis()
+            return lastScore
+        }
+        lastFp = fp
         var best = run(bmp)
         var where = "seluruh layar"
         // Maksimal tiga crop (atas, tengah, bawah), bukan loop setengah-geser
@@ -253,6 +290,6 @@ object NsfwAi {
         val eng = if (interp != null || ortSession != null) "model siap: " + backend + (if (onnxNote.isNotEmpty()) " [" + onnxNote + "]" else "") else if (loadError.isNotEmpty()) loadError else "model belum dimuat"
         val last = if (lastScore >= 0f) " • skor terakhir " + String.format("%.2f", lastScore) else ""
         val fail = if (lastFail.isNotEmpty()) " • " + lastFail else ""
-        return "$eng • dipindai $scans kali • dilewati ${NsfwScope.skips} kali (aplikasi non-media) • diblokir $hits kali$last$fail"
+        return "$eng • dipindai $scans kali • dilewati ${NsfwScope.skips} kali (aplikasi non-media), layar sama dipakai ulang $reused kali • diblokir $hits kali$last$fail"
     }
 }
