@@ -253,6 +253,6 @@ object NsfwAi {
         val eng = if (interp != null || ortSession != null) "model siap: " + backend + (if (onnxNote.isNotEmpty()) " [" + onnxNote + "]" else "") else if (loadError.isNotEmpty()) loadError else "model belum dimuat"
         val last = if (lastScore >= 0f) " • skor terakhir " + String.format("%.2f", lastScore) else ""
         val fail = if (lastFail.isNotEmpty()) " • " + lastFail else ""
-        return "$eng • dipindai $scans kali • diblokir $hits kali$last$fail"
+        return "$eng • dipindai $scans kali • dilewati ${NsfwScope.skips} kali (aplikasi non-media) • diblokir $hits kali$last$fail"
     }
 }

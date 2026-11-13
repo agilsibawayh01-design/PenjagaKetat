@@ -380,6 +380,8 @@ class GuardService : AccessibilityService() {
             p in Config.PROTECTED || p in inputMethodPackages) return
         val now = System.currentTimeMillis()
         if (now - nsfwLastScanAt < NSFW_SCAN_INTERVAL_MS) return
+        // Hemat baterai: hanya aplikasi yang bisa memuat media dan aplikasi baru; PiP tetap dipindai.
+        if (!NsfwScope.shouldScan(this, p, browsers) { findPip() != null }) return
         if (!NsfwAi.ready(this)) return
         nsfwLastScanAt = now
         val src = try {

@@ -1840,7 +1840,7 @@ class MainActivity : Activity() {
     // ---------- Deteksi gambar AI ----------
     private fun renderNsfwAi(strict: Boolean) {
         header("Deteksi gambar AI (NSFW)")
-        put(text("Layar difoto tiap sekitar 1 detik saat HP menyala, lalu dianalisis di HP oleh model AI (tanpa internet, tidak ada gambar yang disimpan atau dikirim). Bila ada gambar telanjang, layar langsung ditutup dan kamu dikembalikan ke beranda. Berlaku di semua aplikasi. Butuh Android 11 ke atas. Salah blokir bisa terjadi.", 12f))
+        put(text("Layar difoto tiap sekitar 1 detik saat HP menyala, lalu dianalisis di HP oleh model AI (tanpa internet, tidak ada gambar yang disimpan atau dikirim). Bila ada gambar telanjang, layar langsung ditutup dan kamu dikembalikan ke beranda. Hanya aplikasi yang bisa memuat media (browser, sosmed, galeri, pemutar video) dan aplikasi yang baru dipasang (14 hari) yang dipotret; aplikasi lain dilewati agar hemat baterai. Butuh Android 11 ke atas. Salah blokir bisa terjadi.", 12f))
         val cb = CheckBox(this)
         cb.text = "Aktifkan deteksi gambar AI"
         cb.isChecked = Store.nsfwAi(this)
