@@ -267,6 +267,19 @@ object Store {
     fun featureOn(c: Context, key: String): Boolean = sp(c).getBoolean("fsw_$key", true)
     fun setFeatureOn(c: Context, key: String, v: Boolean) { sp(c).edit().putBoolean("fsw_$key", v).commit() }
 
+    /**
+     * Mode Telegram Kerja: Telegram resmi hanya boleh membuka chat yang namanya ada di daftar boleh.
+     * Menyalakan/mengurangi daftar = lebih ketat (langsung); mematikan/menambah daftar = melonggarkan (lewat gerbang, tidak bisa saat Mode Ketat).
+     */
+    fun tgWorkOn(c: Context): Boolean = sp(c).getBoolean("tgwork_on", false)
+    fun setTgWorkOn(c: Context, v: Boolean) { sp(c).edit().putBoolean("tgwork_on", v).commit() }
+    fun tgAllow(c: Context): Set<String> = getSet(c, "tg_allow")
+    fun addTgAllow(c: Context, name: String) {
+        val n = name.trim().replace(Regex("\\s+"), " ").lowercase()
+        if (n.length >= 2) putSet(c, "tg_allow", tgAllow(c) + n)
+    }
+    fun removeTgAllow(c: Context, name: String) { putSet(c, "tg_allow", tgAllow(c) - name) }
+
     /** Channel Telegram yang diblokir (nama channel, huruf kecil). Diisi blokir otomatis NSFW atau manual. */
     fun channels(c: Context): Set<String> = getSet(c, "channels")
     fun addChannel(c: Context, name: String) {

@@ -154,6 +154,7 @@ class BlockActivity : Activity() {
                 title.text = "Layar terkunci"
                 showLockCountdown()
             }
+            "tgwork" -> info.text = "Mode Telegram Kerja: chat ini tidak ada di daftar yang boleh dibuka.\nTelegram tetap bisa dipakai untuk chat kerja yang kamu daftarkan."
             "channel" -> info.text = "Channel ini diblokir permanen karena berulang kali menampilkan gambar tidak pantas.\nTelegram tetap bisa dipakai untuk channel lain."
             "nsfw" -> info.text = "Gambar tidak pantas terdeteksi di layar.\nLayar ditutup oleh pendeteksi gambar AI.\n\n" + NsfwAi.hitInfo
             "screen_keyword" -> info.text = "Konten ini diblokir karena mengandung kata kunci layar yang dibatasi." + causeLine(hitWord, hitText, hitWhere)
@@ -286,6 +287,7 @@ class BlockActivity : Activity() {
             "screen_keyword" -> "Kata kunci layar"
             "nsfw" -> "Gambar tidak pantas"
             "channel" -> "Channel diblokir"
+            "tgwork" -> "Di luar daftar Telegram Kerja"
             "lock" -> "Terlalu sering memicu layar blokir"
             "protect", "protect_click" -> "Perlindungan Penjaga Ketat"
             "browser" -> "Browser tidak didukung"

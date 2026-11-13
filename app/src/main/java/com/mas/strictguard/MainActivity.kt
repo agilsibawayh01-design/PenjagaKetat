@@ -4057,6 +4057,53 @@ class MainActivity : Activity() {
             chCol.addView(row)
         }
         put(if (chCol.childCount == 0) text("Belum ada.", 12f, false, C_SUB) else scrollBox(160, chCol))
+
+        // Mode Telegram Kerja: daftar boleh (allowlist).
+        header("Telegram Kerja (daftar boleh)")
+        put(text("Bila aktif, Telegram resmi hanya boleh membuka chat (grup, channel, bot, orang) yang namanya ada di daftar ini. Chat lain langsung ditutup, Telegram tetap bisa dipakai. Cocok jika nama chat MENGANDUNG kata yang kamu daftarkan. Menyalakan langsung; mematikan dan menambah daftar wajib lewat gerbang dan tidak bisa saat Mode Ketat.", 12f, false, C_SUB))
+        val twCb = CheckBox(this)
+        twCb.text = "Aktifkan Mode Telegram Kerja"
+        twCb.isChecked = Store.tgWorkOn(this)
+        twCb.setOnClickListener {
+            val v = twCb.isChecked
+            if (v) {
+                Store.setTgWorkOn(this, true)
+                render()
+            } else if (strict) {
+                twCb.isChecked = true
+                toast("Mode Ketat aktif: tidak bisa dimatikan")
+            } else {
+                twCb.isChecked = true
+                textGate("mematikan Mode Telegram Kerja", { Store.setTgWorkOn(this, false); render() }, { render() })
+            }
+        }
+        put(twCb)
+        put(button("Tambah chat yang boleh") {
+            if (strict) toast("Mode Ketat aktif: tidak bisa menambah daftar boleh")
+            else textGate("menambah chat yang boleh dibuka", {
+                askName("Nama chat (boleh sebagian nama)", "") { Store.addTgAllow(this, it); render() }
+            }, { render() })
+        })
+        val awCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        for (nm in Store.tgAllow(this).sorted()) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            row.addView(text(nm, 13f).apply {
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            row.addView(text("✕", 15f, true, C_BAD).apply {
+                setPadding(dp(10), dp(8), dp(6), dp(8))
+                setOnClickListener {
+                    // Mengurangi daftar boleh = lebih ketat, jadi langsung.
+                    Store.removeTgAllow(this@MainActivity, nm)
+                    render()
+                }
+            })
+            awCol.addView(row)
+        }
+        put(if (awCol.childCount == 0) text("Daftar kosong: bila mode aktif, semua chat yang terbaca akan ditutup.", 12f, false, C_SUB) else scrollBox(200, awCol))
     }
 
     private fun editSiteDialog(domain: String, strict: Boolean, isNew: Boolean = false) {

@@ -297,6 +297,7 @@ class GuardService : AccessibilityService() {
     private val nsfwSamples = java.util.ArrayDeque<Triple<String, Float, NsfwSource.Src?>>()
     @Volatile private var nsfwHitSrc: NsfwSource.Src? = null
     private var lastChannelCheckAt = 0L
+    private var lastTgWorkAt = 0L
     private val nsfwExec = java.util.concurrent.Executors.newSingleThreadExecutor()
     private val NSFW_SCAN_INTERVAL_MS = 4500L
 
@@ -809,6 +810,15 @@ class GuardService : AccessibilityService() {
             }
         }
 
+        // 1a2. Mode Telegram Kerja: hanya chat yang namanya ada di daftar boleh yang bisa dibuka.
+        if (pkg in NsfwSource.TG_PACKAGES && Store.tgWorkOn(this) && now - lastTgWorkAt > 400L) {
+            lastTgWorkAt = now
+            if (tgWorkBlockedNow(foregroundRoot, pkg)) {
+                startBlock("tgwork", pkg)
+                return
+            }
+        }
+
         // 1b. Jeda napas + niat sebelum aplikasi tertentu dibuka (hanya gesekan, tidak memblokir).
         if (pkg in pauseAppsNow && now > Store.pauseOkUntil(this, pkg) && now - lastPauseAt > 2500L) {
             lastPauseAt = now
@@ -1298,6 +1308,17 @@ class GuardService : AccessibilityService() {
     }
 
     /** True bila layar masih menampilkan hal yang harus ditutup, sesuai jenis blokir. */
+    /** true bila layar chat Telegram yang terbuka namanya tidak ada di daftar boleh. Judul tak terbaca = tidak diputuskan. */
+    private fun tgWorkBlockedNow(root: AccessibilityNodeInfo?, pkg: String): Boolean {
+        if (root == null) return false
+        val h = try {
+            NsfwSource.chatHeader(root, resources.displayMetrics.heightPixels)
+        } catch (t: Throwable) {
+            null
+        } ?: return false
+        return !NsfwSource.titleAllowed(h.first, Store.tgAllow(this))
+    }
+
     private fun channelBlockedNow(root: AccessibilityNodeInfo?, pkg: String): Boolean {
         val list = Store.channels(this)
         if (list.isEmpty() || root == null) return false
@@ -1312,6 +1333,7 @@ class GuardService : AccessibilityService() {
             "content" -> cur != packageName && cur in browsers && browserHasBlocked(root)
             "screen_keyword" -> cur != packageName && screenHasBlocked(root)
             "channel" -> cur == pkg && channelBlockedNow(root, pkg)
+            "tgwork" -> cur == pkg && tgWorkBlockedNow(root, pkg)
             "protect" -> isSettingsLike(cur) && (if (strictNow) showsProtected(root) else showsOwnPage(root))
             else -> cur == pkg
         }
@@ -1341,6 +1363,7 @@ class GuardService : AccessibilityService() {
         "protect_click" -> 2
         "content" -> 6
         "channel" -> 3
+        "tgwork" -> 3
         "screen_keyword" -> 6
         "protect" -> 5
         else -> 4

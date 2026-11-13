@@ -89,7 +89,31 @@ object NsfwSource {
         return null
     }
 
-    private fun channelTitle(root: AccessibilityNodeInfo, screenHeight: Int): String? {
+    private val GROUP_RE = Regex("(?i)\\d[\\d.,\\s]*(k|m|rb|jt|ribu|juta)?\\s*(members?|anggota|peserta)\\b")
+    private val BOT_RE = Regex("(?i)^(bot|\\d[\\d.,\\s]*(k|m|rb|jt)?\\s*(monthly users|pengguna bulanan))\\b")
+    private val USER_RE = Regex("(?i)(\\bonline\\b|terakhir dilihat|last seen|baru saja|sedang mengetik|is typing|dilihat)")
+
+    /** Murni: jenis chat dari teks subjudul: "c" channel, "g" grup, "b" bot, "u" pengguna, null = bukan subjudul chat. */
+    fun subtitleKind(s: String): String? {
+        val t = s.trim()
+        if (t.isEmpty() || t.length > 60) return null
+        return when {
+            SUB_RE.containsMatchIn(t) -> "c"
+            GROUP_RE.containsMatchIn(t) -> "g"
+            BOT_RE.containsMatchIn(t) -> "b"
+            USER_RE.containsMatchIn(t) -> "u"
+            else -> null
+        }
+    }
+
+    /** Murni: apakah judul chat termasuk daftar boleh (cocok "mengandung", tanpa membedakan huruf besar kecil). */
+    fun titleAllowed(title: String, allow: Set<String>): Boolean {
+        val t = title.trim().lowercase()
+        return allow.any { it.isNotBlank() && (t == it || t.contains(it)) }
+    }
+
+    /** Judul dan jenis chat dari header layar chat Telegram. null bila layar itu bukan layar chat atau judul tak terbaca. */
+    fun chatHeader(root: AccessibilityNodeInfo, screenHeight: Int): Pair<String, String>? {
         val limit = (screenHeight * 0.22f).toInt()
         val q = ArrayDeque<AccessibilityNodeInfo>()
         q.add(root)
@@ -102,16 +126,21 @@ object NsfwSource {
             if (r.top < limit) {
                 val t = node.text?.toString()?.trim() ?: ""
                 val d = node.contentDescription?.toString()?.trim() ?: ""
-                titleFromCombined(t)?.let { return it }
-                titleFromCombined(d)?.let { return it }
+                titleFromCombined(t)?.let { return it to "c" }
+                titleFromCombined(d)?.let { return it to "c" }
                 if (t.isNotEmpty()) texts.add(t to Rect(r))
             }
             for (i in 0 until node.childCount) node.getChild(i)?.let { q.add(it) }
         }
-        val sub = texts.firstOrNull { isSubtitle(it.first) } ?: return null
-        // Judul = teks terdekat tepat di atas subjudul "N pelanggan".
-        return texts.filter { it !== sub && !isSubtitle(it.first) && it.first.length in 2..80 && !it.first.all { c -> c.isDigit() } &&
+        val sub = texts.firstOrNull { subtitleKind(it.first) != null } ?: return null
+        val kind = subtitleKind(sub.first) ?: return null
+        // Judul = teks terdekat tepat di atas subjudul.
+        val title = texts.filter { it !== sub && subtitleKind(it.first) == null && it.first.length in 2..80 && !it.first.all { c -> c.isDigit() } &&
             it.second.bottom <= sub.second.top + 12 }
-            .maxByOrNull { it.second.bottom }?.first
+            .maxByOrNull { it.second.bottom }?.first ?: return null
+        return title to kind
     }
+
+    private fun channelTitle(root: AccessibilityNodeInfo, screenHeight: Int): String? =
+        chatHeader(root, screenHeight)?.takeIf { it.second == "c" }?.first
 }
