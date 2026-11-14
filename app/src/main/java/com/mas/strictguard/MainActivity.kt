@@ -57,6 +57,24 @@ class MainActivity : Activity() {
     private var credAsked = false
     private var inCred = false
 
+    /** Menyeragamkan kotak centang, tombol pilihan, dan saklar bawaan ke warna Lux. */
+    private fun styleTree(v: View) {
+        val gold = C_PRIMARY
+        val grey = Color.parseColor("#8A8576")
+        val checked = intArrayOf(android.R.attr.state_checked)
+        when (v) {
+            is android.widget.Switch -> {
+                v.thumbTintList = android.content.res.ColorStateList(arrayOf(checked, intArrayOf()), intArrayOf(gold, Color.parseColor("#B5B0A2")))
+                v.trackTintList = android.content.res.ColorStateList(arrayOf(checked, intArrayOf()), intArrayOf(Color.argb(120, 212, 175, 106), Color.parseColor("#2A2F3B")))
+            }
+            is android.widget.CompoundButton -> {
+                v.buttonTintList = android.content.res.ColorStateList(arrayOf(checked, intArrayOf()), intArrayOf(gold, grey))
+                v.setTextColor(C_TEXT)
+            }
+        }
+        if (v is android.view.ViewGroup) for (i in 0 until v.childCount) styleTree(v.getChildAt(i))
+    }
+
     private fun serifBold(): Typeface = try {
         Typeface.create(resources.getFont(R.font.cormorant), 600, false)
     } catch (t: Throwable) {
@@ -173,6 +191,7 @@ class MainActivity : Activity() {
             textSize = size
             setTextColor(color)
             if (bold) setTypeface(null, Typeface.BOLD)
+            if (bold && size >= 24f) typeface = serifBold()
             setPadding(0, dp(3), 0, dp(3))
         }
 
@@ -214,7 +233,7 @@ class MainActivity : Activity() {
             background = bg(C_PRIMARY, dp(2))
             layoutParams = LinearLayout.LayoutParams(dp(4), dp(18)).apply { rightMargin = dp(10) }
         })
-        titleRow.addView(text(s, 17f, true, C_TEXT).apply {
+        titleRow.addView(text(s.replace(Regex("^[^\\p{L}\\p{N}]+"), ""), 17f, true, C_TEXT).apply {
             typeface = serifBold()
             setPadding(0, 0, 0, 0)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -800,6 +819,7 @@ class MainActivity : Activity() {
             }
         }
         collapseAll()
+        styleTree(root)
         val same = lastScreen == screen
         lastScreen = screen
         scroll.post { scroll.scrollTo(0, if (same) keepY else 0) }
@@ -840,7 +860,24 @@ class MainActivity : Activity() {
         render()
     }
 
+    private fun eyebrowFor(s: String): String = when (s) {
+        "proteksi" -> "PROTEKSI"
+        "words" -> "SITUS & CHAT"
+        "apps" -> "ATURAN BLOKIR"
+        "sched", "profiles" -> "ATURAN OTOMATIS"
+        "focus" -> "MODE"
+        "strict" -> "MODE KETAT"
+        "net" -> "JARINGAN"
+        "stats" -> "STATISTIK"
+        "urge" -> "DORONGAN"
+        else -> "PENGATURAN"
+    }
+
     private fun topBar(title: String) {
+        root.addView(text(eyebrowFor(screen), 11f, true, C_PRIMARY).apply {
+            letterSpacing = 0.22f
+            setPadding(dp(4), dp(6), 0, 0)
+        })
         val row = LinearLayout(this)
         row.orientation = LinearLayout.HORIZONTAL
         row.gravity = Gravity.CENTER_VERTICAL
