@@ -112,6 +112,16 @@ object NsfwSource {
         return allow.any { it.isNotBlank() && (t == it || t.contains(it)) }
     }
 
+    /** Murni: teks gabungan "Judul, 8 members" / "Judul\n8 members" -> (judul, jenis). */
+    fun splitCombined(s: String): Pair<String, String>? {
+        if (s.length > 160) return null
+        val i = maxOf(s.lastIndexOf(", "), s.lastIndexOf('\n'))
+        if (i < 2) return null
+        val kind = subtitleKind(s.substring(i + 1)) ?: return null
+        val title = s.substring(0, i).trim()
+        return if (title.length in 2..80) title to kind else null
+    }
+
     /** Judul dan jenis chat dari header layar chat Telegram. null bila layar itu bukan layar chat atau judul tak terbaca. */
     fun chatHeader(root: AccessibilityNodeInfo, screenHeight: Int): Pair<String, String>? {
         val limit = (screenHeight * 0.22f).toInt()
@@ -128,7 +138,10 @@ object NsfwSource {
                 val d = node.contentDescription?.toString()?.trim() ?: ""
                 titleFromCombined(t)?.let { return it to "c" }
                 titleFromCombined(d)?.let { return it to "c" }
-                if (t.isNotEmpty()) texts.add(t to Rect(r))
+                splitCombined(t)?.let { return it }
+                splitCombined(d)?.let { return it }
+                val label = if (t.isNotEmpty()) t else d
+                if (label.isNotEmpty()) texts.add(label to Rect(r))
             }
             for (i in 0 until node.childCount) node.getChild(i)?.let { q.add(it) }
         }
