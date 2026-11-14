@@ -80,3 +80,12 @@ class NsfwChatTest {
         org.junit.Assert.assertFalse(NsfwSource.titleAllowed("Apa saja", emptySet()))
     }
 }
+
+class NsfwSplitTest {
+    @org.junit.Test
+    fun splitCombined() {
+        org.junit.Assert.assertEquals("Admin DT Surabaya 7" to "g", NsfwSource.splitCombined("Admin DT Surabaya 7, 8 members"))
+        org.junit.Assert.assertEquals("Mas Pram" to "u", NsfwSource.splitCombined("Mas Pram\nterakhir dilihat baru saja"))
+        org.junit.Assert.assertNull(NsfwSource.splitCombined("Halo, apa kabar"))
+    }
+}
