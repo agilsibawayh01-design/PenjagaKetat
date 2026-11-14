@@ -89,7 +89,7 @@ class BlockActivity : Activity() {
             text = "Diblokir"
             textSize = 30f
             setTextColor(cRed)
-            typeface = Typeface.create("serif", Typeface.BOLD)
+            typeface = try { Typeface.create(resources.getFont(R.font.cormorant), 600, false) } catch (t: Throwable) { Typeface.create("serif", Typeface.BOLD) }
             gravity = Gravity.CENTER
         }
         why = TextView(this).apply {

@@ -57,12 +57,36 @@ class MainActivity : Activity() {
     private var credAsked = false
     private var inCred = false
 
+    private fun serifBold(): Typeface = try {
+        Typeface.create(resources.getFont(R.font.cormorant), 600, false)
+    } catch (t: Throwable) {
+        Typeface.create("serif", Typeface.BOLD)
+    }
+
+    /** Latar lembut berwarna (seperti watermark), tetap di tempat saat halaman digulir. */
+    private class AuroraView(c: android.content.Context) : View(c) {
+        private val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        private fun blob(cv: android.graphics.Canvas, x: Float, y: Float, r: Float, argb: Int) {
+            p.shader = android.graphics.RadialGradient(x, y, r, argb, argb and 0x00FFFFFF, android.graphics.Shader.TileMode.CLAMP)
+            cv.drawCircle(x, y, r, p)
+        }
+        override fun onDraw(canvas: android.graphics.Canvas) {
+            val w = width.toFloat()
+            val h = height.toFloat()
+            canvas.drawColor(Color.parseColor("#0A0C10"))
+            blob(canvas, w * 0.05f, h * 0.04f, w * 1.0f, Color.argb(70, 212, 175, 106))
+            blob(canvas, w * 1.05f, h * 0.32f, w * 0.95f, Color.argb(60, 79, 209, 181))
+            blob(canvas, w * -0.05f, h * 0.66f, w * 1.0f, Color.argb(58, 140, 112, 240))
+            blob(canvas, w * 1.0f, h * 0.98f, w * 0.9f, Color.argb(52, 246, 135, 179))
+        }
+    }
+
     // Tema Lux: selalu gelap, aksen emas.
     private val night: Boolean get() = true
     private val C_BG: Int get() = Color.parseColor("#0A0C10")
-    private val C_CARD: Int get() = Color.parseColor("#10131A")
+    private val C_CARD: Int get() = Color.parseColor("#C9121722")
     private val C_CHIP: Int get() = Color.parseColor("#232834")
-    private val C_FIELD: Int get() = Color.parseColor("#141821")
+    private val C_FIELD: Int get() = Color.parseColor("#A6161B26")
     private val C_PRIMARY: Int get() = Color.parseColor("#D4AF6A")
     private val C_TEXT: Int get() = Color.parseColor("#EDE8DD")
     private val C_SUB: Int get() = Color.parseColor("#A9A396")
@@ -87,14 +111,18 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(16), dp(12), dp(24))
         }
-        scroll.setBackgroundColor(C_BG)
+        scroll.setBackgroundColor(Color.TRANSPARENT)
         scroll.addView(root)
         val outer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         outer.addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         navBar = buildNav()
         outer.addView(navBar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-        setContentView(outer)
+        val frame = android.widget.FrameLayout(this)
+        frame.addView(AuroraView(this), android.widget.FrameLayout.LayoutParams(-1, -1))
+        frame.addView(outer, android.widget.FrameLayout.LayoutParams(-1, -1))
+        setContentView(frame)
         applySystemBars()
+        Thread { try { loadApps() } catch (t: Throwable) { } }.start()
         if (intent?.getBooleanExtra("urge", false) == true) {
             screen = "urge"
             urgeEnd = 0L
@@ -187,11 +215,11 @@ class MainActivity : Activity() {
             layoutParams = LinearLayout.LayoutParams(dp(4), dp(18)).apply { rightMargin = dp(10) }
         })
         titleRow.addView(text(s, 17f, true, C_TEXT).apply {
-            typeface = Typeface.create("serif", Typeface.BOLD)
+            typeface = serifBold()
             setPadding(0, 0, 0, 0)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
-        if (s in COLLAPSIBLE) {
+        if (s in COLLAPSIBLE || s.startsWith("Dilindungi (")) {
             card.tag = s
             titleRow.minimumHeight = dp(40)
             titleRow.addView(text("▾", 16f, true, C_SUB))
@@ -363,7 +391,11 @@ class MainActivity : Activity() {
         "Catatan perlindungan", "Browser", "Kategori situs", "🛡️ Keyword Bawaan PenjagaKetat",
         "🔗 Keyword URL", "📱 Keyword Layar", "Rekam layar (untuk memperbaiki deteksi)",
         "Cadangan otomatis", "Pengingat waktu hampir habis", "Kontrol notifikasi",
-        "Teks motivasi", "Pengecualian (ALLOW)", "Per hari"
+        "Teks motivasi", "Pengecualian (ALLOW)", "Per hari",
+        "Uninstall Penjaga Ketat & aplikasi pelindung", "Kunci aplikasi", "Surat untuk diri sendiri",
+        "Uji perlindungan", "Persetujuan teman", "Lindungi aplikasi lain dari uninstall",
+        "Backup dan restore", "Blokir bagian aplikasi sosmed", "Channel Telegram", "🕘 Riwayat Situs",
+        "Tambah aplikasi", "Jam rawan", "Celah pemasangan", "Perlindungan diri"
     )
 
     private fun applyCollapse(card: LinearLayout) {
@@ -648,7 +680,7 @@ class MainActivity : Activity() {
         val bar = LinearLayout(this)
         bar.orientation = LinearLayout.HORIZONTAL
         bar.setPadding(dp(6), dp(6), dp(6), dp(6))
-        bar.background = bg(C_CARD, 0).apply { setStroke(dp(1), C_CHIP) }
+        bar.background = bg(Color.parseColor("#E610131A"), 0).apply { setStroke(dp(1), C_CHIP) }
         bar.elevation = 0f
         for ((icon, label, target) in TABS) {
             val item = LinearLayout(this)
@@ -816,7 +848,7 @@ class MainActivity : Activity() {
             row.addView(back)
         }
         row.addView(text(title, 26f, true).apply {
-            typeface = Typeface.create("serif", Typeface.BOLD)
+            typeface = serifBold()
             setPadding(if (isTabRoot(screen)) dp(4) else dp(14), 0, 0, 0)
         })
         row.setPadding(0, dp(2), 0, dp(6))
@@ -863,7 +895,7 @@ class MainActivity : Activity() {
             setPadding(dp(4), dp(10), 0, 0)
         })
         root.addView(text("Penjaga Ketat", 38f, true, C_TEXT).apply {
-            typeface = Typeface.create("serif", Typeface.BOLD)
+            typeface = serifBold()
             setPadding(dp(4), 0, 0, dp(14))
         })
         val protectionOk = acc && adm
@@ -904,7 +936,7 @@ class MainActivity : Activity() {
         col.orientation = LinearLayout.VERTICAL
         col.setPadding(dp(18), 0, 0, 0)
         col.addView(text(if (protectionOk) "Terlindungi" else "Perlu tindakan", 28f, true, C_TEXT).apply {
-            typeface = Typeface.create("serif", Typeface.BOLD)
+            typeface = serifBold()
         })
         col.addView(text(
             if (protectionOk) "Semua lapisan aktif.\n" + (if (Store.nsfwAi(this)) "Deteksi AI memantau layar." else "Deteksi AI sedang mati.")
@@ -978,13 +1010,13 @@ class MainActivity : Activity() {
         lockCard.addView(text("5 layar blokir dalam 10 menit → terkunci 5 menit", 12f, false, C_SUB))
         eyebrow("ATURAN & MODE")
         homeGroup("ATURAN BLOKIR")
-        homeRow("📱", "Aplikasi", "Blokir, batasi waktu, atau beri timer tunggu.", "${Store.apps(this).size} diblokir", C_PRIMARY, "apps")
-        homeRow("🌐", "Situs & kata", "Situs, kata kunci, kategori, dan bagian aplikasi sosmed.", "$wordCount aturan • $cats kategori", C_PRIMARY, "words")
-        homeRow("🗓️", "Jadwal & profil", "Aturan otomatis per hari dan jam (Kerja, Tidur, dll.).", scheduleTileLabel() + " • $activeP profil aktif", C_PRIMARY, "sched")
+        homeRow("📱", "Aplikasi", "Blokir, batasi waktu, atau beri timer tunggu.", "${Store.apps(this).size} diblokir", Color.parseColor("#6EA8FF"), "apps")
+        homeRow("🌐", "Situs & kata", "Situs, kata kunci, kategori, dan bagian aplikasi sosmed.", "$wordCount aturan • $cats kategori", Color.parseColor("#B794F6"), "words")
+        homeRow("🗓️", "Jadwal & profil", "Aturan otomatis per hari dan jam (Kerja, Tidur, dll.).", scheduleTileLabel() + " • $activeP profil aktif", Color.parseColor("#4FD1B5"), "sched")
         homeGroup("MODE")
-        homeRow("🎯", "Mode Fokus", "Sesi waktu yang menutup aplikasi dan situs pemicu.", focusTileLabel(), C_PRIMARY, "focus")
+        homeRow("🎯", "Mode Fokus", "Sesi waktu yang menutup aplikasi dan situs pemicu.", focusTileLabel(), Color.parseColor("#F687B3"), "focus")
         homeRow("🛡️", "Mode Ketat & status", "Kunci pengaturan dan cek perlindungan diri.", modeLabel(), C_PRIMARY, "strict")
-        homeRow("🔌", "VPN & notifikasi", "Filter situs lewat DNS dan kontrol notifikasi.", if (VpnStatus.running) "VPN DNS aktif" else if (Store.vpnOn(this)) "VPN DNS: " + VpnStatus.state.label else "VPN DNS mati", C_PRIMARY, "net")
+        homeRow("🔌", "VPN & notifikasi", "Filter situs lewat DNS dan kontrol notifikasi.", if (VpnStatus.running) "VPN DNS aktif" else if (Store.vpnOn(this)) "VPN DNS: " + VpnStatus.state.label else "VPN DNS mati", Color.parseColor("#68D391"), "net")
 
     }
 
@@ -1001,7 +1033,7 @@ class MainActivity : Activity() {
         t.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
             setMargins(if (first) 0 else dp(4), 0, if (last) 0 else dp(4), 0)
         }
-        t.addView(text(value, 22f, true, accent(color)).apply { gravity = Gravity.CENTER; typeface = Typeface.create("serif", Typeface.BOLD) })
+        t.addView(text(value, 22f, true, accent(color)).apply { gravity = Gravity.CENTER; typeface = serifBold() })
         t.addView(text(label, 11f, false, C_SUB).apply { gravity = Gravity.CENTER })
         t.setOnClickListener { goScreen(target) }
         return t
@@ -1028,9 +1060,9 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { bottomMargin = dp(12) }
         val locks = try { Strikes.count(this).toString() } catch (t: Throwable) { "0" }
-        row.addView(statTile(blocks, "Diblokir hari ini", C_TEXT, true, false, "stats"))
-        row.addView(statTile(cleanStreak().toString(), "Hari bersih", C_PRIMARY, false, false, "stats"))
-        row.addView(statTile(locks, "Kunci layar", C_TEXT, false, true, "stats"))
+        row.addView(statTile(blocks, "Diblokir hari ini", Color.parseColor("#F6A35E"), true, false, "stats"))
+        row.addView(statTile(cleanStreak().toString(), "Hari bersih", Color.parseColor("#68D391"), false, false, "stats"))
+        row.addView(statTile(locks, "Kunci layar", Color.parseColor("#B794F6"), false, true, "stats"))
         root.addView(row)
     }
 
@@ -1076,7 +1108,7 @@ class MainActivity : Activity() {
             text = icon
             textSize = 20f
             gravity = Gravity.CENTER
-            background = bg(C_FIELD, dp(14)).apply { setStroke(dp(1), Color.argb(110, 212, 175, 106)) }
+            background = bg(Color.argb(40, Color.red(color), Color.green(color), Color.blue(color)), dp(14)).apply { setStroke(dp(1), Color.argb(120, Color.red(color), Color.green(color), Color.blue(color))) }
             layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
         })
         val col = LinearLayout(this)
@@ -2404,8 +2436,9 @@ class MainActivity : Activity() {
             val col = LinearLayout(this)
             col.orientation = LinearLayout.VERTICAL
             col.setPadding(dp(10), dp(4), dp(10), dp(4))
-            for (a in shown) col.addView(appRow(a, false, strict))
+            for (a in shown.take(15)) col.addView(appRow(a, false, strict))
             put(scrollBox(360, col))
+            if (shown.size > 15) put(text("Menampilkan 15 dari ${shown.size}. Ketik nama aplikasi lalu tekan Cari untuk menemukan yang lain.", 11f, false, C_SUB))
         }
     }
 
@@ -3159,8 +3192,9 @@ class MainActivity : Activity() {
             val col = LinearLayout(this)
             col.orientation = LinearLayout.VERTICAL
             col.setPadding(dp(10), dp(4), dp(10), dp(4))
-            for (a in shown) col.addView(protectedRow(a, false, strict))
+            for (a in shown.take(15)) col.addView(protectedRow(a, false, strict))
             put(scrollBox(360, col))
+            if (shown.size > 15) put(text("Menampilkan 15 dari ${shown.size}. Ketik nama aplikasi lalu tekan Cari untuk menemukan yang lain.", 11f, false, C_SUB))
         }
     }
 
@@ -4013,18 +4047,18 @@ class MainActivity : Activity() {
     }
 
     /** Satu baris saklar: ikon garis emas, judul, keterangan, saklar. */
-    private fun luxRow(icon: Int, title: String, sub: String, on: Boolean, locked: Boolean, last: Boolean, onClick: () -> Unit): View {
+    private fun luxRow(icon: Int, title: String, sub: String, on: Boolean, locked: Boolean, last: Boolean, tint: Int = Color.parseColor("#D4AF6A"), onClick: () -> Unit): View {
         val row = LinearLayout(this)
         row.orientation = LinearLayout.HORIZONTAL
         row.gravity = Gravity.CENTER_VERTICAL
         row.setPadding(0, dp(12), 0, dp(12))
         if (icon != 0) {
             val box = android.widget.FrameLayout(this)
-            box.background = bg(Color.TRANSPARENT, dp(12)).apply { setStroke(dp(1), Color.parseColor("#2A2F3B")) }
+            box.background = bg(Color.argb(38, Color.red(tint), Color.green(tint), Color.blue(tint)), dp(12)).apply { setStroke(dp(1), Color.argb(110, Color.red(tint), Color.green(tint), Color.blue(tint))) }
             box.layoutParams = LinearLayout.LayoutParams(dp(38), dp(38)).apply { rightMargin = dp(14) }
             box.addView(ImageView(this).apply {
                 setImageResource(icon)
-                setColorFilter(C_PRIMARY)
+                setColorFilter(tint)
                 layoutParams = android.widget.FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER)
             })
             row.addView(box)
@@ -4115,16 +4149,18 @@ class MainActivity : Activity() {
             Store.nsfwAi(this), strict, false) { toggleNsfwAi(strict) })
         box.addView(luxRow(R.drawable.ic_ly_send, "Telegram Kerja",
             "${Store.tgAllow(this).size} chat boleh · pribadi selalu boleh",
-            Store.tgWorkOn(this), strict && Store.tgWorkOn(this), false) { toggleTgWork(strict) })
+            Store.tgWorkOn(this), strict && Store.tgWorkOn(this), false, Color.parseColor("#6EA8FF")) { toggleTgWork(strict) })
         box.addView(luxRow(R.drawable.ic_ly_globe, "Situs & kata kunci", "Hanya Chrome · DNS aman",
-            Store.featureOn(this, "sites"), strict, false) { toggleFeature("sites", "Situs", strict) })
+            Store.featureOn(this, "sites"), strict, false, Color.parseColor("#B794F6")) { toggleFeature("sites", "Situs", strict) })
         box.addView(luxRow(R.drawable.ic_ly_app, "Aplikasi baru", "Diblokir otomatis saat baru dipasang",
-            Store.autoBlockNew(this), strict, true) {
+            Store.autoBlockNew(this), strict, true, Color.parseColor("#4FD1B5")) {
             if (Store.autoBlockNew(this) && strict) toast("Mode Ketat aktif: tidak bisa dimatikan")
             else { Store.setAutoBlockNew(this, !Store.autoBlockNew(this)); render() }
         })
         root.addView(box)
     }
+
+    private var tgShowAll = false
 
     private fun renderTgWork(strict: Boolean) {
         val on = Store.tgWorkOn(this)
@@ -4159,7 +4195,7 @@ class MainActivity : Activity() {
 
         put(text("DAFTAR BOLEH  ·  ${list.size} chat", 11f, true, C_SUB).apply { letterSpacing = 0.12f; setPadding(0, dp(14), 0, dp(4)) })
         if (list.isEmpty()) put(text("Daftar kosong: bila mode aktif, semua grup, channel, dan bot yang terbaca akan ditutup.", 12f, false, C_SUB))
-        for (nm in list) {
+        for (nm in (if (tgShowAll) list else list.take(6))) {
             val row = LinearLayout(this)
             row.orientation = LinearLayout.HORIZONTAL
             row.gravity = Gravity.CENTER_VERTICAL
@@ -4190,6 +4226,11 @@ class MainActivity : Activity() {
             })
             put(row)
         }
+        if (list.size > 6) put(text(if (tgShowAll) "Ringkas daftar ▴" else "Tampilkan semua (${list.size}) ▾", 13f, true, C_PRIMARY).apply {
+            gravity = Gravity.CENTER
+            setPadding(0, dp(12), 0, dp(12))
+            setOnClickListener { tgShowAll = !tgShowAll; render() }
+        })
         put(text("Menambah daftar saat mode aktif wajib lewat teks acak dan tidak bisa saat Mode Ketat. Menghapus entri langsung. Selama mode belum dicentang, daftar bebas diisi.", 12f, false, C_SUB).apply { setPadding(0, dp(10), 0, 0) })
     }
 
