@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="AppTheme" parent="android:Theme.DeviceDefault.DayNight">
+    <style name="AppTheme" parent="android:Theme.DeviceDefault">
         <item name="android:windowActionBar">false</item>
         <item name="android:windowNoTitle">true</item>
+        <item name="android:colorAccent">#D4AF6A</item>
+        <item name="android:windowBackground">#0A0C10</item>
     </style>
 </resources>
