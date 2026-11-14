@@ -623,18 +623,19 @@ class MainActivity : Activity() {
     private val TABS = listOf(
         Triple(R.drawable.ic_nav_home, "Beranda", "home"),
         Triple(R.drawable.ic_nav_shield, "Proteksi", "proteksi"),
-        Triple(R.drawable.ic_nav_stats, "Statistik", "stats"),
-        Triple(R.drawable.ic_nav_settings, "Setelan", "more")
+        Triple(R.drawable.ic_nav_globe, "Situs", "words"),
+        Triple(R.drawable.ic_nav_settings, "Pengaturan", "more")
     )
 
     private fun tabOf(s: String): Int = when (s) {
         "home", "urge" -> 0
-        "proteksi", "strict", "apps", "words", "profiles", "sched", "net", "focus" -> 1
-        "stats" -> 2
+        "proteksi", "strict", "apps", "profiles", "sched", "net", "focus" -> 1
+        "words" -> 2
+        "stats" -> 0
         else -> 3
     }
 
-    private fun isTabRoot(s: String): Boolean = s == "home" || s == "proteksi" || s == "stats" || s == "more"
+    private fun isTabRoot(s: String): Boolean = s == "home" || s == "proteksi" || s == "words" || s == "more"
 
     private fun parentOf(s: String): String = when {
         s == "urge" -> "home"
@@ -732,6 +733,7 @@ class MainActivity : Activity() {
                 }
                 "urge" -> renderUrge()
                 "words" -> {
+                    renderTgWork(strict)
                     renderBrowsers(strict)
                     renderCategories(strict)
                     renderWords(strict)
@@ -747,6 +749,7 @@ class MainActivity : Activity() {
                 "focus" -> renderFocus(strict)
                 "sched" -> renderSchedule(strict)
                 else -> {
+                    homeRow("📊", "Statistik", "Pemakaian, blokir, dan pola waktu.", "Lihat", C_PRIMARY, "stats")
                     sectionLabel("KEAMANAN")
                     renderAppLock(strict)
                     renderUninstallGate(strict)
@@ -855,46 +858,65 @@ class MainActivity : Activity() {
     }
 
     private fun renderHome(strict: Boolean, acc: Boolean, adm: Boolean) {
+        root.addView(text(if (strict) "MODE KETAT AKTIF" else modeLabel().uppercase(), 11f, true, C_PRIMARY).apply {
+            letterSpacing = 0.22f
+            setPadding(dp(4), dp(10), 0, 0)
+        })
+        root.addView(text("Penjaga Ketat", 38f, true, C_TEXT).apply {
+            typeface = Typeface.create("serif", Typeface.BOLD)
+            setPadding(dp(4), 0, 0, dp(14))
+        })
+        val protectionOk = acc && adm
+        val outer = LinearLayout(this)
+        outer.setPadding(dp(1), dp(1), dp(1), dp(1))
+        outer.background = GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            intArrayOf(Color.argb(190, 212, 175, 106), Color.argb(25, 212, 175, 106), Color.argb(100, 212, 175, 106))
+        ).apply { cornerRadius = dp(24).toFloat() }
+        outer.layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { bottomMargin = dp(12) }
         val banner = LinearLayout(this)
         banner.orientation = LinearLayout.HORIZONTAL
         banner.gravity = Gravity.CENTER_VERTICAL
-        banner.setPadding(dp(18), dp(18), dp(18), dp(18))
+        banner.setPadding(dp(20), dp(20), dp(20), dp(20))
         banner.background = GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
             intArrayOf(Color.parseColor("#161B25"), Color.parseColor("#0E1117"))
-        ).apply {
-            cornerRadius = dp(24).toFloat()
-            setStroke(dp(1), Color.argb(150, 212, 175, 106))
+        ).apply { cornerRadius = dp(23).toFloat() }
+        banner.layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        )
+        val ring = android.widget.FrameLayout(this)
+        ring.background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(Color.argb(30, 212, 175, 106))
+            setStroke(dp(2), Color.argb(150, 212, 175, 106))
         }
-        banner.elevation = 0f
-        val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-        lp.bottomMargin = dp(12)
-        banner.layoutParams = lp
-        val logo = ImageView(this)
-        logo.setImageResource(R.drawable.ic_logo)
-        logo.layoutParams = LinearLayout.LayoutParams(dp(56), dp(56))
-        banner.addView(logo)
+        ring.layoutParams = LinearLayout.LayoutParams(dp(76), dp(76))
+        ring.addView(ImageView(this).apply {
+            setImageResource(R.drawable.ic_nav_shield)
+            setColorFilter(C_PRIMARY)
+            layoutParams = android.widget.FrameLayout.LayoutParams(dp(34), dp(34), Gravity.CENTER)
+        })
+        banner.addView(ring)
         val col = LinearLayout(this)
         col.orientation = LinearLayout.VERTICAL
-        col.setPadding(dp(14), 0, 0, 0)
-        col.addView(text("Penjaga Ketat", 26f, true, C_TEXT).apply { typeface = Typeface.create("serif", Typeface.BOLD) })
-        col.addView(text(modeLabel(), 13f, false, C_PRIMARY))
-        val protectionOk = acc && adm
-        col.addView(TextView(this).apply {
-            text = if (protectionOk) "●  Perlindungan lengkap" else "●  Perlu tindakan"
-            textSize = 12f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(if (protectionOk) Color.parseColor("#9BE7B8") else Color.parseColor("#FFD27A"))
-            background = bg(Color.argb(46, 255, 255, 255), dp(20))
-            setPadding(dp(12), dp(5), dp(12), dp(5))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(8) }
+        col.setPadding(dp(18), 0, 0, 0)
+        col.addView(text(if (protectionOk) "Terlindungi" else "Perlu tindakan", 28f, true, C_TEXT).apply {
+            typeface = Typeface.create("serif", Typeface.BOLD)
         })
+        col.addView(text(
+            if (protectionOk) "Semua lapisan aktif.\n" + (if (Store.nsfwAi(this)) "Deteksi AI memantau layar." else "Deteksi AI sedang mati.")
+            else "Aktifkan izin yang kurang\ndi bawah ini.",
+            13f, false, C_SUB
+        ))
         banner.addView(col)
-        root.addView(banner)
+        outer.addView(banner)
+        root.addView(outer)
         renderStatTiles()
         renderModeSwitch()
+        renderLayers(strict)
 
         if (!acc || !adm) {
             header("Perlu tindakan")
@@ -923,10 +945,38 @@ class MainActivity : Activity() {
     }
 
     private fun renderProteksi() {
+        val strict = Store.strictOn(this)
         val profiles = ProfileStore.load(this)
         val activeP = profiles.count { ProfileEngine.isActive(this, it) }
         val wordCount = Store.keywords(this).size + Store.domains(this).size
         val cats = Categories.enabled(this).size
+        eyebrow("SAKLAR FITUR")
+        val card = newCard()
+        root.addView(card)
+        val feats = listOf(
+            Triple("apps", "Aplikasi", "Blokir, batas waktu, jadwal"),
+            Triple("keywords", "Kata kunci", "Teks di layar dan kolom pencarian"),
+            Triple("sites", "Situs", "Alamat di Chrome dan DNS"),
+            Triple("social", "Bagian sosmed", "Shorts, Reels, Cerita, Pencarian")
+        )
+        for ((i, f) in feats.withIndex()) {
+            card.addView(luxRow(0, f.second, f.third, Store.featureOn(this, f.first), strict, i == feats.size - 1) {
+                toggleFeature(f.first, f.second, strict)
+            })
+        }
+        val ai = newCard()
+        ai.background = GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            intArrayOf(Color.parseColor("#161B25"), Color.parseColor("#0E1117"))
+        ).apply { cornerRadius = dp(20).toFloat(); setStroke(dp(1), Color.argb(150, 212, 175, 106)) }
+        root.addView(ai)
+        ai.addView(luxRow(0, "Deteksi AI gambar", "Model ONNX · pemindaian adaptif", Store.nsfwAi(this), strict, true) { toggleNsfwAi(strict) })
+        ai.addView(text(NsfwAi.status(this), 11f, false, C_SUB))
+        val lockCard = newCard()
+        root.addView(lockCard)
+        lockCard.addView(text("Kunci layar bertahap", 15f, true))
+        lockCard.addView(text("5 layar blokir dalam 10 menit → terkunci 5 menit", 12f, false, C_SUB))
+        eyebrow("ATURAN & MODE")
         homeGroup("ATURAN BLOKIR")
         homeRow("📱", "Aplikasi", "Blokir, batasi waktu, atau beri timer tunggu.", "${Store.apps(this).size} diblokir", C_PRIMARY, "apps")
         homeRow("🌐", "Situs & kata", "Situs, kata kunci, kategori, dan bagian aplikasi sosmed.", "$wordCount aturan • $cats kategori", C_PRIMARY, "words")
@@ -977,9 +1027,10 @@ class MainActivity : Activity() {
         row.layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { bottomMargin = dp(12) }
-        row.addView(statTile(usage, "Pemakaian hari ini", C_TEXT, true, false, "stats"))
-        row.addView(statTile(blocks, "Diblokir hari ini", C_PRIMARY, false, false, "stats"))
-        row.addView(statTile(apps, "Aplikasi diblokir", C_TEXT, false, true, "apps"))
+        val locks = try { Strikes.count(this).toString() } catch (t: Throwable) { "0" }
+        row.addView(statTile(blocks, "Diblokir hari ini", C_TEXT, true, false, "stats"))
+        row.addView(statTile(cleanStreak().toString(), "Hari bersih", C_PRIMARY, false, false, "stats"))
+        row.addView(statTile(locks, "Kunci layar", C_TEXT, false, true, "stats"))
         root.addView(row)
     }
 
@@ -1202,7 +1253,6 @@ class MainActivity : Activity() {
     private fun renderStrict(strict: Boolean, ready: Boolean) {
         val raw = Store.strictRaw(this)
         renderModeSwitch()
-        renderFeatureSwitches(strict)
         header("Metode penonaktifan")
         put(text(
             if (raw) "Metode di bawah berlaku untuk keluar dari Mode Ketat dan terkunci selama Mode Ketat aktif."
@@ -3941,6 +3991,208 @@ class MainActivity : Activity() {
         }
     }
 
+    // ---------- Komponen Lux ----------
+    private fun luxSwitch(on: Boolean, locked: Boolean, onClick: () -> Unit): View {
+        val h = dp(27)
+        val lit = on && !locked
+        val f = android.widget.FrameLayout(this)
+        f.background = if (lit) goldBg(h / 2) else bg(Color.parseColor("#2A2F3B"), h / 2)
+        val knob = View(this)
+        knob.background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(if (lit) C_ON_GOLD else Color.parseColor("#8A8576"))
+        }
+        knob.layoutParams = android.widget.FrameLayout.LayoutParams(dp(21), dp(21)).apply {
+            gravity = (if (on) Gravity.END else Gravity.START) or Gravity.CENTER_VERTICAL
+            setMargins(dp(3), 0, dp(3), 0)
+        }
+        f.addView(knob)
+        f.layoutParams = LinearLayout.LayoutParams(dp(46), h)
+        f.setOnClickListener { onClick() }
+        return f
+    }
+
+    /** Satu baris saklar: ikon garis emas, judul, keterangan, saklar. */
+    private fun luxRow(icon: Int, title: String, sub: String, on: Boolean, locked: Boolean, last: Boolean, onClick: () -> Unit): View {
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.gravity = Gravity.CENTER_VERTICAL
+        row.setPadding(0, dp(12), 0, dp(12))
+        if (icon != 0) {
+            val box = android.widget.FrameLayout(this)
+            box.background = bg(Color.TRANSPARENT, dp(12)).apply { setStroke(dp(1), Color.parseColor("#2A2F3B")) }
+            box.layoutParams = LinearLayout.LayoutParams(dp(38), dp(38)).apply { rightMargin = dp(14) }
+            box.addView(ImageView(this).apply {
+                setImageResource(icon)
+                setColorFilter(C_PRIMARY)
+                layoutParams = android.widget.FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER)
+            })
+            row.addView(box)
+        }
+        val col = LinearLayout(this)
+        col.orientation = LinearLayout.VERTICAL
+        col.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        col.addView(text(title, 15f, true).apply { setPadding(0, 0, 0, 0) })
+        col.addView(text(sub, 12f, false, C_SUB).apply { setPadding(0, dp(2), dp(8), 0) })
+        row.addView(col)
+        row.addView(luxSwitch(on, locked, onClick))
+        val wrap = LinearLayout(this)
+        wrap.orientation = LinearLayout.VERTICAL
+        wrap.addView(row)
+        if (!last) wrap.addView(View(this).apply {
+            setBackgroundColor(Color.parseColor("#1B1F28"))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1))
+        })
+        return wrap
+    }
+
+    private fun eyebrow(s: String) {
+        root.addView(text(s, 11f, true, C_SUB).apply {
+            letterSpacing = 0.18f
+            setPadding(dp(4), dp(14), 0, dp(6))
+        })
+    }
+
+    private fun toggleFeature(key: String, label: String, strict: Boolean) {
+        if (!Store.featureOn(this, key)) {
+            Store.setFeatureOn(this, key, true)
+            render()
+        } else if (strict) {
+            toast("Mode Ketat aktif: tidak bisa dimatikan")
+        } else {
+            textGate("mematikan fitur $label", { Store.setFeatureOn(this, key, false); render() }, { render() })
+        }
+    }
+
+    private fun toggleNsfwAi(strict: Boolean) {
+        val on = Store.nsfwAi(this)
+        if (!on) {
+            Store.setNsfwAi(this, true)
+        } else if (strict) {
+            toast("Mode Ketat aktif: tidak bisa dimatikan")
+        } else {
+            gateOff(true, "mematikan deteksi gambar AI") { Store.setNsfwAi(this, false) }
+        }
+        render()
+    }
+
+    private fun toggleTgWork(strict: Boolean) {
+        if (!Store.tgWorkOn(this)) {
+            Store.setTgWorkOn(this, true)
+            render()
+        } else if (strict) {
+            toast("Mode Ketat aktif: tidak bisa dimatikan")
+        } else {
+            textGate("mematikan Mode Telegram Kerja", { Store.setTgWorkOn(this, false); render() }, { render() })
+        }
+    }
+
+    /** Hari bersih beruntun (tanpa satu pun blokir), sama dengan kartu Hari bersih. */
+    private fun cleanStreak(): Int {
+        return try {
+            val now = System.currentTimeMillis()
+            val per = StatsDb.blocksPerDay(this, 35)
+            val first = packageManager.getPackageInfo(packageName, 0).firstInstallTime
+            val firstKey = StatsDb.dayKey(first)
+            var n = 0
+            for (i in 0 until 35) {
+                val k = StatsDb.dayKey(now - i.toLong() * 86400000L)
+                if (k < firstKey) break
+                if ((per[k] ?: 0) == 0) n++ else break
+            }
+            n
+        } catch (t: Throwable) {
+            0
+        }
+    }
+
+    private fun renderLayers(strict: Boolean) {
+        eyebrow("LAPISAN PELINDUNG")
+        val box = LinearLayout(this)
+        box.orientation = LinearLayout.VERTICAL
+        box.setPadding(dp(4), 0, dp(4), 0)
+        box.addView(luxRow(R.drawable.ic_ly_eye, "Deteksi AI gambar", "Memindai layar secara adaptif",
+            Store.nsfwAi(this), strict, false) { toggleNsfwAi(strict) })
+        box.addView(luxRow(R.drawable.ic_ly_send, "Telegram Kerja",
+            "${Store.tgAllow(this).size} chat boleh · pribadi selalu boleh",
+            Store.tgWorkOn(this), strict && Store.tgWorkOn(this), false) { toggleTgWork(strict) })
+        box.addView(luxRow(R.drawable.ic_ly_globe, "Situs & kata kunci", "Hanya Chrome · DNS aman",
+            Store.featureOn(this, "sites"), strict, false) { toggleFeature("sites", "Situs", strict) })
+        box.addView(luxRow(R.drawable.ic_ly_app, "Aplikasi baru", "Diblokir otomatis saat baru dipasang",
+            Store.autoBlockNew(this), strict, true) {
+            if (Store.autoBlockNew(this) && strict) toast("Mode Ketat aktif: tidak bisa dimatikan")
+            else { Store.setAutoBlockNew(this, !Store.autoBlockNew(this)); render() }
+        })
+        root.addView(box)
+    }
+
+    private fun renderTgWork(strict: Boolean) {
+        val on = Store.tgWorkOn(this)
+        val list = Store.tgAllow(this).sorted()
+        header("Telegram Kerja")
+        put(text("Hanya grup, channel, dan bot di daftar yang boleh dibuka. Chat pribadi selalu boleh. Cocok jika nama chat mengandung kata yang kamu daftarkan.", 12f, false, C_SUB))
+        put(luxRow(0, "Mode Telegram Kerja", "Chat di luar daftar langsung ditutup", on, strict && on, true) { toggleTgWork(strict) })
+
+        val btns = LinearLayout(this)
+        btns.orientation = LinearLayout.HORIZONTAL
+        btns.addView(button("Pilih dari Telegram") {
+            val start = {
+                val tg = NsfwSource.TG_PACKAGES.firstNotNullOfOrNull { packageManager.getLaunchIntentForPackage(it) }
+                if (tg == null) toast("Telegram tidak ditemukan")
+                else {
+                    Store.setTgPickUntil(this, if (on) System.currentTimeMillis() + 10 * 60_000L else Long.MAX_VALUE / 2)
+                    toast("Buka chat kerja, lalu tekan tombol ＋ Boleh di bawah layar. Tekan Selesai bila sudah.")
+                    startActivity(tg)
+                }
+            }
+            if (!on) start()
+            else if (strict) toast("Mode Ketat aktif: tidak bisa menambah daftar boleh")
+            else textGate("menambah chat yang boleh dibuka", { start() }, { render() })
+        }.apply { layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { topMargin = dp(8); rightMargin = dp(6) } })
+        btns.addView(smallButton("Ketik nama") {
+            val add = { askName("Nama chat (boleh sebagian nama)", "") { Store.addTgAllow(this, it); render() } }
+            if (!on) add()
+            else if (strict) toast("Mode Ketat aktif: tidak bisa menambah daftar boleh")
+            else textGate("menambah chat yang boleh dibuka", { add() }, { render() })
+        }.apply { layoutParams = LinearLayout.LayoutParams(0, dp(48), 1f).apply { topMargin = dp(8); leftMargin = dp(6); rightMargin = 0 } })
+        put(btns)
+
+        put(text("DAFTAR BOLEH  ·  ${list.size} chat", 11f, true, C_SUB).apply { letterSpacing = 0.12f; setPadding(0, dp(14), 0, dp(4)) })
+        if (list.isEmpty()) put(text("Daftar kosong: bila mode aktif, semua grup, channel, dan bot yang terbaca akan ditutup.", 12f, false, C_SUB))
+        for (nm in list) {
+            val row = LinearLayout(this)
+            row.orientation = LinearLayout.HORIZONTAL
+            row.gravity = Gravity.CENTER_VERTICAL
+            row.setPadding(0, dp(8), 0, dp(8))
+            row.addView(TextView(this).apply {
+                text = nm.take(1).uppercase()
+                textSize = 13f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(C_PRIMARY)
+                gravity = Gravity.CENTER
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(Color.parseColor("#1B1F28"))
+                    setStroke(dp(1), Color.argb(110, 212, 175, 106))
+                }
+                layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply { rightMargin = dp(12) }
+            })
+            row.addView(text(nm, 14.5f).apply {
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            row.addView(text("✕", 16f, true, C_SUB).apply {
+                setPadding(dp(12), dp(8), dp(4), dp(8))
+                setOnClickListener {
+                    // Mengurangi daftar boleh = lebih ketat, jadi langsung.
+                    Store.removeTgAllow(this@MainActivity, nm)
+                    render()
+                }
+            })
+            put(row)
+        }
+        put(text("Menambah daftar saat mode aktif wajib lewat teks acak dan tidak bisa saat Mode Ketat. Menghapus entri langsung. Selama mode belum dicentang, daftar bebas diisi.", 12f, false, C_SUB).apply { setPadding(0, dp(10), 0, 0) })
+    }
+
     private fun renderWords(strict: Boolean) {
         header("Kata kunci")
         put(text("Pisahkan antara keyword yang hanya diperiksa di URL browser dan keyword yang diperiksa pada teks seluruh layar.", 12f, false, C_SUB))
@@ -4069,69 +4321,6 @@ class MainActivity : Activity() {
             chCol.addView(row)
         }
         put(if (chCol.childCount == 0) text("Belum ada.", 12f, false, C_SUB) else scrollBox(160, chCol))
-
-        // Mode Telegram Kerja: daftar boleh (allowlist).
-        header("Telegram Kerja (daftar boleh)")
-        put(text("Bila aktif, Telegram resmi hanya boleh membuka grup, channel, dan bot yang namanya ada di daftar ini; chat pribadi (orang) selalu boleh. Yang lain langsung ditutup, Telegram tetap bisa dipakai. Cocok jika nama chat MENGANDUNG kata yang kamu daftarkan. Selama mode belum dicentang, daftar bebas diisi. Setelah dicentang, menambah daftar dan mematikan mode wajib lewat gerbang dan tidak bisa saat Mode Ketat.", 12f, false, C_SUB))
-        val twCb = CheckBox(this)
-        twCb.text = "Aktifkan Mode Telegram Kerja"
-        twCb.isChecked = Store.tgWorkOn(this)
-        twCb.setOnClickListener {
-            val v = twCb.isChecked
-            if (v) {
-                Store.setTgWorkOn(this, true)
-                render()
-            } else if (strict) {
-                twCb.isChecked = true
-                toast("Mode Ketat aktif: tidak bisa dimatikan")
-            } else {
-                twCb.isChecked = true
-                textGate("mematikan Mode Telegram Kerja", { Store.setTgWorkOn(this, false); render() }, { render() })
-            }
-        }
-        put(twCb)
-        // Selama mode belum dicentang, menambah daftar tidak melonggarkan apa pun: bebas, tanpa gerbang dan tanpa batas waktu.
-        put(button(if (Store.tgWorkOn(this)) "Pilih dari Telegram (10 menit)" else "Pilih dari Telegram") {
-            val on = Store.tgWorkOn(this)
-            val start = {
-                val tg = NsfwSource.TG_PACKAGES.firstNotNullOfOrNull { packageManager.getLaunchIntentForPackage(it) }
-                if (tg == null) toast("Telegram tidak ditemukan")
-                else {
-                    Store.setTgPickUntil(this, if (on) System.currentTimeMillis() + 10 * 60_000L else Long.MAX_VALUE / 2)
-                    toast("Buka chat kerja, lalu tekan tombol ＋ Boleh di bawah layar. Tekan Selesai bila sudah.")
-                    startActivity(tg)
-                }
-            }
-            if (!on) start()
-            else if (strict) toast("Mode Ketat aktif: tidak bisa menambah daftar boleh")
-            else textGate("menambah chat yang boleh dibuka", { start() }, { render() })
-        })
-        put(button("Tambah chat dengan mengetik nama") {
-            val add = { askName("Nama chat (boleh sebagian nama)", "") { Store.addTgAllow(this, it); render() } }
-            if (!Store.tgWorkOn(this)) add()
-            else if (strict) toast("Mode Ketat aktif: tidak bisa menambah daftar boleh")
-            else textGate("menambah chat yang boleh dibuka", { add() }, { render() })
-        })
-        val awCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        for (nm in Store.tgAllow(this).sorted()) {
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-            }
-            row.addView(text(nm, 13f).apply {
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            })
-            row.addView(text("✕", 15f, true, C_BAD).apply {
-                setPadding(dp(10), dp(8), dp(6), dp(8))
-                setOnClickListener {
-                    // Mengurangi daftar boleh = lebih ketat, jadi langsung.
-                    Store.removeTgAllow(this@MainActivity, nm)
-                    render()
-                }
-            })
-            awCol.addView(row)
-        }
-        put(if (awCol.childCount == 0) text("Daftar kosong: bila mode aktif, semua chat yang terbaca akan ditutup.", 12f, false, C_SUB) else scrollBox(200, awCol))
     }
 
     private fun editSiteDialog(domain: String, strict: Boolean, isNew: Boolean = false) {
