@@ -57,18 +57,24 @@ class MainActivity : Activity() {
     private var credAsked = false
     private var inCred = false
 
-    private val night: Boolean
-        get() = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
-            android.content.res.Configuration.UI_MODE_NIGHT_YES
-    private val C_BG: Int get() = Color.parseColor(if (night) "#12161C" else "#F2F4F8")
-    private val C_CARD: Int get() = Color.parseColor(if (night) "#1E242C" else "#FFFFFF")
-    private val C_CHIP: Int get() = Color.parseColor(if (night) "#2A3340" else "#E6ECF5")
-    private val C_FIELD: Int get() = Color.parseColor(if (night) "#262D37" else "#F6F7FA")
-    private val C_PRIMARY: Int get() = Color.parseColor(if (night) "#5B8DEF" else "#1E3A5F")
-    private val C_TEXT: Int get() = Color.parseColor(if (night) "#E8EAED" else "#1B1F27")
-    private val C_SUB: Int get() = Color.parseColor(if (night) "#A0A9B5" else "#5F6B7A")
-    private val C_OK: Int get() = Color.parseColor(if (night) "#4CC38A" else "#1B7F4B")
-    private val C_BAD: Int get() = Color.parseColor(if (night) "#FF6B6B" else "#C62828")
+    // Tema Lux: selalu gelap, aksen emas.
+    private val night: Boolean get() = true
+    private val C_BG: Int get() = Color.parseColor("#0A0C10")
+    private val C_CARD: Int get() = Color.parseColor("#10131A")
+    private val C_CHIP: Int get() = Color.parseColor("#232834")
+    private val C_FIELD: Int get() = Color.parseColor("#141821")
+    private val C_PRIMARY: Int get() = Color.parseColor("#D4AF6A")
+    private val C_TEXT: Int get() = Color.parseColor("#EDE8DD")
+    private val C_SUB: Int get() = Color.parseColor("#A9A396")
+    private val C_OK: Int get() = Color.parseColor("#5FC9A0")
+    private val C_BAD: Int get() = Color.parseColor("#E5736B")
+    private val C_ON_GOLD: Int get() = Color.parseColor("#1A1405")
+
+    /** Latar emas bergradien untuk tombol dan pilihan aktif. */
+    private fun goldBg(radius: Int): GradientDrawable =
+        GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(Color.parseColor("#E6C987"), Color.parseColor("#C99A45"))).apply {
+            cornerRadius = radius.toFloat()
+        }
 
     private class AppRow(val pkg: String, val label: String)
 
@@ -153,7 +159,7 @@ class MainActivity : Activity() {
         c.orientation = LinearLayout.VERTICAL
         c.setPadding(dp(18), dp(14), dp(18), dp(16))
         c.background = bg(C_CARD, dp(20)).apply { setStroke(dp(1), C_CHIP) }
-        c.elevation = if (night) 0f else dp(1).toFloat()
+        c.elevation = 0f
         val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         lp.bottomMargin = dp(12)
         c.layoutParams = lp
@@ -180,7 +186,8 @@ class MainActivity : Activity() {
             background = bg(C_PRIMARY, dp(2))
             layoutParams = LinearLayout.LayoutParams(dp(4), dp(18)).apply { rightMargin = dp(10) }
         })
-        titleRow.addView(text(s, 16f, true, C_TEXT).apply {
+        titleRow.addView(text(s, 17f, true, C_TEXT).apply {
+            typeface = Typeface.create("serif", Typeface.BOLD)
             setPadding(0, 0, 0, 0)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
@@ -442,10 +449,11 @@ class MainActivity : Activity() {
             text = label
             isAllCaps = false
             textSize = 14f
-            setTextColor(Color.WHITE)
+            setTextColor(C_ON_GOLD)
+            setTypeface(null, Typeface.BOLD)
             background = android.graphics.drawable.RippleDrawable(
                 android.content.res.ColorStateList.valueOf(Color.argb(70, 255, 255, 255)),
-                bg(C_PRIMARY, dp(14)), null
+                goldBg(dp(16)), null
             )
             stateListAnimator = null
             elevation = 0f
@@ -464,7 +472,7 @@ class MainActivity : Activity() {
             isAllCaps = false
             textSize = 12f
             setTextColor(C_PRIMARY)
-            background = bg(C_CHIP, dp(10))
+            background = bg(C_FIELD, dp(12)).apply { setStroke(dp(1), Color.argb(110, 212, 175, 106)) }
             minHeight = dp(44)
             minimumHeight = dp(44)
             setPadding(dp(8), dp(6), dp(8), dp(6))
@@ -613,10 +621,10 @@ class MainActivity : Activity() {
 
     // ---------- Navigasi 4 tab ----------
     private val TABS = listOf(
-        Triple("🏠", "Beranda", "home"),
-        Triple("🛡️", "Proteksi", "proteksi"),
-        Triple("📊", "Statistik", "stats"),
-        Triple("⚙️", "Setelan", "more")
+        Triple(R.drawable.ic_nav_home, "Beranda", "home"),
+        Triple(R.drawable.ic_nav_shield, "Proteksi", "proteksi"),
+        Triple(R.drawable.ic_nav_stats, "Statistik", "stats"),
+        Triple(R.drawable.ic_nav_settings, "Setelan", "more")
     )
 
     private fun tabOf(s: String): Int = when (s) {
@@ -639,15 +647,18 @@ class MainActivity : Activity() {
         val bar = LinearLayout(this)
         bar.orientation = LinearLayout.HORIZONTAL
         bar.setPadding(dp(6), dp(6), dp(6), dp(6))
-        bar.setBackgroundColor(C_CARD)
-        bar.elevation = dp(8).toFloat()
+        bar.background = bg(C_CARD, 0).apply { setStroke(dp(1), C_CHIP) }
+        bar.elevation = 0f
         for ((icon, label, target) in TABS) {
             val item = LinearLayout(this)
             item.orientation = LinearLayout.VERTICAL
             item.gravity = Gravity.CENTER
             item.tag = target
             item.setPadding(0, dp(4), 0, dp(4))
-            item.addView(TextView(this).apply { text = icon; textSize = 20f; gravity = Gravity.CENTER })
+            item.addView(ImageView(this).apply {
+                setImageResource(icon)
+                layoutParams = LinearLayout.LayoutParams(dp(24), dp(24)).apply { gravity = Gravity.CENTER_HORIZONTAL }
+            })
             item.addView(TextView(this).apply { text = label; textSize = 11f; gravity = Gravity.CENTER; tag = "lbl" })
             item.setOnClickListener { goScreen(target) }
             bar.addView(item, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
@@ -656,7 +667,6 @@ class MainActivity : Activity() {
     }
 
     private fun updateNav() {
-        navBar.setBackgroundColor(C_CARD)
         val sel = tabOf(screen)
         for (i in 0 until navBar.childCount) {
             val item = navBar.getChildAt(i) as LinearLayout
@@ -664,8 +674,8 @@ class MainActivity : Activity() {
             val lbl = item.getChildAt(1) as TextView
             lbl.setTextColor(if (on) C_PRIMARY else C_SUB)
             lbl.setTypeface(null, if (on) Typeface.BOLD else Typeface.NORMAL)
-            item.getChildAt(0).alpha = if (on) 1f else 0.55f
-            item.background = if (on) bg(C_CHIP, dp(14)) else null
+            (item.getChildAt(0) as ImageView).setColorFilter(if (on) C_PRIMARY else C_SUB)
+            item.background = if (on) bg(Color.argb(30, 212, 175, 106), dp(14)) else null
         }
     }
 
@@ -802,15 +812,16 @@ class MainActivity : Activity() {
             back.setOnClickListener { goScreen(parentOf(screen)) }
             row.addView(back)
         }
-        row.addView(text(title, 22f, true).apply {
+        row.addView(text(title, 26f, true).apply {
+            typeface = Typeface.create("serif", Typeface.BOLD)
             setPadding(if (isTabRoot(screen)) dp(4) else dp(14), 0, 0, 0)
         })
         row.setPadding(0, dp(2), 0, dp(6))
         root.addView(row)
         root.addView(text(screenSummary(screen), 13f, false, C_SUB).apply { setPadding(dp(4), 0, 0, dp(10)) })
         if (Store.strictOn(this)) {
-            root.addView(text("🔒  Mode Ketat aktif · pengaturan penting terkunci", 12f, true, C_BAD).apply {
-                background = bg(if (night) Color.parseColor("#3A1F22") else Color.parseColor("#FDECEC"), dp(12))
+            root.addView(text("🔒  Mode Ketat aktif · pengaturan penting terkunci", 12f, true, C_PRIMARY).apply {
+                background = bg(Color.parseColor("#1F1A0E"), dp(12)).apply { setStroke(dp(1), Color.argb(90, 212, 175, 106)) }
                 setPadding(dp(12), dp(8), dp(12), dp(8))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
@@ -850,9 +861,12 @@ class MainActivity : Activity() {
         banner.setPadding(dp(18), dp(18), dp(18), dp(18))
         banner.background = GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
-            intArrayOf(Color.parseColor(if (night) "#274C80" else "#1E3A5F"), Color.parseColor(if (night) "#3B76C9" else "#2F6DB5"))
-        ).apply { cornerRadius = dp(24).toFloat() }
-        banner.elevation = if (night) 0f else dp(2).toFloat()
+            intArrayOf(Color.parseColor("#161B25"), Color.parseColor("#0E1117"))
+        ).apply {
+            cornerRadius = dp(24).toFloat()
+            setStroke(dp(1), Color.argb(150, 212, 175, 106))
+        }
+        banner.elevation = 0f
         val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         lp.bottomMargin = dp(12)
         banner.layoutParams = lp
@@ -863,8 +877,8 @@ class MainActivity : Activity() {
         val col = LinearLayout(this)
         col.orientation = LinearLayout.VERTICAL
         col.setPadding(dp(14), 0, 0, 0)
-        col.addView(text("Penjaga Ketat", 22f, true, Color.WHITE))
-        col.addView(text(modeLabel(), 13f, false, Color.argb(235, 255, 255, 255)))
+        col.addView(text("Penjaga Ketat", 26f, true, C_TEXT).apply { typeface = Typeface.create("serif", Typeface.BOLD) })
+        col.addView(text(modeLabel(), 13f, false, C_PRIMARY))
         val protectionOk = acc && adm
         col.addView(TextView(this).apply {
             text = if (protectionOk) "●  Perlindungan lengkap" else "●  Perlu tindakan"
@@ -914,20 +928,18 @@ class MainActivity : Activity() {
         val wordCount = Store.keywords(this).size + Store.domains(this).size
         val cats = Categories.enabled(this).size
         homeGroup("ATURAN BLOKIR")
-        homeRow("📱", "Aplikasi", "Blokir, batasi waktu, atau beri timer tunggu.", "${Store.apps(this).size} diblokir", Color.parseColor("#1565C0"), "apps")
-        homeRow("🌐", "Situs & kata", "Situs, kata kunci, kategori, dan bagian aplikasi sosmed.", "$wordCount aturan • $cats kategori", Color.parseColor("#6A1B9A"), "words")
-        homeRow("🗓️", "Jadwal & profil", "Aturan otomatis per hari dan jam (Kerja, Tidur, dll.).", scheduleTileLabel() + " • $activeP profil aktif", Color.parseColor("#00796B"), "sched")
+        homeRow("📱", "Aplikasi", "Blokir, batasi waktu, atau beri timer tunggu.", "${Store.apps(this).size} diblokir", C_PRIMARY, "apps")
+        homeRow("🌐", "Situs & kata", "Situs, kata kunci, kategori, dan bagian aplikasi sosmed.", "$wordCount aturan • $cats kategori", C_PRIMARY, "words")
+        homeRow("🗓️", "Jadwal & profil", "Aturan otomatis per hari dan jam (Kerja, Tidur, dll.).", scheduleTileLabel() + " • $activeP profil aktif", C_PRIMARY, "sched")
         homeGroup("MODE")
-        homeRow("🎯", "Mode Fokus", "Sesi waktu yang menutup aplikasi dan situs pemicu.", focusTileLabel(), Color.parseColor("#AD1457"), "focus")
-        homeRow("🛡️", "Mode Ketat & status", "Kunci pengaturan dan cek perlindungan diri.", modeLabel(), Color.parseColor("#C62828"), "strict")
-        homeRow("🔌", "VPN & notifikasi", "Filter situs lewat DNS dan kontrol notifikasi.", if (VpnStatus.running) "VPN DNS aktif" else if (Store.vpnOn(this)) "VPN DNS: " + VpnStatus.state.label else "VPN DNS mati", Color.parseColor("#2E7D32"), "net")
+        homeRow("🎯", "Mode Fokus", "Sesi waktu yang menutup aplikasi dan situs pemicu.", focusTileLabel(), C_PRIMARY, "focus")
+        homeRow("🛡️", "Mode Ketat & status", "Kunci pengaturan dan cek perlindungan diri.", modeLabel(), C_PRIMARY, "strict")
+        homeRow("🔌", "VPN & notifikasi", "Filter situs lewat DNS dan kontrol notifikasi.", if (VpnStatus.running) "VPN DNS aktif" else if (Store.vpnOn(this)) "VPN DNS: " + VpnStatus.state.label else "VPN DNS mati", C_PRIMARY, "net")
 
     }
 
     /** Warna aksen; di mode gelap dibuat lebih terang supaya terbaca. */
-    private fun accent(color: Int): Int =
-        if (night) Color.argb(255, Math.min(255, Color.red(color) + 70), Math.min(255, Color.green(color) + 70), Math.min(255, Color.blue(color) + 70))
-        else color
+    private fun accent(color: Int): Int = color
 
     private fun statTile(value: String, label: String, color: Int, first: Boolean, last: Boolean, target: String): View {
         val t = LinearLayout(this)
@@ -939,7 +951,7 @@ class MainActivity : Activity() {
         t.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
             setMargins(if (first) 0 else dp(4), 0, if (last) 0 else dp(4), 0)
         }
-        t.addView(text(value, 20f, true, accent(color)).apply { gravity = Gravity.CENTER })
+        t.addView(text(value, 22f, true, accent(color)).apply { gravity = Gravity.CENTER; typeface = Typeface.create("serif", Typeface.BOLD) })
         t.addView(text(label, 11f, false, C_SUB).apply { gravity = Gravity.CENTER })
         t.setOnClickListener { goScreen(target) }
         return t
@@ -965,9 +977,9 @@ class MainActivity : Activity() {
         row.layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { bottomMargin = dp(12) }
-        row.addView(statTile(usage, "Pemakaian hari ini", Color.parseColor("#1565C0"), true, false, "stats"))
-        row.addView(statTile(blocks, "Diblokir hari ini", Color.parseColor("#EF6C00"), false, false, "stats"))
-        row.addView(statTile(apps, "Aplikasi diblokir", Color.parseColor("#6A1B9A"), false, true, "apps"))
+        row.addView(statTile(usage, "Pemakaian hari ini", C_TEXT, true, false, "stats"))
+        row.addView(statTile(blocks, "Diblokir hari ini", C_PRIMARY, false, false, "stats"))
+        row.addView(statTile(apps, "Aplikasi diblokir", C_TEXT, false, true, "apps"))
         root.addView(row)
     }
 
@@ -1005,7 +1017,7 @@ class MainActivity : Activity() {
         } catch (t: Throwable) {
             // tanpa efek sentuh
         }
-        row.elevation = if (night) 0f else dp(1).toFloat()
+        row.elevation = 0f
         row.layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { bottomMargin = dp(6) }
@@ -1013,7 +1025,7 @@ class MainActivity : Activity() {
             text = icon
             textSize = 20f
             gravity = Gravity.CENTER
-            background = bg(Color.argb(if (night) 70 else 38, Color.red(color), Color.green(color), Color.blue(color)), dp(14))
+            background = bg(C_FIELD, dp(14)).apply { setStroke(dp(1), Color.argb(110, 212, 175, 106)) }
             layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
         })
         val col = LinearLayout(this)
@@ -1022,7 +1034,7 @@ class MainActivity : Activity() {
         col.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         col.addView(text(title, 15f, true))
         col.addView(text(help, 12f, false, C_SUB))
-        col.addView(text(status, 12f, true, if (night) Color.argb(255, Math.min(255, Color.red(color) + 70), Math.min(255, Color.green(color) + 70), Math.min(255, Color.blue(color) + 70)) else color))
+        col.addView(text(status, 12f, true, color))
         row.addView(col)
         row.addView(text("›", 22f, true, C_SUB))
         row.setOnClickListener { goScreen(target) }
@@ -1108,9 +1120,9 @@ class MainActivity : Activity() {
         t.textSize = 14f
         t.setTypeface(null, Typeface.BOLD)
         t.gravity = Gravity.CENTER
-        t.setTextColor(if (selected) Color.WHITE else C_SUB)
-        t.background = bg(if (selected) color else if (seg) Color.TRANSPARENT else C_CHIP, dp(if (seg) 14 else 12))
-        if (seg && selected) t.elevation = dp(2).toFloat()
+        val goldSel = selected && color == C_PRIMARY
+        t.setTextColor(if (goldSel) C_ON_GOLD else if (selected) Color.WHITE else C_SUB)
+        t.background = if (goldSel) goldBg(dp(if (seg) 14 else 12)) else bg(if (selected) color else if (seg) Color.TRANSPARENT else C_FIELD, dp(if (seg) 14 else 12))
         t.setPadding(dp(8), dp(12), dp(8), dp(12))
         t.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
             setMargins(dp(3), 0, dp(3), 0)
@@ -1125,18 +1137,18 @@ class MainActivity : Activity() {
         header("Mode")
         val row = LinearLayout(this)
         row.orientation = LinearLayout.HORIZONTAL
-        row.background = bg(C_CHIP, dp(18))
+        row.background = bg(C_FIELD, dp(18)).apply { setStroke(dp(1), C_CHIP) }
         row.setPadding(dp(3), dp(3), dp(3), dp(3))
-        row.addView(segPill("Off", paused, Color.parseColor("#78909C")) {
+        row.addView(segPill("Off", paused, Color.parseColor("#4A5160")) {
             if (raw) toast("Mode Ketat aktif. Keluar dulu lewat metode penonaktifan.") else pauseDialog()
         })
-        row.addView(segPill("Normal", !paused && !raw, C_PRIMARY) {
+        row.addView(segPill("Normal", !paused && !raw, Color.parseColor("#3F8F78")) {
             if (raw) toast("Mode Ketat aktif. Keluar dulu lewat metode penonaktifan.") else {
                 Store.pauseStop(this)
                 render()
             }
         })
-        row.addView(segPill("Ketat", raw, C_BAD) {
+        row.addView(segPill("Ketat", raw, C_PRIMARY) {
             if (screen != "strict") goScreen("strict") else toast("Atur metode penonaktifan di bawah, lalu tekan Aktifkan Mode Ketat.")
         })
         put(row)

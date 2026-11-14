@@ -47,11 +47,11 @@ class BlockActivity : Activity() {
         val hitText = intent.getStringExtra("wordText") ?: ""
         val hitWhere = intent.getStringExtra("wordWhere") ?: ""
 
-        val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-        val cBg = if (night) Color.parseColor("#12161C") else Color.WHITE
-        val cFg = if (night) Color.parseColor("#E8EAED") else Color.BLACK
-        val cSub = if (night) Color.parseColor("#A0A9B5") else Color.rgb(70, 70, 70)
-        val cRed = if (night) Color.parseColor("#FF6B6B") else Color.rgb(180, 0, 0)
+        val night = true // tema Lux: selalu gelap
+        val cBg = if (night) Color.parseColor("#07090C") else Color.WHITE
+        val cFg = if (night) Color.parseColor("#EDE8DD") else Color.BLACK
+        val cSub = if (night) Color.parseColor("#B7B1A3") else Color.rgb(70, 70, 70)
+        val cRed = if (night) Color.parseColor("#D4AF6A") else Color.rgb(180, 0, 0)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -60,12 +60,12 @@ class BlockActivity : Activity() {
         }
         val dm = resources.displayMetrics.density
         fun dpx(v: Int) = (v * dm).toInt()
-        val cCard = if (night) Color.parseColor("#1B2129") else Color.parseColor("#F4F6F9")
-        val cBtn = if (night) Color.parseColor("#6FA8FF") else Color.parseColor("#1A56DB")
-        val cBtn2 = if (night) Color.parseColor("#2A333F") else Color.parseColor("#E3E8EF")
+        val cCard = if (night) Color.parseColor("#10131A") else Color.parseColor("#F4F6F9")
+        val cBtn = if (night) Color.parseColor("#D4AF6A") else Color.parseColor("#1A56DB")
+        val cBtn2 = if (night) Color.parseColor("#232834") else Color.parseColor("#E3E8EF")
         fun styleBtn(b: Button, primary: Boolean) {
             b.isAllCaps = false
-            b.setTextColor(if (primary) Color.WHITE else cFg)
+            b.setTextColor(if (primary) Color.parseColor("#1A1405") else cFg)
             b.background = android.graphics.drawable.GradientDrawable().apply {
                 setColor(if (primary) cBtn else cBtn2)
                 cornerRadius = dpx(14).toFloat()
@@ -82,13 +82,14 @@ class BlockActivity : Activity() {
             background = android.graphics.drawable.GradientDrawable().apply {
                 setColor(cCard)
                 cornerRadius = dpx(24).toFloat()
+                setStroke(dpx(1), Color.argb(120, 212, 175, 106))
             }
         }
         val title = TextView(this).apply {
             text = "Diblokir"
-            textSize = 28f
+            textSize = 30f
             setTextColor(cRed)
-            setTypeface(null, Typeface.BOLD)
+            typeface = Typeface.create("serif", Typeface.BOLD)
             gravity = Gravity.CENTER
         }
         why = TextView(this).apply {
