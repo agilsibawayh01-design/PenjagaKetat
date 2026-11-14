@@ -781,7 +781,7 @@ class MainActivity : Activity() {
                 "focus" -> renderFocus(strict)
                 "sched" -> renderSchedule(strict)
                 else -> {
-                    homeRow("📊", "Statistik", "Pemakaian, blokir, dan pola waktu.", "Lihat", C_PRIMARY, "stats")
+                    homeRow(R.drawable.ic_nav_stats, "Statistik", "Pemakaian, blokir, dan pola waktu.", "Lihat", C_PRIMARY, "stats")
                     sectionLabel("KEAMANAN")
                     renderAppLock(strict)
                     renderUninstallGate(strict)
@@ -803,6 +803,15 @@ class MainActivity : Activity() {
         val same = lastScreen == screen
         lastScreen = screen
         scroll.post { scroll.scrollTo(0, if (same) keepY else 0) }
+        if (!same) {
+            root.animate().cancel()
+            root.alpha = 0f
+            root.translationY = dp(14).toFloat()
+            root.animate().alpha(1f).translationY(0f).setDuration(200L).start()
+        } else {
+            root.alpha = 1f
+            root.translationY = 0f
+        }
         // Layar teks acak: blokir screenshot dan rekam layar (juga bantuan OCR/AI berbasis tangkapan layar).
         try {
             if (gateShown) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
@@ -1010,13 +1019,13 @@ class MainActivity : Activity() {
         lockCard.addView(text("5 layar blokir dalam 10 menit → terkunci 5 menit", 12f, false, C_SUB))
         eyebrow("ATURAN & MODE")
         homeGroup("ATURAN BLOKIR")
-        homeRow("📱", "Aplikasi", "Blokir, batasi waktu, atau beri timer tunggu.", "${Store.apps(this).size} diblokir", Color.parseColor("#6EA8FF"), "apps")
-        homeRow("🌐", "Situs & kata", "Situs, kata kunci, kategori, dan bagian aplikasi sosmed.", "$wordCount aturan • $cats kategori", Color.parseColor("#B794F6"), "words")
-        homeRow("🗓️", "Jadwal & profil", "Aturan otomatis per hari dan jam (Kerja, Tidur, dll.).", scheduleTileLabel() + " • $activeP profil aktif", Color.parseColor("#4FD1B5"), "sched")
+        homeRow(R.drawable.ic_ly_phone, "Aplikasi", "Blokir, batasi waktu, atau beri timer tunggu.", "${Store.apps(this).size} diblokir", Color.parseColor("#6EA8FF"), "apps")
+        homeRow(R.drawable.ic_nav_globe, "Situs & kata", "Situs, kata kunci, kategori, dan bagian aplikasi sosmed.", "$wordCount aturan • $cats kategori", Color.parseColor("#B794F6"), "words")
+        homeRow(R.drawable.ic_ly_calendar, "Jadwal & profil", "Aturan otomatis per hari dan jam (Kerja, Tidur, dll.).", scheduleTileLabel() + " • $activeP profil aktif", Color.parseColor("#4FD1B5"), "sched")
         homeGroup("MODE")
-        homeRow("🎯", "Mode Fokus", "Sesi waktu yang menutup aplikasi dan situs pemicu.", focusTileLabel(), Color.parseColor("#F687B3"), "focus")
-        homeRow("🛡️", "Mode Ketat & status", "Kunci pengaturan dan cek perlindungan diri.", modeLabel(), C_PRIMARY, "strict")
-        homeRow("🔌", "VPN & notifikasi", "Filter situs lewat DNS dan kontrol notifikasi.", if (VpnStatus.running) "VPN DNS aktif" else if (Store.vpnOn(this)) "VPN DNS: " + VpnStatus.state.label else "VPN DNS mati", Color.parseColor("#68D391"), "net")
+        homeRow(R.drawable.ic_ly_target, "Mode Fokus", "Sesi waktu yang menutup aplikasi dan situs pemicu.", focusTileLabel(), Color.parseColor("#F687B3"), "focus")
+        homeRow(R.drawable.ic_nav_shield, "Mode Ketat & status", "Kunci pengaturan dan cek perlindungan diri.", modeLabel(), C_PRIMARY, "strict")
+        homeRow(R.drawable.ic_ly_plug, "VPN & notifikasi", "Filter situs lewat DNS dan kontrol notifikasi.", if (VpnStatus.running) "VPN DNS aktif" else if (Store.vpnOn(this)) "VPN DNS: " + VpnStatus.state.label else "VPN DNS mati", Color.parseColor("#68D391"), "net")
 
     }
 
@@ -1085,7 +1094,7 @@ class MainActivity : Activity() {
         })
     }
 
-    private fun homeRow(icon: String, title: String, help: String, status: String, color: Int, target: String) {
+    private fun homeRow(icon: Int, title: String, help: String, status: String, color: Int, target: String) {
         val row = LinearLayout(this)
         row.orientation = LinearLayout.HORIZONTAL
         row.gravity = Gravity.CENTER_VERTICAL
@@ -1104,10 +1113,10 @@ class MainActivity : Activity() {
         row.layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { bottomMargin = dp(6) }
-        row.addView(TextView(this).apply {
-            text = icon
-            textSize = 20f
-            gravity = Gravity.CENTER
+        row.addView(ImageView(this).apply {
+            setImageResource(icon)
+            setColorFilter(color)
+            setPadding(dp(11), dp(11), dp(11), dp(11))
             background = bg(Color.argb(40, Color.red(color), Color.green(color), Color.blue(color)), dp(14)).apply { setStroke(dp(1), Color.argb(120, Color.red(color), Color.green(color), Color.blue(color))) }
             layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
         })
@@ -4037,12 +4046,21 @@ class MainActivity : Activity() {
             setColor(if (lit) C_ON_GOLD else Color.parseColor("#8A8576"))
         }
         knob.layoutParams = android.widget.FrameLayout.LayoutParams(dp(21), dp(21)).apply {
-            gravity = (if (on) Gravity.END else Gravity.START) or Gravity.CENTER_VERTICAL
+            gravity = Gravity.START or Gravity.CENTER_VERTICAL
             setMargins(dp(3), 0, dp(3), 0)
         }
+        val travel = dp(19).toFloat()
+        knob.translationX = if (on) travel else 0f
         f.addView(knob)
         f.layoutParams = LinearLayout.LayoutParams(dp(46), h)
-        f.setOnClickListener { onClick() }
+        f.setOnClickListener {
+            if (locked) {
+                onClick()
+            } else {
+                knob.animate().translationX(if (on) 0f else travel).setDuration(170L)
+                    .withEndAction { onClick() }.start()
+            }
+        }
         return f
     }
 
