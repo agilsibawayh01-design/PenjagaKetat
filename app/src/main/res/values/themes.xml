@@ -5,6 +5,19 @@
         <item name="android:windowNoTitle">true</item>
         <item name="android:fontFamily">@font/inter</item>
         <item name="android:colorAccent">#D4AF6A</item>
+        <item name="android:colorControlActivated">#D4AF6A</item>
+        <item name="android:colorControlNormal">#8A8576</item>
         <item name="android:windowBackground">#0A0C10</item>
+        <item name="android:editTextBackground">@drawable/lux_input</item>
+        <item name="android:textColorHint">#7C7768</item>
+        <item name="android:alertDialogTheme">@style/LuxDialog</item>
+    </style>
+    <style name="LuxDialog" parent="android:Theme.DeviceDefault.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/lux_dialog_bg</item>
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:colorAccent">#D4AF6A</item>
+        <item name="android:colorControlActivated">#D4AF6A</item>
+        <item name="android:editTextBackground">@drawable/lux_input</item>
+        <item name="android:textColorHint">#7C7768</item>
     </style>
 </resources>
