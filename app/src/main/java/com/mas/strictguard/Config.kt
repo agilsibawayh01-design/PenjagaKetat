@@ -16,6 +16,7 @@ object Config {
         "com.google.android.permissioncontroller",
         "com.android.permissioncontroller",
         "com.android.vending",
+        "com.sec.android.app.samsungapps",
         "com.samsung.android.lool",
         "com.samsung.android.sm",
         // layar utama (uninstall lewat tekan lama atau seret ke "Hapus instalan")

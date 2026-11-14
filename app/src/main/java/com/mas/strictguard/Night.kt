@@ -35,7 +35,10 @@ object Night {
     fun lockedPackages(c: Context): Set<String> {
         if (!active(c)) return emptySet()
         val out = HashSet<String>()
-        if (lockPlay(c)) out.add("com.android.vending")
+        if (lockPlay(c)) {
+            out.add("com.android.vending")
+            out.add("com.sec.android.app.samsungapps") // Galaxy Store: jalur pasang aplikasi kedua
+        }
         if (lockSettings(c)) out.add("com.android.settings")
         return out
     }
