@@ -1312,20 +1312,20 @@ class MainActivity : Activity() {
         val row = LinearLayout(this)
         row.orientation = LinearLayout.HORIZONTAL
         row.gravity = Gravity.CENTER_VERTICAL
-        row.setPadding(0, dp(8), 0, dp(8))
+        row.setPadding(dp(14), dp(12), dp(14), dp(12))
+        row.background = bg(C_FIELD, dp(14)).apply { setStroke(dp(1), C_CHIP) }
+        row.layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { bottomMargin = dp(8) }
         val col = LinearLayout(this)
         col.orientation = LinearLayout.VERTICAL
         col.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         col.addView(text(title, 14f, true, if (enabled) C_TEXT else C_SUB))
         col.addView(text(summary, 12f, false, C_SUB))
         row.addView(col)
-        row.addView(text("›", 22f, true, C_SUB))
+        row.addView(text("›", 22f, true, if (enabled) C_PRIMARY else C_SUB))
         if (enabled) row.setOnClickListener { onClick() }
         put(row)
-        put(View(this).apply {
-            setBackgroundColor(C_CHIP)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
-        })
     }
 
     private fun renderStrict(strict: Boolean, ready: Boolean) {
@@ -2372,6 +2372,7 @@ class MainActivity : Activity() {
             // tanpa ikon
         }
         icon.layoutParams = LinearLayout.LayoutParams(dp(42), dp(42))
+        roundClip(icon, 11)
         top.addView(icon)
         val col = LinearLayout(this)
         col.orientation = LinearLayout.VERTICAL
@@ -2380,10 +2381,8 @@ class MainActivity : Activity() {
         col.addView(text(a.label, 14f, true))
         col.addView(text(a.pkg, 10f, false, C_SUB))
         top.addView(col)
-        val sw = Switch(this)
-        sw.isChecked = on
-        sw.setOnClickListener {
-            if (sw.isChecked) {
+        top.addView(luxSwitch(on, false) {
+            if (!on) {
                 Store.addPauseApp(this@MainActivity, a.pkg)
             } else if (strict) {
                 toast("Mode Ketat aktif: tidak bisa melepas jeda")
@@ -2391,8 +2390,7 @@ class MainActivity : Activity() {
                 Store.removePauseApp(this@MainActivity, a.pkg)
             }
             render()
-        }
-        top.addView(sw)
+        })
         return top
     }
 
@@ -2491,7 +2489,11 @@ class MainActivity : Activity() {
     private fun appRow(a: AppRow, on: Boolean, strict: Boolean): View {
         val row = LinearLayout(this)
         row.orientation = LinearLayout.VERTICAL
-        row.setPadding(0, dp(6), 0, dp(6))
+        row.setPadding(dp(12), dp(10), dp(12), dp(10))
+        row.background = bg(C_FIELD, dp(16)).apply { setStroke(dp(1), C_CHIP) }
+        row.layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { bottomMargin = dp(8) }
         val top = LinearLayout(this)
         top.orientation = LinearLayout.HORIZONTAL
         top.gravity = Gravity.CENTER_VERTICAL
@@ -2502,6 +2504,7 @@ class MainActivity : Activity() {
             // tanpa ikon
         }
         icon.layoutParams = LinearLayout.LayoutParams(dp(42), dp(42))
+        roundClip(icon, 11)
         top.addView(icon)
         val col = LinearLayout(this)
         col.orientation = LinearLayout.VERTICAL
@@ -2517,10 +2520,8 @@ class MainActivity : Activity() {
             col.addView(text(a.pkg, 10f, false, C_SUB))
         }
         top.addView(col)
-        val sw = Switch(this)
-        sw.isChecked = on
-        sw.setOnClickListener {
-            val checked = sw.isChecked
+        top.addView(luxSwitch(on, false) {
+            val checked = !on
             if (checked) {
                 Store.addApp(this, a.pkg)
                 render()
@@ -2531,8 +2532,7 @@ class MainActivity : Activity() {
             } else {
                 gateOff(true, "melepas blokir aplikasi ${a.label}") { Store.removeApp(this, a.pkg) }
             }
-        }
-        top.addView(sw)
+        })
         if (on) top.setOnClickListener { editCfg(a.pkg, a.label, strict) }
         row.addView(top)
         if (on) {
@@ -3256,6 +3256,7 @@ class MainActivity : Activity() {
             // tanpa ikon
         }
         icon.layoutParams = LinearLayout.LayoutParams(dp(42), dp(42))
+        roundClip(icon, 11)
         top.addView(icon)
         val col = LinearLayout(this)
         col.orientation = LinearLayout.VERTICAL
@@ -3264,10 +3265,8 @@ class MainActivity : Activity() {
         col.addView(text(a.label, 14f, true))
         col.addView(text(a.pkg, 10f, false, C_SUB))
         top.addView(col)
-        val sw = Switch(this)
-        sw.isChecked = on
-        sw.setOnClickListener {
-            val checked = sw.isChecked
+        top.addView(luxSwitch(on, false) {
+            val checked = !on
             if (checked) {
                 Store.addProtected(this@MainActivity, a.pkg)
             } else if (strict || a.pkg in Config.SEED_PROTECTED) {
@@ -3276,8 +3275,7 @@ class MainActivity : Activity() {
                 Store.removeProtected(this@MainActivity, a.pkg)
             }
             render()
-        }
-        top.addView(sw)
+        })
         return top
     }
 
@@ -4072,6 +4070,16 @@ class MainActivity : Activity() {
     }
 
     // ---------- Komponen Lux ----------
+    private fun roundClip(v: View, radiusDp: Int) {
+        val r = dp(radiusDp).toFloat()
+        v.outlineProvider = object : android.view.ViewOutlineProvider() {
+            override fun getOutline(view: View, outline: android.graphics.Outline) {
+                outline.setRoundRect(0, 0, view.width, view.height, r)
+            }
+        }
+        v.clipToOutline = true
+    }
+
     private fun luxSwitch(on: Boolean, locked: Boolean, onClick: () -> Unit): View {
         val h = dp(27)
         val lit = on && !locked
