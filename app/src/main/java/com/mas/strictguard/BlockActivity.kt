@@ -52,65 +52,137 @@ class BlockActivity : Activity() {
         val cFg = if (night) Color.parseColor("#EDE8DD") else Color.BLACK
         val cSub = if (night) Color.parseColor("#B7B1A3") else Color.rgb(70, 70, 70)
         val cRed = if (night) Color.parseColor("#D4AF6A") else Color.rgb(180, 0, 0)
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setBackgroundColor(cBg)
-            setPadding(48, 48, 48, 48)
-        }
         val dm = resources.displayMetrics.density
         fun dpx(v: Int) = (v * dm).toInt()
         val cCard = if (night) Color.parseColor("#10131A") else Color.parseColor("#F4F6F9")
         val cBtn = if (night) Color.parseColor("#D4AF6A") else Color.parseColor("#1A56DB")
         val cBtn2 = if (night) Color.parseColor("#232834") else Color.parseColor("#E3E8EF")
+        val gold = Color.parseColor("#D4AF6A")
+        window.statusBarColor = cBg
+        window.navigationBarColor = cBg
+        val root = android.widget.FrameLayout(this).apply { setBackgroundColor(cBg) }
+        val glow = View(this).apply {
+            background = android.graphics.drawable.GradientDrawable().apply {
+                gradientType = android.graphics.drawable.GradientDrawable.RADIAL_GRADIENT
+                gradientRadius = 210f * dm
+                colors = intArrayOf(Color.argb(40, 212, 175, 106), Color.argb(0, 212, 175, 106))
+            }
+        }
+        root.addView(glow, android.widget.FrameLayout.LayoutParams(dpx(420), dpx(420),
+            Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dpx(90) })
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        root.addView(col, android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT, android.widget.FrameLayout.LayoutParams.MATCH_PARENT))
+        fun goldFill(r: Int) = android.graphics.drawable.GradientDrawable(
+            android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+            intArrayOf(Color.parseColor("#E6C987"), Color.parseColor("#C99A45"))).apply { cornerRadius = dpx(r).toFloat() }
         fun styleBtn(b: Button, primary: Boolean) {
             b.isAllCaps = false
+            b.textSize = 15f
+            b.setTypeface(null, Typeface.BOLD)
             b.setTextColor(if (primary) Color.parseColor("#1A1405") else cFg)
-            b.background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(if (primary) cBtn else cBtn2)
-                cornerRadius = dpx(14).toFloat()
+            b.background = if (primary) goldFill(18) else android.graphics.drawable.GradientDrawable().apply {
+                setColor(cCard); cornerRadius = dpx(18).toFloat(); setStroke(dpx(1), cBtn2)
             }
             b.stateListAnimator = null
+            b.minHeight = 0
+            b.minimumHeight = 0
+            b.setPadding(dpx(16), dpx(16), dpx(16), dpx(16))
             b.layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dpx(8) }
+            ).apply { topMargin = dpx(10) }
         }
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dpx(22), dpx(26), dpx(22), dpx(20))
+            setPadding(dpx(28), dpx(96), dpx(28), dpx(16))
+        }
+        val scroll = android.widget.ScrollView(this).apply {
+            isFillViewport = true
+            isVerticalScrollBarEnabled = false
+            addView(card, android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT, android.widget.FrameLayout.LayoutParams.WRAP_CONTENT))
+        }
+        col.addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        // lambang perisai bertanda silang dalam cincin emas
+        val ringBox = android.widget.FrameLayout(this)
+        ringBox.addView(View(this).apply {
             background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(cCard)
-                cornerRadius = dpx(24).toFloat()
-                setStroke(dpx(1), Color.argb(120, 212, 175, 106))
+                shape = android.graphics.drawable.GradientDrawable.OVAL
+                setStroke(dpx(1), Color.argb(51, 212, 175, 106))
             }
-        }
-        val title = TextView(this).apply {
-            text = "Diblokir"
-            textSize = 30f
-            setTextColor(cRed)
-            typeface = try { Typeface.create(resources.getFont(R.font.cormorant), 600, false) } catch (t: Throwable) { Typeface.create("serif", Typeface.BOLD) }
-            gravity = Gravity.CENTER
-        }
-        why = TextView(this).apply {
-            textSize = 14f
-            setTextColor(cSub)
+        }, android.widget.FrameLayout.LayoutParams(dpx(136), dpx(136)))
+        ringBox.addView(android.widget.ImageView(this).apply {
+            setImageResource(R.drawable.ic_shield_x)
+            scaleType = android.widget.ImageView.ScaleType.CENTER
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.OVAL
+                setStroke(dpx(2), Color.argb(166, 212, 175, 106))
+                setColor(Color.argb(24, 212, 175, 106))
+            }
+        }, android.widget.FrameLayout.LayoutParams(dpx(112), dpx(112), Gravity.CENTER))
+        card.addView(ringBox, LinearLayout.LayoutParams(dpx(136), dpx(136)))
+        val eyebrowTv = TextView(this).apply {
+            text = "DIBLOKIR PENJAGA KETAT"
+            textSize = 11f
+            letterSpacing = 0.24f
+            setTextColor(gold)
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
-            setPadding(0, 8, 0, 0)
+            setPadding(0, dpx(22), 0, 0)
+        }
+        card.addView(eyebrowTv)
+        val title = TextView(this).apply {
+            text = "Berhenti sejenak"
+            textSize = 40f
+            setTextColor(cFg)
+            typeface = try { Typeface.create(resources.getFont(R.font.cormorant), 600, false) } catch (t: Throwable) { Typeface.create("serif", Typeface.BOLD) }
+            gravity = Gravity.CENTER
+            setPadding(0, dpx(10), 0, 0)
+            setLineSpacing(0f, 1.0f)
         }
         info = TextView(this).apply {
-            textSize = 16f
-            setTextColor(cFg)
+            textSize = 15f
+            setTextColor(cSub)
             gravity = Gravity.CENTER
-            setPadding(0, 24, 0, 24)
+            setLineSpacing(0f, 1.25f)
+            setPadding(0, dpx(16), 0, dpx(22))
+        }
+        why = TextView(this).apply {
+            textSize = 12.5f
+            setTextColor(cFg)
+            gravity = Gravity.END
+        }
+        fun infoRow(label: String, value: View): LinearLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(TextView(this@BlockActivity).apply {
+                text = label; textSize = 12.5f; setTextColor(Color.parseColor("#8A8576"))
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+            addView(value, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = dpx(12) })
+        }
+        val countTv = TextView(this).apply {
+            textSize = 12.5f
+            setTextColor(cFg)
+            gravity = Gravity.END
+            text = Strikes.count(this@BlockActivity).coerceAtLeast(1).toString() + " dari " + Strikes.LOCK_AT
+        }
+        val infoCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dpx(16), dpx(14), dpx(16), dpx(14))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(cCard); cornerRadius = dpx(18).toFloat(); setStroke(dpx(1), cBtn2)
+            }
+            addView(infoRow("Sumber", why))
+            addView(View(this@BlockActivity).apply { setBackgroundColor(Color.parseColor("#1B1F28")) },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpx(1)).apply { topMargin = dpx(8); bottomMargin = dpx(8) })
+            addView(infoRow("Layar blokir (" + (Strikes.WINDOW_MS / 60000L) + " mnt)", countTv))
         }
         motiv = TextView(this).apply {
-            textSize = 14f
-            setTextColor(cSub)
+            textSize = 13f
+            setTextColor(Color.parseColor("#8A8576"))
             setTypeface(null, Typeface.ITALIC)
             gravity = Gravity.CENTER
-            setPadding(0, 0, 0, 24)
+            setPadding(0, dpx(18), 0, dpx(8))
             text = Store.motivation(this@BlockActivity)
         }
         openBtn = Button(this).apply {
@@ -124,27 +196,35 @@ class BlockActivity : Activity() {
             setOnClickListener { emergencyDialog() }
         }
         val closeBtn = Button(this).apply {
-            text = "Tutup"
+            text = "Kembali ke beranda"
             setOnClickListener { closeScreen() }
         }
         styleBtn(openBtn, true)
         styleBtn(emgBtn, false)
         styleBtn(closeBtn, true)
-        closeBtn.text = "Kembali"
         emgBtn.textSize = 12f
-        emgBtn.minHeight = 0
-        emgBtn.minimumHeight = 0
-        (emgBtn.layoutParams as LinearLayout.LayoutParams).topMargin = dpx(22)
+        emgBtn.setTypeface(null, Typeface.NORMAL)
+        emgBtn.setPadding(dpx(16), dpx(12), dpx(16), dpx(12))
         card.addView(title)
-        card.addView(why)
-        card.addView(info)
+        card.addView(info, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        card.addView(infoCard, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         card.addView(motiv)
         card.addView(openBtn)
-        card.addView(closeBtn)
-        card.addView(emgBtn)
-        root.addView(card, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-        ))
+        // bilah bawah: tombol utama + catatan
+        val bottom = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dpx(28), dpx(4), dpx(28), dpx(28))
+        }
+        bottom.addView(closeBtn)
+        bottom.addView(emgBtn)
+        bottom.addView(TextView(this).apply {
+            text = "Setelah " + Strikes.LOCK_AT + " kali dalam " + (Strikes.WINDOW_MS / 60000L) + " menit, layar terkunci " + (Strikes.LOCK_MS / 60000L) + " menit"
+            textSize = 12f
+            setTextColor(Color.parseColor("#7C7768"))
+            gravity = Gravity.CENTER
+            setPadding(0, dpx(12), 0, 0)
+        })
+        col.addView(bottom, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         setContentView(root)
 
         when (mode) {
