@@ -2797,9 +2797,8 @@ class MainActivity : Activity() {
         top.addView(luxSwitch(on, false) {
             val checked = !on
             if (checked) {
-                Store.addApp(this, a.pkg)
                 render()
-                editCfg(a.pkg, a.label, strict)
+                editCfg(a.pkg, a.label, strict, true)
             } else if (strict && Store.isLocked(this, a.pkg)) {
                 toast("Mode Ketat aktif: aplikasi ini sudah terkunci, tidak bisa melepas blokir")
                 render()
@@ -2807,7 +2806,7 @@ class MainActivity : Activity() {
                 gateOff(true, "melepas blokir aplikasi ${a.label}") { Store.removeApp(this, a.pkg) }
             }
         })
-        if (on) top.setOnClickListener { editCfg(a.pkg, a.label, strict) }
+        top.setOnClickListener { editCfg(a.pkg, a.label, strict, !on) }
         row.addView(top)
         if (on) {
             val actions = LinearLayout(this)
@@ -3025,7 +3024,7 @@ class MainActivity : Activity() {
             .show()
     }
 
-    private fun editCfg(pkg: String, label: String, strict: Boolean) {
+    private fun editCfg(pkg: String, label: String, strict: Boolean, isNew: Boolean = false) {
         if (strict && Store.isLocked(this, pkg)) {
             toast("Mode Ketat aktif: aturan aplikasi ini terkunci karena sudah diatur sebelum Mode Ketat. Aplikasi baru masih bisa diatur.")
             return
@@ -3037,7 +3036,9 @@ class MainActivity : Activity() {
         val box = LinearLayout(this)
         box.orientation = LinearLayout.VERTICAL
         box.setPadding(dp(20), dp(8), dp(20), dp(8))
-        box.addView(text("Pilih kondisi pemblokiran. Beberapa kondisi boleh dipakai bersamaan.", 12f))
+        box.addView(text(
+            if (isNew) "Pilih minimal satu kondisi. Aplikasi baru diblokir setelah kamu menekan Simpan; kalau dibatalkan, aplikasi tidak diblokir."
+            else "Pilih kondisi pemblokiran. Beberapa kondisi boleh dipakai bersamaan.", 12f))
 
         // 1. Blokir penuh (selalu atau interval waktu)
         val fullBody = vbox()
@@ -3070,7 +3071,7 @@ class MainActivity : Activity() {
         val showTimes = if (cfg.schOn) View.VISIBLE else View.GONE
         startBtn.visibility = showTimes
         endBtn.visibility = showTimes
-        val fullCb = conditionSection(box, "Blokir penuh", cfg.mode == 0, fullBody)
+        val fullCb = conditionSection(box, "Blokir penuh", cfg.mode == 0 && !isNew, fullBody)
 
         // 2. Batas penggunaan
         val useBody = vbox()
@@ -3177,6 +3178,12 @@ class MainActivity : Activity() {
                     toast("Lokasi tidak valid: isi lintang dan bujur dengan benar (atau pakai lokasi saya sekarang).")
                     return@setPositiveButton
                 }
+                if (isNew && !full && !useCb.isChecked && !launchCb.isChecked && !twCb.isChecked && locRule == null) {
+                    toast("Belum ada kondisi dipilih, jadi aplikasi tidak diblokir. Ketuk aplikasinya lagi untuk memilih.")
+                    render()
+                    return@setPositiveButton
+                }
+                if (isNew) Store.addApp(this, pkg)
                 Store.setAppCfg(this, pkg, newCfg)
                 LocationRules.set(this, "app_$pkg", locRule)
                 if (locRule != null && (!LocationTracker.hasPermission(this) || !LocationTracker.hasBackground(this))) askLocationPermission()
@@ -3197,7 +3204,8 @@ class MainActivity : Activity() {
                 }
                 render()
             }
-            .setNegativeButton("Batal", null)
+            .setNegativeButton("Batal") { _, _ -> render() }
+            .setOnCancelListener { render() }
             .show()
     }
 
