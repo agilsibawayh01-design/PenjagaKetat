@@ -11,6 +11,8 @@
         <item name="android:editTextBackground">@drawable/lux_input</item>
         <item name="android:textColorHint">#7C7768</item>
         <item name="android:alertDialogTheme">@style/LuxDialog</item>
+        <item name="android:windowSplashScreenBackground">#0A0C10</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_splash</item>
     </style>
     <style name="LuxDialog" parent="android:Theme.DeviceDefault.Dialog.Alert">
         <item name="android:windowBackground">@drawable/lux_dialog_bg</item>
