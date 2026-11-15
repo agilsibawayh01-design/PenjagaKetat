@@ -144,6 +144,7 @@ class MainActivity : Activity() {
         if (intent?.getBooleanExtra("urge", false) == true) {
             screen = "urge"
             urgeEnd = 0L
+            rtStep = 0
         }
     }
 
@@ -445,7 +446,7 @@ class MainActivity : Activity() {
         "apps" -> "${Store.apps(this).size} aplikasi diblokir"
         "proteksi" -> "Aturan blokir, mode, jadwal, dan jaringan"
         "stats" -> "Pemakaian, blokir, dan hari bersih"
-        "urge" -> "Dorongan itu naik lalu turun sendiri. Tunggu saja"
+        "urge" -> "Napas, gerak, pindah tempat sampai dorongan turun"
         "focus" -> "Sesi fokus untuk menjaga konsentrasi"
         "words" -> "Browser, kategori, kata kunci, dan fitur sosmed"
         "sched", "profiles" -> "Jadwal otomatis dan profil aturan"
@@ -852,7 +853,7 @@ class MainActivity : Activity() {
         "proteksi" -> "Proteksi"
         "stats" -> "Statistik"
         "focus" -> "Mode Fokus"
-        "urge" -> "Dorongan"
+        "urge" -> "Ruang Tenang"
         else -> "Setelan"
     }
 
@@ -870,7 +871,7 @@ class MainActivity : Activity() {
         "strict" -> "MODE KETAT"
         "net" -> "JARINGAN"
         "stats" -> "STATISTIK"
-        "urge" -> "DORONGAN"
+        "urge" -> "RUANG TENANG"
         else -> "PENGATURAN"
     }
 
@@ -1009,8 +1010,9 @@ class MainActivity : Activity() {
 
         renderFocusLine()
 
-        root.addView(button("🆘  Lagi tergoda? Tekan di sini") {
+        root.addView(button("🌿  Butuh jeda? Masuk Ruang Tenang") {
             urgeEnd = 0L
+            rtStep = 0
             goScreen("urge")
         }.apply {
             setTextColor(C_BAD)
@@ -2273,73 +2275,158 @@ class MainActivity : Activity() {
         put(text("Hijau = bersih, merah = ada blokir, abu = sebelum aplikasi terpasang. Riwayat disimpan 35 hari.", 11f, false, C_SUB))
         val weekAgo = now - 7L * 86400000L
         val urges = Store.urgeTimes(this).count { it >= weekAgo }
-        put(text("Dorongan dilawan 7 hari terakhir: $urges kali", 12f, false, C_TEXT))
+        val rt = Store.ruangLog(this).filter { (it.getOrNull(0)?.toLongOrNull() ?: 0L) >= weekAgo }
+        put(text("Ruang Tenang 7 hari terakhir: $urges kali", 12f, false, C_TEXT))
+        val drops = rt.mapNotNull { (it.getOrNull(1)?.toIntOrNull() ?: return@mapNotNull null) - (it.getOrNull(2)?.toIntOrNull() ?: return@mapNotNull null) }
+        if (drops.isNotEmpty()) put(text("Rata-rata dorongan turun ${String.format("%.1f", drops.average())} poin setelah Ruang Tenang", 12f, false, C_SUB))
+        val trig = rt.mapNotNull { it.getOrNull(3)?.takeIf { t -> t.isNotBlank() } }.groupingBy { it }.eachCount().maxByOrNull { it.value }
+        if (trig != null) put(text("Pemicu paling sering: ${trig.key} (${trig.value} kali)", 12f, false, C_SUB))
     }
 
-    // ---------- Dorongan ----------
+    // ---------- Ruang Tenang ----------
+    private var rtStep = 0          // 0 nilai awal, 1 pemicu, 2..5 langkah, 6 nilai akhir, 7 ringkasan
+    private var rtBefore = 5
+    private var rtAfter = 5
+    private var rtTrigger = ""
     private var urgeEnd = 0L
     private var urgeTv: TextView? = null
     private var urgeHint: TextView? = null
     private var urgeBtn: Button? = null
+
+    private class RtStep(val title: String, val body: String, val sec: Int, val breath: Boolean)
+    private val rtSteps = listOf(
+        RtStep("Napas pelan", "Duduk atau berdiri tegak. Ikuti irama di bawah: tarik, tahan, hembuskan.", 60, true),
+        RtStep("Gerakkan badan", "Berdiri sekarang. Lompat-lompat di tempat atau jalan cepat. Biarkan jantung berdetak lebih cepat.", 45, false),
+        RtStep("Pindah tempat", "Tinggalkan ruangan ini. Keluar kamar, ke ruang keluarga atau teras. Taruh HP agak jauh dari badan.", 60, false),
+        RtStep("Wudhu dan dzikir", "Ambil wudhu, lalu istighfar atau dzikir pelan. Air dan gerakan membantu menenangkan.", 60, false)
+    )
+
     private val urgeTick = object : Runnable {
         override fun run() {
-            if (screen != "urge" || urgeEnd == 0L) return
+            if (screen != "urge" || urgeEnd == 0L || rtStep !in 2..5) return
+            val st = rtSteps[rtStep - 2]
             val left = urgeEnd - System.currentTimeMillis()
             val tv = urgeTv ?: return
             if (left <= 0L) {
                 tv.text = "Selesai"
-                urgeHint?.text = "Kamu berhasil melewatinya. Lanjutkan harimu."
-                urgeBtn?.text = "Selesai, ke layar utama"
+                urgeHint?.text = "Bagus. Lanjut ke langkah berikutnya."
+                urgeBtn?.text = "Lanjut"
                 return
             }
             val sec = (left + 999L) / 1000L
             tv.text = String.format(java.util.Locale.getDefault(), "%d:%02d", sec / 60, sec % 60)
-            val elapsed = (90L - sec).coerceAtLeast(0L)
-            val ph = (elapsed % 14L)
-            urgeHint?.text = when {
-                ph < 4L -> "Tarik napas pelan..."
-                ph < 8L -> "Tahan sebentar..."
-                else -> "Hembuskan perlahan..."
+            if (st.breath) {
+                val elapsed = (st.sec.toLong() - sec).coerceAtLeast(0L)
+                val ph = elapsed % 14L
+                urgeHint?.text = when {
+                    ph < 4L -> "Tarik napas pelan..."
+                    ph < 8L -> "Tahan sebentar..."
+                    else -> "Hembuskan perlahan..."
+                }
             }
             handler.postDelayed(this, 500L)
         }
     }
 
+    private fun rtScale(selected: Int, onPick: (Int) -> Unit) {
+        for (rowStart in intArrayOf(0, 5)) {
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            for (v in rowStart..rowStart + 5 - 1 + (if (rowStart == 5) 1 else 0)) {
+                row.addView(segPill(v.toString(), v == selected, C_PRIMARY) { onPick(v) })
+            }
+            put(row)
+        }
+    }
+
+    private fun rtFinishAndExit() {
+        urgeEnd = 0L
+        rtStep = 0
+        rtTrigger = ""
+        goScreen("home")
+    }
+
     private fun renderUrge() {
         handler.removeCallbacks(urgeTick)
-        header("Dorongan")
-        if (urgeEnd == 0L) {
-            put(text("Dorongan itu naik lalu turun sendiri, biasanya dalam beberapa menit. Kamu tidak perlu melawannya, cukup menunggu 90 detik sambil mengatur napas.", 13f))
-            put(text(Store.motivation(this), 13f, false, C_SUB))
-            put(button("Mulai 90 detik") {
-                urgeEnd = System.currentTimeMillis() + 90000L
-                Store.addUrge(this)
-                render()
-            })
-            return
-        }
-        val tv = text("", 44f, true, C_PRIMARY).apply { gravity = Gravity.CENTER }
-        val hint = text("", 16f, false, C_TEXT).apply { gravity = Gravity.CENTER }
-        urgeTv = tv
-        urgeHint = hint
-        put(tv)
-        put(hint)
-        put(text(Store.motivation(this), 12f, false, C_SUB).apply { gravity = Gravity.CENTER })
-        val b = button(if (System.currentTimeMillis() >= urgeEnd) "Selesai, ke layar utama" else "Batal") {
-            val done = System.currentTimeMillis() >= urgeEnd
-            urgeEnd = 0L
-            if (done) {
-                try {
-                    startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                } catch (t: Throwable) {
-                    // abaikan
-                }
+        header("Ruang Tenang")
+        when (rtStep) {
+            0 -> {
+                put(text("Tidak apa-apa. Dorongan itu naik lalu turun, seperti ombak. Kamu tidak sendirian dan tidak perlu menyalahkan diri. Kita turunkan pelan-pelan.", 13f))
+                put(text("Seberapa kuat dorongannya sekarang? (0 = tidak ada, 10 = sangat kuat)", 13f, true))
+                rtScale(rtBefore) { rtBefore = it; render() }
+                put(button("Mulai") {
+                    Store.addUrge(this)
+                    rtStep = 1
+                    render()
+                })
             }
-            goScreen("home")
+            1 -> {
+                put(text("Biasanya apa yang sedang terjadi? (boleh dilewati)", 13f, true))
+                val opts = listOf("Bosan", "Lelah", "Sendirian", "Stres", "Malam hari", "Lainnya")
+                for (chunk in opts.chunked(3)) {
+                    val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                    for (o in chunk) row.addView(segPill(o, o == rtTrigger, C_PRIMARY) { rtTrigger = o; render() })
+                    put(row)
+                }
+                put(button("Lanjut ke langkah pertama") {
+                    rtStep = 2
+                    urgeEnd = System.currentTimeMillis() + rtSteps[0].sec * 1000L
+                    render()
+                })
+            }
+            in 2..5 -> {
+                val st = rtSteps[rtStep - 2]
+                put(text("Langkah ${rtStep - 1} dari ${rtSteps.size}: ${st.title}", 15f, true, C_PRIMARY))
+                put(text(st.body, 13f))
+                val tv = text("", 44f, true, C_PRIMARY).apply { gravity = Gravity.CENTER }
+                val hint = text(if (st.breath) "" else "Lakukan sampai waktunya habis.", 16f, false, C_TEXT).apply { gravity = Gravity.CENTER }
+                urgeTv = tv
+                urgeHint = hint
+                put(tv)
+                put(hint)
+                put(text(Store.motivation(this), 12f, false, C_SUB).apply { gravity = Gravity.CENTER })
+                val b = button(if (System.currentTimeMillis() >= urgeEnd) "Lanjut" else "Lewati langkah ini") {
+                    if (rtStep >= 5) {
+                        rtStep = 6
+                        urgeEnd = 0L
+                    } else {
+                        rtStep += 1
+                        urgeEnd = System.currentTimeMillis() + rtSteps[rtStep - 2].sec * 1000L
+                    }
+                    render()
+                }
+                urgeBtn = b
+                put(b)
+                put(smallButton("Sudah tenang, selesai") { rtStep = 6; urgeEnd = 0L; render() })
+                urgeTick.run()
+            }
+            6 -> {
+                put(text("Sekarang seberapa kuat dorongannya? (0 = tidak ada, 10 = sangat kuat)", 13f, true))
+                rtAfter = rtAfter.coerceAtMost(10)
+                rtScale(rtAfter) { rtAfter = it; render() }
+                put(button("Lihat hasil") {
+                    Store.addRuang(this, rtBefore, rtAfter, rtTrigger)
+                    rtStep = 7
+                    render()
+                })
+            }
+            else -> {
+                val drop = rtBefore - rtAfter
+                if (drop > 0) {
+                    put(text("Dorongan turun dari $rtBefore ke $rtAfter. Kamu berhasil melewatinya.", 16f, true, C_OK))
+                    put(text("Ingat caranya: napas, gerak, pindah tempat. Itu yang berhasil hari ini.", 13f, false, C_SUB))
+                } else {
+                    put(text("Belum turun, dan itu wajar. Dorongan datang dalam gelombang.", 16f, true, C_PRIMARY))
+                    put(text("Ulangi satu putaran lagi, dan pastikan benar-benar pindah tempat serta menjauhkan HP.", 13f, false, C_SUB))
+                    put(button("Ulangi langkah") {
+                        rtBefore = rtAfter
+                        rtStep = 2
+                        urgeEnd = System.currentTimeMillis() + rtSteps[0].sec * 1000L
+                        render()
+                    })
+                }
+                put(button("Selesai") { rtFinishAndExit() })
+            }
         }
-        urgeBtn = b
-        put(b)
-        urgeTick.run()
     }
 
     // ---------- Jeda sebelum buka aplikasi ----------
@@ -3817,6 +3904,19 @@ class MainActivity : Activity() {
                     render()
                 } else {
                     Store.setVpnDoh(this@MainActivity, isChecked)
+                }
+            }
+        })
+        put(CheckBox(this).apply {
+            text = "Paksa SafeSearch Google lewat DNS"
+            isChecked = Store.safeSearch(this@MainActivity)
+            setOnClickListener {
+                if (!isChecked && strict) {
+                    toast("Mode Ketat aktif: tidak bisa dimatikan")
+                    render()
+                } else {
+                    Store.setSafeSearch(this@MainActivity, isChecked)
+                    SafeSearch.on = isChecked
                 }
             }
         })

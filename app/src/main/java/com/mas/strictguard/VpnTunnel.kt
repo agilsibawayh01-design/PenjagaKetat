@@ -152,7 +152,8 @@ class VpnTunnel(
             VpnStatus.qBlocked.incrementAndGet()
             VpnPackets.nxdomain(u.payload)
         } else {
-            engine.resolve(u.payload)
+            (if (name != null) SafeSearch.answer(u.payload, name) { engine.resolve(it) } else null)
+                ?: engine.resolve(u.payload)
         }
         if (reply != null) write(VpnPackets.buildUdp(u.dst, u.src, 53, u.srcPort, reply))
     }

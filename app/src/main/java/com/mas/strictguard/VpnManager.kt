@@ -170,6 +170,7 @@ object VpnManager {
             monitor = VpnNetworkMonitor(c, h) { r -> onNet(r) }
             monitor!!.start()
         }
+        SafeSearch.on = Store.safeSearch(c)
         if (blocklist == null) blocklist = DnsBlocklist(c)
         if (engine == null) {
             engine = DnsEngine(c, monitor!!, { sk -> svc?.protect(sk) ?: false }, { sk -> svc?.protect(sk) ?: false })

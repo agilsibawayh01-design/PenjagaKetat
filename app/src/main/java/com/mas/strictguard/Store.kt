@@ -439,6 +439,15 @@ object Store {
     fun pauseOkUntil(c: Context, pkg: String): Long = sp(c).getLong("pauseok_$pkg", 0L)
     fun setPauseOk(c: Context, pkg: String, v: Long) { sp(c).edit().putLong("pauseok_$pkg", v).commit() }
 
+    /** Catatan Ruang Tenang: "waktu|sebelum|sesudah|pemicu", maksimal 100. */
+    fun ruangLog(c: Context): List<List<String>> =
+        (sp(c).getString("ruang_log", "") ?: "").split('\n').filter { it.isNotBlank() }.map { it.split('|') }
+    fun addRuang(c: Context, before: Int, after: Int, trigger: String) {
+        val l = ((sp(c).getString("ruang_log", "") ?: "").split('\n').filter { it.isNotBlank() } +
+            (System.currentTimeMillis().toString() + "|" + before + "|" + after + "|" + trigger.replace('|', ' '))).takeLast(100)
+        sp(c).edit().putString("ruang_log", l.joinToString("\n")).commit()
+    }
+
     /** Riwayat tombol Dorongan (waktu), disimpan maksimal 200. */
     fun urgeTimes(c: Context): List<Long> =
         (sp(c).getString("urge_times", "") ?: "").split(',').mapNotNull { it.toLongOrNull() }
@@ -527,6 +536,9 @@ object Store {
     fun setVpnExcludeBanks(c: Context, v: Boolean) { sp(c).edit().putBoolean("vpn_excl_bank", v).commit() }
     fun vpnUpstream(c: Context): Int = sp(c).getInt("vpn_up", 0)
     fun setVpnUpstream(c: Context, v: Int) { sp(c).edit().putInt("vpn_up", v).commit() }
+    fun safeSearch(c: Context): Boolean = sp(c).getBoolean("safe_search", true)
+    fun setSafeSearch(c: Context, v: Boolean) { sp(c).edit().putBoolean("safe_search", v).commit() }
+
     fun vpnDoh(c: Context): Boolean = sp(c).getBoolean("vpn_doh", false)
     fun setVpnDoh(c: Context, v: Boolean) { sp(c).edit().putBoolean("vpn_doh", v).commit() }
 

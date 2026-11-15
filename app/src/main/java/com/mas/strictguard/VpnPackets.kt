@@ -168,6 +168,19 @@ object VpnPackets {
         return r
     }
 
+    /** Jawaban sukses tanpa data (untuk tipe yang sengaja dikosongkan). */
+    fun nodata(q: ByteArray): ByteArray? {
+        val end = questionEnd(q)
+        if (end < 0) return null
+        val r = q.copyOfRange(0, end)
+        r[2] = (0x80 or (q[2].toInt() and 0x79)).toByte()
+        r[3] = 0x80.toByte()
+        r[4] = 0
+        r[5] = 1
+        for (k in 6..11) r[k] = 0
+        return r
+    }
+
     fun servfail(q: ByteArray): ByteArray? {
         val end = questionEnd(q)
         if (end < 0) return null

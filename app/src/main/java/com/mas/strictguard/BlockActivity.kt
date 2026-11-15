@@ -210,6 +210,23 @@ class BlockActivity : Activity() {
         card.addView(infoCard, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         card.addView(motiv)
         card.addView(openBtn)
+        val calmBtn = Button(this).apply {
+            text = "Butuh tenang? Masuk Ruang Tenang"
+            visibility = View.GONE
+            setOnClickListener {
+                try {
+                    startActivity(Intent(this@BlockActivity, MainActivity::class.java)
+                        .putExtra("urge", true)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP))
+                } catch (t: Throwable) {
+                    // abaikan
+                }
+                finish()
+            }
+        }
+        styleBtn(calmBtn, false)
+        if (mode == "nsfw" && NsfwAi.lastScore >= 0.90f) calmBtn.visibility = View.VISIBLE
+        card.addView(calmBtn)
         // bilah bawah: tombol utama + catatan
         val bottom = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
