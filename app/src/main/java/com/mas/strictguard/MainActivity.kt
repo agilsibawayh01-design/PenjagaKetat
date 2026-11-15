@@ -276,6 +276,87 @@ class MainActivity : Activity() {
      * Gerbang yang SAMA dengan keluar dari Mode Ketat: waktu tunggu, teks acak (panjang sama),
      * dan kode teman, sesuai metode yang kamu pilih.
      */
+    private class LuxDlg(val dlg: android.app.AlertDialog, val pos: TextView, val neg: TextView?)
+
+    /** Dialog bergaya Lux: kartu berbingkai emas, judul serif, tombol utama emas. */
+    private fun luxDialog(eyebrowText: String, title: String, body: String, content: View?,
+                          posLabel: String, negLabel: String?, onNeg: () -> Unit): LuxDlg {
+        val outer = LinearLayout(this)
+        outer.setPadding(dp(1), dp(1), dp(1), dp(1))
+        outer.background = GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            intArrayOf(Color.argb(190, 212, 175, 106), Color.argb(25, 212, 175, 106), Color.argb(100, 212, 175, 106))
+        ).apply { cornerRadius = dp(26).toFloat() }
+        val inner = LinearLayout(this)
+        inner.orientation = LinearLayout.VERTICAL
+        inner.gravity = Gravity.CENTER_HORIZONTAL
+        inner.setPadding(dp(20), dp(24), dp(20), dp(20))
+        inner.background = GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            intArrayOf(Color.parseColor("#141821"), Color.parseColor("#0E1117"))
+        ).apply { cornerRadius = dp(25).toFloat() }
+        inner.addView(text(eyebrowText, 11f, true, C_PRIMARY).apply { letterSpacing = 0.22f; gravity = Gravity.CENTER })
+        inner.addView(text(title, 28f, true, C_TEXT).apply {
+            typeface = serifBold(); gravity = Gravity.CENTER; setPadding(0, dp(6), 0, 0)
+        })
+        if (body.isNotEmpty()) inner.addView(text(body, 13f, false, C_SUB).apply {
+            gravity = Gravity.CENTER; setPadding(0, dp(8), 0, dp(10))
+        })
+        if (content != null) inner.addView(content)
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.setPadding(0, dp(14), 0, 0)
+        var negTv: TextView? = null
+        if (negLabel != null) {
+            negTv = TextView(this).apply {
+                text = negLabel
+                textSize = 14f
+                setTextColor(C_TEXT)
+                gravity = Gravity.CENTER
+                setPadding(dp(8), dp(14), dp(8), dp(14))
+                background = bg(Color.parseColor("#10131A"), dp(16)).apply { setStroke(dp(1), Color.parseColor("#2A2F3B")) }
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(5) }
+            }
+            row.addView(negTv)
+        }
+        val posTv = TextView(this).apply {
+            text = posLabel
+            textSize = 14f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(C_ON_GOLD)
+            gravity = Gravity.CENTER
+            setPadding(dp(8), dp(14), dp(8), dp(14))
+            background = goldBg(dp(16))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.3f).apply { leftMargin = if (negLabel != null) dp(5) else 0 }
+        }
+        row.addView(posTv)
+        inner.addView(row)
+        outer.addView(inner, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        val sv = ScrollView(this)
+        sv.addView(outer)
+        val dlg = android.app.AlertDialog.Builder(this).setView(sv).create()
+        dlg.setOnCancelListener { onNeg() }
+        negTv?.setOnClickListener { dlg.dismiss(); onNeg() }
+        dlg.setOnShowListener {
+            try {
+                dlg.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+                dlg.window?.setLayout((resources.displayMetrics.widthPixels * 0.92f).toInt(), android.view.WindowManager.LayoutParams.WRAP_CONTENT)
+            } catch (t: Throwable) {
+                // tampilan bawaan
+            }
+        }
+        return LuxDlg(dlg, posTv, negTv)
+    }
+
+    private fun waitBox(big: String, small: String): View {
+        val b = LinearLayout(this)
+        b.orientation = LinearLayout.VERTICAL
+        b.gravity = Gravity.CENTER_HORIZONTAL
+        b.addView(text(big, 44f, true, C_PRIMARY).apply { typeface = serifBold(); gravity = Gravity.CENTER })
+        b.addView(text(small, 11f, false, C_SUB).apply { gravity = Gravity.CENTER })
+        return b
+    }
+
     private fun textGate(what: String, onOk: () -> Unit, onCancel: () -> Unit) {
         val waitMin = Night.scaleWait(this, if (Store.exitWaitOn(this)) Store.exitDelayMin(this) else 0)
         val textLen = Zone.requiredTextLen(this, Store.exitTextLen(this))
@@ -283,28 +364,26 @@ class MainActivity : Activity() {
 
         if (waitMin > 0) {
             if (!SafeTimer.isRunning(this, "feat")) {
-                android.app.AlertDialog.Builder(this)
-                    .setTitle("Butuh waktu tunggu")
-                    .setMessage("Untuk $what, kamu harus menunggu " + fmtDur(waitMin) + " (sama seperti keluar Mode Ketat). Mulai permintaan sekarang? Setelah waktunya habis, ulangi aksi ini.")
-                    .setPositiveButton("Mulai") { _, _ ->
-                        SafeTimer.start(this, "feat")
-                        Store.log(this, "Permintaan: $what")
-                        onCancel()
-                    }
-                    .setNegativeButton("Batal") { _, _ -> onCancel() }
-                    .setOnCancelListener { onCancel() }
-                    .show()
+                val ld = luxDialog("WAKTU TUNGGU", "Butuh waktu tunggu",
+                    "Untuk $what, kamu harus menunggu " + fmtDur(waitMin) + " (sama seperti keluar Mode Ketat). Setelah waktunya habis, ulangi aksi ini.",
+                    waitBox(fmtDur(waitMin), "waktu yang harus ditunggu"), "Mulai", "Batal") { onCancel() }
+                ld.pos.setOnClickListener {
+                    SafeTimer.start(this, "feat")
+                    Store.log(this, "Permintaan: $what")
+                    ld.dlg.dismiss()
+                    onCancel()
+                }
+                ld.dlg.show()
                 return
             }
             val left = waitMin * 60000L - SafeTimer.elapsed(this, "feat")
             if (left > 0L) {
-                android.app.AlertDialog.Builder(this)
-                    .setTitle("Masih menunggu")
-                    .setMessage("Sisa ${left / 60000L + 1} menit. Waktu dihitung dari jam internal, jadi mengubah jam HP tidak mempercepatnya.")
-                    .setPositiveButton("OK", null)
-                    .setNeutralButton("Batalkan permintaan") { _, _ -> SafeTimer.cancel(this, "feat") }
-                    .setOnDismissListener { onCancel() }
-                    .show()
+                val ld = luxDialog("MASIH MENUNGGU", "Tunggu sebentar lagi",
+                    "Waktu dihitung dari jam internal, jadi mengubah jam HP tidak mempercepatnya. Setelah habis, ulangi aksi ini.",
+                    waitBox("${left / 60000L + 1}", "menit tersisa"), "Mengerti", "Batalkan permintaan") { onCancel() }
+                ld.neg?.setOnClickListener { SafeTimer.cancel(this, "feat"); ld.dlg.dismiss(); onCancel() }
+                ld.pos.setOnClickListener { ld.dlg.dismiss(); onCancel() }
+                ld.dlg.show()
                 return
             }
         }
@@ -313,16 +392,17 @@ class MainActivity : Activity() {
         var typed = ""
         val col = LinearLayout(this)
         col.orientation = LinearLayout.VERTICAL
-        col.setPadding(dp(20), dp(8), dp(20), dp(8))
+        col.setPadding(0, dp(4), 0, dp(4))
         col.addView(letterCard())
-        col.addView(text("Untuk $what, selesaikan verifikasi yang sama dengan keluar Mode Ketat.", 13f))
         var et: EditText? = null
         if (textLen > 0) {
-            col.addView(text("Ketik teks ini persis ($textLen huruf, huruf besar dan kecil dibedakan). Hanya bagian berikutnya yang ditampilkan, ketik tanpa spasi.", 12f, false, C_SUB))
+            col.addView(text("Ketik teks ini persis ($textLen huruf, huruf besar dan kecil dibedakan). Hanya 5 huruf berikutnya yang ditampilkan, ketik tanpa spasi.", 12f, false, C_SUB))
             val shown = TextView(this)
-            shown.textSize = 20f
+            shown.textSize = 30f
             shown.typeface = Typeface.MONOSPACE
-            shown.setTextColor(C_TEXT)
+            shown.gravity = Gravity.CENTER
+            shown.letterSpacing = 0.18f
+            shown.setTextColor(Color.parseColor("#E6D6B0"))
             shown.setPadding(dp(12), dp(12), dp(12), dp(12))
             shown.background = bg(C_FIELD, dp(10))
             shown.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
@@ -341,8 +421,8 @@ class MainActivity : Activity() {
             fun refresh() {
                 var cp = 0
                 while (cp < typed.length && cp < code.length && typed[cp] == code[cp]) cp++
-                val end = Math.min(code.length, cp + 24)
-                shown.text = code.substring(cp, end).chunked(4).joinToString(" ")
+                val end = Math.min(code.length, cp + 5)
+                shown.text = code.substring(cp, end)
                 counter.text = "${typed.length}/$textLen"
                 warn.text = if (typed.length > cp) "Huruf ke-${cp + 1} salah. Hapus sampai huruf ke-$cp lalu ketik ulang." else ""
             }
@@ -377,22 +457,16 @@ class MainActivity : Activity() {
             friendInput.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             col.addView(friendInput)
         }
-        val sv = ScrollView(this)
-        sv.addView(col)
-        val dlg = android.app.AlertDialog.Builder(this)
-            .setTitle("Konfirmasi")
-            .setView(sv)
-            .setPositiveButton("Lanjut", null)
-            .setNegativeButton("Batal") { _, _ -> onCancel() }
-            .setOnCancelListener { onCancel() }
-            .create()
+        val ld = luxDialog("GERBANG KEAMANAN", "Konfirmasi",
+            "Untuk $what, selesaikan verifikasi yang sama dengan keluar Mode Ketat.", col, "Lanjut", "Batal") { onCancel() }
+        val dlg = ld.dlg
         try {
             dlg.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
         } catch (t: Throwable) {
             // abaikan
         }
         dlg.show()
-        dlg.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+        ld.pos.setOnClickListener {
             if (textLen > 0 && (et?.text?.toString() ?: "") != code) {
                 toast("Teks tidak cocok")
             } else if (friend && !FriendApproval.verify(this, friendInput.text.toString())) {
@@ -487,6 +561,7 @@ class MainActivity : Activity() {
         "Catatan perlindungan" to "Riwayat kejadian penting dan percobaan pembongkaran.",
         "Riwayat pass" to "Pemakaian pass sementara belakangan ini.",
         "Perlu tindakan" to "Perlindungan belum lengkap. Selesaikan agar Penjaga Ketat bekerja.",
+        "Langkah awal" to "Beberapa izin masih kurang. Selesaikan satu per satu agar Penjaga Ketat bekerja.",
         "🛡️ Keyword Bawaan PenjagaKetat" to "Daftar kata bawaan; bisa dimatikan satu per satu.",
         "🕘 Riwayat Situs" to "Situs yang baru dibuka di browser, bisa langsung diblokir.",
         "🔗 Keyword URL" to "Kata yang diperiksa di alamat situs.",
@@ -692,6 +767,7 @@ class MainActivity : Activity() {
 
     private fun parentOf(s: String): String = when {
         s == "urge" -> "home"
+        s == "set_sec" || s == "set_data" -> "more"
         isTabRoot(s) -> "home"
         tabOf(s) == 1 -> "proteksi"
         else -> "home"
@@ -801,23 +877,21 @@ class MainActivity : Activity() {
                 "stats" -> renderDashboard(strict)
                 "focus" -> renderFocus(strict)
                 "sched" -> renderSchedule(strict)
-                else -> {
-                    homeRow(R.drawable.ic_nav_stats, "Statistik", "Pemakaian, blokir, dan pola waktu.", "Lihat", C_PRIMARY, "stats")
-                    sectionLabel("KEAMANAN")
+                "set_sec" -> {
                     renderAppLock(strict)
                     renderUninstallGate(strict)
                     renderFriend()
                     renderLetter(strict)
                     renderProtected(strict)
                     renderNewApps(strict)
-                    sectionLabel("CADANGAN")
+                }
+                "set_data" -> {
                     renderBackup(strict)
-                    sectionLabel("DETEKSI & TAMPILAN")
                     renderSelfTest()
                     renderMotivation(strict)
-                    sectionLabel("RIWAYAT")
                     renderLog()
                 }
+                else -> renderMoreHub(strict)
             }
         }
         collapseAll()
@@ -843,6 +917,67 @@ class MainActivity : Activity() {
         }
     }
 
+    private class NavItem(val icon: Int, val title: String, val sub: String, val status: String, val color: Int, val target: String)
+
+    private fun navGroup(label: String, items: List<NavItem>) {
+        eyebrow(label)
+        val card = LinearLayout(this)
+        card.orientation = LinearLayout.VERTICAL
+        card.setPadding(dp(16), dp(2), dp(16), dp(2))
+        card.background = bg(C_CARD, dp(20)).apply { setStroke(dp(1), C_CHIP) }
+        card.layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { bottomMargin = dp(12) }
+        for ((i, it) in items.withIndex()) {
+            val row = LinearLayout(this)
+            row.orientation = LinearLayout.HORIZONTAL
+            row.gravity = Gravity.CENTER_VERTICAL
+            row.setPadding(0, dp(12), 0, dp(12))
+            row.addView(ImageView(this).apply {
+                setImageResource(it.icon)
+                setColorFilter(C_PRIMARY)
+                setPadding(dp(9), dp(9), dp(9), dp(9))
+                background = bg(Color.TRANSPARENT, dp(11)).apply { setStroke(dp(1), Color.parseColor("#2A2F3B")) }
+                layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
+            })
+            val col = LinearLayout(this)
+            col.orientation = LinearLayout.VERTICAL
+            col.setPadding(dp(14), 0, dp(8), 0)
+            col.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            col.addView(text(it.title, 14.5f, false, C_TEXT))
+            col.addView(text(it.sub, 12f, false, C_SUB))
+            row.addView(col)
+            if (it.status.isNotEmpty()) row.addView(text(it.status, 11f, true, it.color))
+            else row.addView(text("›", 20f, true, C_SUB))
+            val target = it.target
+            row.setOnClickListener { goScreen(target) }
+            card.addView(row)
+            if (i < items.size - 1) card.addView(View(this).apply {
+                setBackgroundColor(Color.parseColor("#1B1F28"))
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1))
+            })
+        }
+        root.addView(card)
+    }
+
+    private fun renderMoreHub(strict: Boolean) {
+        val strictLabel = if (strict) "Aktif" else "Mati"
+        val vpnLabel = if (VpnStatus.running) "Berjalan" else "Mati"
+        navGroup("RINGKASAN", listOf(
+            NavItem(R.drawable.ic_nav_stats, "Statistik", "Pemakaian, blokir, dan pola waktu", "", C_PRIMARY, "stats")
+        ))
+        navGroup("KEAMANAN", listOf(
+            NavItem(R.drawable.ic_nav_shield, "Mode Ketat dan status", "Metode keluar, jam rawan, deteksi AI", strictLabel, if (strict) C_OK else C_SUB, "strict"),
+            NavItem(R.drawable.ic_ly_phone, "Kunci dan perlindungan", "Kunci aplikasi, teman, surat, uninstall", "", C_PRIMARY, "set_sec")
+        ))
+        navGroup("JARINGAN", listOf(
+            NavItem(R.drawable.ic_nav_globe, "VPN DNS dan notifikasi", "Filter situs, SafeSearch, pengingat", vpnLabel, if (VpnStatus.running) C_OK else C_SUB, "net")
+        ))
+        navGroup("DATA DAN UJI", listOf(
+            NavItem(R.drawable.ic_ly_target, "Cadangan, uji, riwayat", "Backup, uji perlindungan, catatan, motivasi", "", C_PRIMARY, "set_data")
+        ))
+    }
+
     private fun screenTitle(s: String): String = when (s) {
         "strict" -> "Mode Ketat dan status"
         "apps" -> "Aplikasi diblokir"
@@ -854,6 +989,8 @@ class MainActivity : Activity() {
         "stats" -> "Statistik"
         "focus" -> "Mode Fokus"
         "urge" -> "Ruang Tenang"
+        "set_sec" -> "Kunci dan perlindungan"
+        "set_data" -> "Data dan uji"
         else -> "Setelan"
     }
 
@@ -1000,7 +1137,24 @@ class MainActivity : Activity() {
 
         val problems = Health.problems(this)
         if (problems.isNotEmpty()) {
-            header(if (protectionOk) "Saran perbaikan" else "Perlu tindakan")
+            header(if (protectionOk) "Saran perbaikan" else "Langkah awal")
+            if (!protectionOk) {
+                val all = Health.items(this)
+                val done = all.count { it.ok }
+                val bar = LinearLayout(this)
+                bar.orientation = LinearLayout.HORIZONTAL
+                bar.background = bg(C_CHIP, dp(3))
+                bar.layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(5)).apply { bottomMargin = dp(6) }
+                bar.addView(View(this).apply {
+                    background = goldBg(dp(3))
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, done.toFloat().coerceAtLeast(0.01f))
+                })
+                bar.addView(View(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, (all.size - done).toFloat().coerceAtLeast(0.01f))
+                })
+                put(bar)
+                put(text("$done dari ${all.size} langkah selesai. Kamu bisa melanjutkan nanti.", 12f, false, C_SUB))
+            }
             for (pr in problems) {
                 status(false, pr.label)
                 val fl = pr.fixLabel
@@ -1439,11 +1593,13 @@ class MainActivity : Activity() {
             }
             code = gateText!!
             gateShown = true
-            put(text("Ketik teks ini persis ($textLen huruf, huruf besar dan kecil dibedakan). Hanya bagian yang perlu diketik berikutnya yang ditampilkan, ketik tanpa spasi. Layar ini tidak bisa di-screenshot.", 13f))
+            put(text("Ketik teks ini persis ($textLen huruf, huruf besar dan kecil dibedakan). Hanya 5 huruf berikutnya yang ditampilkan, ketik tanpa spasi. Layar ini tidak bisa di-screenshot.", 13f))
             val shown = TextView(this)
-            shown.textSize = 20f
+            shown.textSize = 30f
             shown.typeface = Typeface.MONOSPACE
-            shown.setTextColor(C_TEXT)
+            shown.gravity = Gravity.CENTER
+            shown.letterSpacing = 0.18f
+            shown.setTextColor(Color.parseColor("#E6D6B0"))
             shown.setPadding(dp(12), dp(12), dp(12), dp(12))
             shown.background = bg(C_FIELD, dp(10))
             shown.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
@@ -1468,8 +1624,8 @@ class MainActivity : Activity() {
             fun refresh() {
                 var cp = 0
                 while (cp < gateTyped.length && cp < code.length && gateTyped[cp] == code[cp]) cp++
-                val end = Math.min(code.length, cp + 24)
-                shown.text = code.substring(cp, end).chunked(4).joinToString(" ")
+                val end = Math.min(code.length, cp + 5)
+                shown.text = code.substring(cp, end)
                 counter.text = "${gateTyped.length}/$textLen"
                 warn.text = if (gateTyped.length > cp) "Huruf ke-${cp + 1} salah. Hapus sampai huruf ke-$cp lalu ketik ulang." else ""
             }
@@ -2560,6 +2716,20 @@ class MainActivity : Activity() {
         val all = loadApps()
         val chosenRows = all.filter { it.pkg in chosen }
 
+        run {
+            val lockedN = if (strict) chosenRows.count { Store.isLocked(this, it.pkg) } else 0
+            val timerN = chosenRows.count { val c = Store.appCfg(this, it.pkg); c.wait > 0 || (c.twUse > 0 && c.twWait > 0) }
+            cur = null
+            val tiles = LinearLayout(this)
+            tiles.orientation = LinearLayout.HORIZONTAL
+            tiles.layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(12) }
+            tiles.addView(statTile(chosenRows.size.toString(), "Dijaga", C_TEXT, true, false, "apps"))
+            tiles.addView(statTile(timerN.toString(), "Timer tunggu", C_PRIMARY, false, false, "apps"))
+            tiles.addView(statTile(lockedN.toString(), "Terkunci", C_TEXT, false, true, "apps"))
+            root.addView(tiles)
+        }
         header("Diblokir (${chosenRows.size})")
         put(text("Ketuk aplikasi untuk mengatur kondisi blokir. Saat Mode Ketat aktif, aplikasi yang sudah diatur terkunci, tetapi aplikasi baru masih bisa ditambah dan diatur.", 12f, false, C_SUB))
         if (chosenRows.isEmpty()) put(text("Belum ada aplikasi diblokir.", 13f))
