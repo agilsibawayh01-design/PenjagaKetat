@@ -945,7 +945,7 @@ class MainActivity : Activity() {
             typeface = serifBold()
             setPadding(dp(4), 0, 0, dp(14))
         })
-        val protectionOk = acc && adm
+        val protectionOk = acc && adm && Health.criticalOk(this)
         val outer = LinearLayout(this)
         outer.setPadding(dp(1), dp(1), dp(1), dp(1))
         outer.background = GradientDrawable(
@@ -997,17 +997,13 @@ class MainActivity : Activity() {
         renderModeSwitch()
         renderLayers(strict)
 
-        if (!acc || !adm) {
-            header("Perlu tindakan")
-            if (!acc) {
-                status(false, "Aksesibilitas Penjaga Ketat belum aktif")
-                put(button("Buka pengaturan Aksesibilitas") {
-                    startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                })
-            }
-            if (!adm) {
-                status(false, "Perlindungan uninstall belum aktif")
-                put(button("Aktifkan perlindungan uninstall") { requestAdmin() })
+        val problems = Health.problems(this)
+        if (problems.isNotEmpty()) {
+            header(if (protectionOk) "Saran perbaikan" else "Perlu tindakan")
+            for (pr in problems) {
+                status(false, pr.label)
+                val fl = pr.fixLabel
+                if (fl != null) put(button(fl) { healthFix(pr.id) })
             }
         }
 
@@ -1021,6 +1017,26 @@ class MainActivity : Activity() {
             background = bg(C_CHIP, dp(14))
         })
 
+    }
+
+    private fun healthFix(id: String) {
+        when (id) {
+            "acc" -> startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            "admin" -> requestAdmin()
+            "usage" -> startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+            "battery" -> try {
+                startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
+            } catch (t: Throwable) {
+                startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            }
+            "pdns" -> try { startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS)) } catch (t: Throwable) { startActivity(Intent(Settings.ACTION_SETTINGS)) }
+            "notif" -> if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+            "listener" -> {
+                if (!SelfProtector.enableNotifListener(this)) startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            }
+            "browsers" -> Store.setBlockOtherBrowsers(this, true)
+        }
+        handler.postDelayed({ render() }, 800L)
     }
 
     private fun renderProteksi() {

@@ -839,6 +839,16 @@ class GuardService : AccessibilityService() {
             return
         }
 
+        // 0a. Browser di dalam aplikasi lain (tautan dibuka dalam Instagram/Facebook dll.)
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && pkg != packageName &&
+            pkg !in Config.PROTECTED && pkg !in Config.BANK_HINT && pkg !in Config.IGNORED &&
+            Store.blockOtherBrowsers(this) &&
+            InAppBrowser.matches(pkg, event.className?.toString() ?: "")
+        ) {
+            startBlock("browser", pkg)
+            return
+        }
+
         // 0. Browser selain Chrome tidak didukung
         if (pkg in blockedBrowsers) {
             startBlock("browser", pkg)
