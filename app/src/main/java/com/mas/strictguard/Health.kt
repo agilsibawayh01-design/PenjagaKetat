@@ -8,14 +8,19 @@ import android.provider.Settings
 
 /** Kesehatan proteksi: semua pemeriksaan penting dalam satu daftar, dengan kode perbaikan. */
 object Health {
-    class Item(val id: String, val ok: Boolean, val critical: Boolean, val label: String, val fixLabel: String?)
+    class Item(val id: String, val ok: Boolean, val critical: Boolean, val label: String, val fixLabel: String?,
+               val title: String = "", val help: String = "")
 
     fun items(c: Context): List<Item> {
         val out = ArrayList<Item>()
-        out.add(Item("acc", SelfProtector.accessibilityOn(c), true, "Aksesibilitas Penjaga Ketat belum aktif", "Buka pengaturan Aksesibilitas"))
-        out.add(Item("admin", SelfProtector.adminOn(c), true, "Perlindungan uninstall belum aktif", "Aktifkan perlindungan uninstall"))
-        out.add(Item("usage", Foreground.hasUsageAccess(c), false, "Akses Penggunaan belum diberikan", "Buka Akses Penggunaan"))
-        out.add(Item("battery", AntiBypass.batteryExempt(c), false, "Masih dibatasi penghemat baterai: bisa dimatikan sistem", "Kecualikan dari penghemat baterai"))
+        out.add(Item("acc", SelfProtector.accessibilityOn(c), true, "Aksesibilitas Penjaga Ketat belum aktif", "Buka pengaturan Aksesibilitas",
+            "Aksesibilitas", "Mengenali layar yang sedang dibuka"))
+        out.add(Item("admin", SelfProtector.adminOn(c), true, "Perlindungan uninstall belum aktif", "Aktifkan perlindungan uninstall",
+            "Perlindungan uninstall", "Administrator perangkat"))
+        out.add(Item("usage", Foreground.hasUsageAccess(c), false, "Akses Penggunaan belum diberikan", "Buka Akses Penggunaan",
+            "Akses Penggunaan", "Mengenali aplikasi yang sedang aktif"))
+        out.add(Item("battery", AntiBypass.batteryExempt(c), false, "Masih dibatasi penghemat baterai: bisa dimatikan sistem", "Kecualikan dari penghemat baterai",
+            "Penghemat baterai", "Agar tidak dimatikan sistem"))
         if (Store.vpnOn(c) && !VpnStatus.running) {
             out.add(Item("vpn", false, false, "VPN DNS tidak berjalan (" + VpnStatus.state.label + ")", null))
         }
@@ -23,11 +28,10 @@ object Health {
         if (pdns == "hostname") {
             out.add(Item("pdns", false, false, "Private DNS HP diatur ke nama host tertentu: melewati filter DNS", "Buka pengaturan jaringan"))
         }
-        if (Build.VERSION.SDK_INT >= 33 &&
-            c.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            out.add(Item("notif", false, false, "Notifikasi peringatan belum diizinkan", "Izinkan notifikasi"))
-        }
+        val notifOk = Build.VERSION.SDK_INT < 33 ||
+            c.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        out.add(Item("notif", notifOk, false, "Notifikasi peringatan belum diizinkan", "Izinkan notifikasi",
+            "Notifikasi peringatan", "Pengingat dan peringatan penting"))
         if (Store.anyNotifRule(c) && !SelfProtector.notifListenerOn(c)) {
             out.add(Item("listener", false, false, "Akses Notifikasi belum aktif (aturan notifikasi tidak berjalan)", "Nyalakan Akses Notifikasi"))
         }
