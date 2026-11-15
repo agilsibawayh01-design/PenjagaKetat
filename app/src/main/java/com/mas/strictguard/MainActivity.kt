@@ -414,7 +414,8 @@ class MainActivity : Activity() {
         "Uninstall Penjaga Ketat & aplikasi pelindung", "Kunci aplikasi", "Surat untuk diri sendiri",
         "Uji perlindungan", "Persetujuan teman", "Lindungi aplikasi lain dari uninstall",
         "Backup dan restore", "Blokir bagian aplikasi sosmed", "Channel Telegram", "🕘 Riwayat Situs",
-        "Tambah aplikasi", "Jam rawan", "Celah pemasangan", "Perlindungan diri"
+        "Tambah aplikasi", "Jam rawan", "Celah pemasangan", "Perlindungan diri",
+        "30 hari terakhir", "Teratas 7 hari", "Riwayat per aplikasi atau situs", "Kategori hari ini"
     )
 
     private fun applyCollapse(card: LinearLayout) {
@@ -3014,8 +3015,8 @@ class MainActivity : Activity() {
         val profiles = ProfileStore.load(this)
         header("Sekarang")
         val act = ScheduleNotifier.activeNow(this)
-        put(text(if (act.isEmpty()) "Tidak ada profil berjadwal yang sedang berjalan." else
-            act.joinToString("\n") { "• " + it.name }, 13f, act.isNotEmpty()))
+        put(text(if (act.isEmpty()) "○  Tidak ada profil berjadwal yang berjalan" else "●  Sedang berjalan", 13f, true, if (act.isEmpty()) C_SUB else C_OK))
+        for (p in act) put(text(p.name, 22f, true, C_TEXT).apply { typeface = serifBold() })
         val nb = ScheduleNotifier.nextBoundary(this, System.currentTimeMillis())
         if (nb != null) {
             val cal = java.util.Calendar.getInstance()
@@ -3030,7 +3031,8 @@ class MainActivity : Activity() {
         put(text("Jadwal berjalan otomatis tanpa membuka aplikasi dan tetap berlaku setelah restart. Profil mati tidak berjalan. Jadwal yang saling tumpang tindih digabung: diblokir bila salah satu aktif.", 12f))
 
         header("Per hari")
-        val names = arrayOf("Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu")
+        val names = arrayOf("Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min")
+        val todayIdx = (java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_WEEK) + 5) % 7
         for (d in 0 until 7) {
             val rows = ArrayList<Pair<Int, String>>()
             for (p in profiles) {
@@ -3038,26 +3040,54 @@ class MainActivity : Activity() {
                 for (sc in p.schedules) {
                     if ((sc.days and (1 shl d)) == 0) continue
                     val over = sc.start > sc.end
-                    rows.add(Pair(sc.start, fmt(sc.start) + "-" + fmt(sc.end) + (if (over) " (s/d esok)" else "") + "  " + p.name))
+                    rows.add(Pair(sc.start, fmt(sc.start) + "–" + fmt(sc.end) + (if (over) " (s/d esok)" else "") + " · " + p.name))
                 }
             }
             rows.sortBy { it.first }
-            put(text(names[d] + (if (rows.isEmpty()) ": tidak ada" else ""), 13f, true))
-            for (r in rows) put(text("   " + r.second, 12f, false, C_SUB))
+            val line = LinearLayout(this)
+            line.orientation = LinearLayout.HORIZONTAL
+            line.setPadding(0, dp(6), 0, dp(6))
+            line.addView(text(names[d], 13f, true, if (d == todayIdx) C_PRIMARY else C_SUB).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(44), LinearLayout.LayoutParams.WRAP_CONTENT)
+            })
+            val right = LinearLayout(this)
+            right.orientation = LinearLayout.VERTICAL
+            right.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            if (rows.isEmpty()) right.addView(text("—", 12f, false, C_SUB))
+            for (r in rows) right.addView(chip(r.second, Color.parseColor("#4FD1B5")).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = dp(4) }
+            })
+            line.addView(right)
+            put(line)
         }
 
         header("Profil")
         for (p in profiles) {
             val sch = if (p.schedules.isEmpty()) "tanpa jadwal (aktif terus bila dinyalakan)" else
                 p.schedules.joinToString("; ") { "${fmt(it.start)}-${fmt(it.end)} ${dayNames(it.days)}" }
-            put(text(p.name + (if (p.enabled) "" else " (mati)"), 13f, true))
-            put(text(sch, 12f, false, C_SUB))
-            put(button("Atur jadwal & isi: " + p.name) { editProfile(p, strict) })
-            put(button("Ganti nama") {
+            val card = LinearLayout(this)
+            card.orientation = LinearLayout.VERTICAL
+            card.setPadding(dp(14), dp(12), dp(14), dp(12))
+            card.background = bg(C_FIELD, dp(16)).apply { setStroke(dp(1), C_CHIP) }
+            card.layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(8) }
+            card.addView(text(p.name + (if (p.enabled) "" else " (mati)"), 15f, true))
+            card.addView(text(sch, 12f, false, C_SUB))
+            val acts = LinearLayout(this)
+            acts.orientation = LinearLayout.HORIZONTAL
+            acts.setPadding(0, dp(8), 0, 0)
+            fun actBtn(label: String, onClick: () -> Unit) = smallButton(label, onClick).apply {
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(6) }
+            }
+            acts.addView(actBtn("Atur") { editProfile(p, strict) })
+            acts.addView(actBtn("Nama") {
                 if (strict) toast("Mode Ketat aktif: tidak bisa mengubah profil") else
                     askName("Nama profil", p.name) { ProfileStore.rename(this, p.id, it); render() }
             })
-            put(button("Hapus profil") {
+            acts.addView(actBtn("Hapus") {
                 if (strict) toast("Mode Ketat aktif: profil tidak bisa dihapus")
                 else android.app.AlertDialog.Builder(this)
                     .setTitle("Hapus " + p.name + "?")
@@ -3068,6 +3098,8 @@ class MainActivity : Activity() {
                     .setNegativeButton("Batal", null)
                     .show()
             })
+            card.addView(acts)
+            put(card)
         }
         put(button("Tambah profil baru") {
             askName("Nama profil baru", "") {
@@ -3078,18 +3110,14 @@ class MainActivity : Activity() {
         })
 
         header("Pemberitahuan")
-        val cb = CheckBox(this)
-        cb.text = "Beri tahu saat profil mulai dan selesai"
-        cb.isChecked = ScheduleNotifier.enabled(this)
-        cb.setOnClickListener {
-            val v = cb.isChecked
+        put(luxRow(0, "Beri tahu saat profil mulai dan selesai", "Hanya pemberitahuan", ScheduleNotifier.enabled(this), false, true) {
+            val v = !ScheduleNotifier.enabled(this)
             if (v && Build.VERSION.SDK_INT >= 33 &&
                 checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
             ) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1004)
             ScheduleNotifier.setEnabled(this, v)
             render()
-        }
-        put(cb)
+        })
         put(text("Hanya pemberitahuan. Pemblokiran tidak bergantung padanya. Bila mati, tidak ada alarm sama sekali (hemat baterai). Waktu pemberitahuan bisa meleset beberapa menit karena mode hemat daya Android.", 12f, false, C_SUB))
     }
 
@@ -3559,7 +3587,10 @@ class MainActivity : Activity() {
             " • " + (if (pct >= 0) "naik $pct%" else "turun ${-pct}%") + " dari kemarin"
         } else ""
         put(text("penggunaan (aplikasi yang bisa dibuka, tanpa launcher dan Pengaturan)$diff", 11f, false, C_SUB))
-        put(text("${s.blocksToday}x diblokir • ${s.attemptsToday}x percobaan membuka aplikasi/situs terblokir", 13f))
+        put(chipRow(
+            chip("${s.blocksToday}x diblokir", Color.parseColor("#F6A35E")),
+            chip("${s.attemptsToday}x percobaan", Color.parseColor("#B794F6"))
+        ))
         if (s.reasonsToday.isNotEmpty()) {
             put(text(s.reasonsToday.joinToString(", ") { reasonName(it.first) + " " + it.second }, 11f, false, C_SUB))
         }
@@ -3567,16 +3598,17 @@ class MainActivity : Activity() {
         header("Penggunaan hari ini")
         if (s.topAppsToday.isEmpty()) put(text("Belum ada data.", 12f, false, C_SUB))
         val maxA = Math.max(1L, s.topAppsToday.maxOfOrNull { it.ms } ?: 1L)
-        for (it in s.topAppsToday) put(text(barLine(it.label, it.ms, maxA), 12f))
+        for (it in s.topAppsToday) put(barRow(it.label, it.ms, maxA, Color.parseColor("#D4AF6A")))
         if (s.topSitesToday.isNotEmpty()) {
             put(text("Situs (yang punya aturan; sudah termasuk dalam waktu Chrome)", 12f, true))
             val maxS = Math.max(1L, s.topSitesToday.maxOf { it.ms })
-            for (it in s.topSitesToday) put(text(barLine(it.label, it.ms, maxS), 12f))
+            for (it in s.topSitesToday) put(barRow(it.label, it.ms, maxS, Color.parseColor("#B794F6")))
         }
 
         if (s.appCategories.isNotEmpty() || s.siteCategories.isNotEmpty()) {
             header("Kategori hari ini")
-            for ((n, ms) in s.appCategories.take(6)) put(text("$n — ${Dashboard.dur(ms)}", 12f))
+            val catMax = Math.max(1L, s.appCategories.take(6).maxOf { it.second })
+            for ((n, ms) in s.appCategories.take(6)) put(barRow(n, ms, catMax, Color.parseColor("#4FD1B5")))
             if (s.siteCategories.isNotEmpty()) {
                 put(text("Situs:", 12f, true))
                 for ((n, ms) in s.siteCategories) put(text("$n — ${Dashboard.dur(ms)}", 12f))
@@ -3585,7 +3617,7 @@ class MainActivity : Activity() {
 
         header("7 hari terakhir")
         put(text("Pemakaian per hari (menit)", 11f, false, C_SUB))
-        put(BarChartView(this, s.days.map { it.ms / 60000L }, s.days.map { it.label.substringBefore(' ') }, C_PRIMARY, C_TEXT, C_SUB) { "${it}m" }
+        put(BarChartView(this, s.days.map { it.ms / 60000L }, s.days.map { it.label.substringBefore(' ') }, Color.parseColor("#D4AF6A"), C_TEXT, C_SUB) { "${it}m" }
             .apply { layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(150)) })
         put(text("Blokir per hari", 11f, false, C_SUB))
         put(BarChartView(this, s.days.map { it.blocks.toLong() }, s.days.map { it.label.substringBefore(' ') }, C_BAD, C_TEXT, C_SUB) { "${it}x" }
@@ -3608,10 +3640,12 @@ class MainActivity : Activity() {
 
         header("Teratas 7 hari")
         if (s.topAppsWeek.isEmpty()) put(text("Belum ada data.", 12f, false, C_SUB))
-        for (it in s.topAppsWeek) put(text("${it.label} — ${Dashboard.dur(it.ms)}", 12f))
+        val maxW = Math.max(1L, s.topAppsWeek.maxOfOrNull { it.ms } ?: 1L)
+        for (it in s.topAppsWeek) put(barRow(it.label, it.ms, maxW, Color.parseColor("#6EA8FF")))
         if (s.topSitesWeek.isNotEmpty()) {
             put(text("Situs:", 12f, true))
-            for (it in s.topSitesWeek) put(text("${it.label} — ${Dashboard.dur(it.ms)}", 12f))
+            val maxSW = Math.max(1L, s.topSitesWeek.maxOf { it.ms })
+            for (it in s.topSitesWeek) put(barRow(it.label, it.ms, maxSW, Color.parseColor("#B794F6")))
         }
 
         header("Riwayat per aplikasi atau situs")
@@ -4070,6 +4104,56 @@ class MainActivity : Activity() {
     }
 
     // ---------- Komponen Lux ----------
+    private fun chip(label: String, color: Int): TextView = TextView(this).apply {
+        text = label
+        textSize = 12f
+        setTypeface(null, Typeface.BOLD)
+        setTextColor(color)
+        setPadding(dp(10), dp(5), dp(10), dp(5))
+        background = bg(Color.argb(38, Color.red(color), Color.green(color), Color.blue(color)), dp(10))
+            .apply { setStroke(dp(1), Color.argb(90, Color.red(color), Color.green(color), Color.blue(color))) }
+    }
+
+    private fun chipRow(vararg chips: TextView): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        setPadding(0, dp(4), 0, dp(4))
+        for (c in chips) addView(c, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { rightMargin = dp(8) })
+    }
+
+    /** Baris dengan batang gradien: nama di kiri, durasi di kanan. */
+    private fun barRow(label: String, ms: Long, max: Long, color: Int): View {
+        val col = LinearLayout(this)
+        col.orientation = LinearLayout.VERTICAL
+        col.setPadding(0, dp(6), 0, dp(6))
+        val top = LinearLayout(this)
+        top.orientation = LinearLayout.HORIZONTAL
+        top.addView(text(label, 13f).apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        })
+        top.addView(text(Dashboard.dur(ms), 12f, true, color))
+        col.addView(top)
+        val track = android.widget.FrameLayout(this)
+        track.background = bg(Color.parseColor("#1B1F28"), dp(4))
+        track.layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(6)).apply { topMargin = dp(4) }
+        val fill = View(this)
+        fill.background = GradientDrawable(
+            GradientDrawable.Orientation.LEFT_RIGHT,
+            intArrayOf(Color.argb(120, Color.red(color), Color.green(color), Color.blue(color)), color)
+        ).apply { cornerRadius = dp(4).toFloat() }
+        fill.layoutParams = android.widget.FrameLayout.LayoutParams(0, android.widget.FrameLayout.LayoutParams.MATCH_PARENT)
+        track.addView(fill)
+        track.post {
+            val w = (track.width * (ms.toFloat() / max.toFloat())).toInt().coerceAtLeast(dp(4))
+            fill.layoutParams = android.widget.FrameLayout.LayoutParams(w, android.widget.FrameLayout.LayoutParams.MATCH_PARENT)
+        }
+        col.addView(track)
+        return col
+    }
+
     private fun roundClip(v: View, radiusDp: Int) {
         val r = dp(radiusDp).toFloat()
         v.outlineProvider = object : android.view.ViewOutlineProvider() {
