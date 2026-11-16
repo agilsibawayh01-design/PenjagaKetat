@@ -14,6 +14,26 @@
         <item name="android:windowSplashScreenBackground">#0A0C10</item>
         <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_splash</item>
     </style>
+    <style name="AppThemeLight" parent="android:Theme.DeviceDefault.Light">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:colorAccent">#8A6420</item>
+        <item name="android:colorControlActivated">#8A6420</item>
+        <item name="android:colorControlNormal">#756D5D</item>
+        <item name="android:windowBackground">#F6F2E9</item>
+        <item name="android:editTextBackground">@drawable/lux_input_light</item>
+        <item name="android:textColorHint">#857D6C</item>
+        <item name="android:alertDialogTheme">@style/LuxDialogLight</item>
+    </style>
+    <style name="LuxDialogLight" parent="android:Theme.DeviceDefault.Light.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/lux_dialog_bg_light</item>
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:colorAccent">#8A6420</item>
+        <item name="android:colorControlActivated">#8A6420</item>
+        <item name="android:editTextBackground">@drawable/lux_input_light</item>
+        <item name="android:textColorHint">#857D6C</item>
+    </style>
     <style name="LuxDialog" parent="android:Theme.DeviceDefault.Dialog.Alert">
         <item name="android:windowBackground">@drawable/lux_dialog_bg</item>
         <item name="android:fontFamily">@font/inter</item>
