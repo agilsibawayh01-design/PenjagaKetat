@@ -601,6 +601,11 @@ class MainActivity : Activity() {
         "urge" -> "Napas, gerak, pindah tempat sampai dorongan turun"
         "focus" -> "Sesi fokus untuk menjaga konsentrasi"
         "words" -> "Browser, kategori, kata kunci, dan fitur sosmed"
+        "w_tg" -> "Daftar boleh grup, channel, dan bot"
+        "w_browser" -> "Browser yang dipantau"
+        "w_cat" -> "Blokir satu kelompok topik sekaligus"
+        "w_kw" -> "Situs, kata kunci, dan channel Telegram"
+        "w_feed" -> "Shorts, Reels, Cerita, dan Pencarian"
         "sched", "profiles" -> "Jadwal otomatis dan profil aturan"
         "strict" -> "Kunci pengaturan agar sulit dimatikan"
         "net" -> "Filter DNS dan kontrol notifikasi"
@@ -872,7 +877,7 @@ class MainActivity : Activity() {
     private fun tabOf(s: String): Int = when (s) {
         "home", "urge" -> 0
         "proteksi", "strict", "apps", "profiles", "sched", "net", "focus" -> 1
-        "words" -> 2
+        "words", "w_tg", "w_browser", "w_cat", "w_kw", "w_feed" -> 2
         "stats" -> 0
         else -> 3
     }
@@ -881,8 +886,11 @@ class MainActivity : Activity() {
 
     private fun isTabRoot(s: String): Boolean = s == "home" || s == "proteksi" || s == "words" || s == "more"
 
+    private val WORDS_SUB = setOf("w_tg", "w_browser", "w_cat", "w_kw", "w_feed")
+
     private fun parentOf(s: String): String = when {
         s == "urge" -> "home"
+        s in WORDS_SUB -> "words"
         s in MORE_SUB -> "more"
         isTabRoot(s) -> "home"
         tabOf(s) == 1 -> "proteksi"
@@ -977,13 +985,12 @@ class MainActivity : Activity() {
                     renderPauseApps(strict)
                 }
                 "urge" -> renderUrge()
-                "words" -> {
-                    renderTgWork(strict)
-                    renderBrowsers(strict)
-                    renderCategories(strict)
-                    renderWords(strict)
-                    renderFeeds(strict)
-                }
+                "words" -> renderWordsHub(strict)
+                "w_tg" -> renderTgWork(strict)
+                "w_browser" -> renderBrowsers(strict)
+                "w_cat" -> renderCategories(strict)
+                "w_kw" -> renderWords(strict)
+                "w_feed" -> renderFeeds(strict)
                 "profiles" -> renderProfiles(strict)
                 "net" -> {
                     renderVpn(strict)
@@ -1083,6 +1090,25 @@ class MainActivity : Activity() {
         root.addView(card)
     }
 
+    private fun renderWordsHub(strict: Boolean) {
+        val tgOn = Store.tgWorkOn(this)
+        val kwCount = Store.keywords(this).size + Store.domains(this).size
+        val cats = Categories.enabled(this).size
+        val feeds = Features.ALL.count { f -> Features.enabled(this, f) }
+        navGroup("TELEGRAM", listOf(
+            NavItem(R.drawable.ic_ly_send, "Telegram Kerja", "Hanya grup, channel, dan bot yang diizinkan",
+                if (tgOn) "Aktif" else "Mati", if (tgOn) C_OK else C_SUB, "w_tg")
+        ))
+        navGroup("SITUS DAN KATA", listOf(
+            NavItem(R.drawable.ic_ly_globe, "Situs dan kata kunci", "Domain, kata di alamat dan layar", "$kwCount aturan", C_PRIMARY, "w_kw"),
+            NavItem(R.drawable.ic_nav_globe, "Kategori situs", "Dewasa, judi, dan topik lain", "$cats aktif", C_PRIMARY, "w_cat"),
+            NavItem(R.drawable.ic_ly_app, "Browser", "Browser yang dipantau untuk blokir situs", "", C_PRIMARY, "w_browser")
+        ))
+        navGroup("SOSMED", listOf(
+            NavItem(R.drawable.ic_ly_phone, "Bagian aplikasi sosmed", "Tutup Shorts, Reels, Cerita, Pencarian", "$feeds aktif", C_PRIMARY, "w_feed")
+        ))
+    }
+
     private fun renderMoreHub(strict: Boolean) {
         val strictLabel = if (strict) "Aktif" else "Mati"
         val vpnLabel = if (VpnStatus.running) "Berjalan" else "Mati"
@@ -1112,6 +1138,11 @@ class MainActivity : Activity() {
         "strict" -> "Mode Ketat dan status"
         "apps" -> "Aplikasi diblokir"
         "words" -> "Situs dan kata kunci"
+        "w_tg" -> "Telegram Kerja"
+        "w_browser" -> "Browser"
+        "w_cat" -> "Kategori situs"
+        "w_kw" -> "Situs dan kata kunci"
+        "w_feed" -> "Bagian aplikasi sosmed"
         "profiles" -> "Profil"
         "sched" -> "Jadwal & profil"
         "net" -> "VPN DNS dan notifikasi"
@@ -1138,7 +1169,7 @@ class MainActivity : Activity() {
 
     private fun eyebrowFor(s: String): String = when (s) {
         "proteksi" -> "PROTEKSI"
-        "words" -> "SITUS & CHAT"
+        "words", "w_tg", "w_browser", "w_cat", "w_kw", "w_feed" -> "SITUS & CHAT"
         "apps" -> "ATURAN BLOKIR"
         "sched", "profiles" -> "ATURAN OTOMATIS"
         "focus" -> "MODE"
