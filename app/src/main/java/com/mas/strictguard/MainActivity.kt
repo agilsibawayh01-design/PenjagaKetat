@@ -68,8 +68,22 @@ class MainActivity : Activity() {
                 v.trackTintList = android.content.res.ColorStateList(arrayOf(checked, intArrayOf()), intArrayOf(Color.argb(120, 212, 175, 106), Color.parseColor("#2A2F3B")))
             }
             is android.widget.CompoundButton -> {
-                v.buttonTintList = android.content.res.ColorStateList(arrayOf(checked, intArrayOf()), intArrayOf(gold, grey))
+                v.buttonTintList = null
+                v.setButtonDrawable(if (v is android.widget.RadioButton) R.drawable.lux_radio else R.drawable.lux_check)
                 v.setTextColor(C_TEXT)
+                v.textSize = 14f
+                v.minHeight = dp(48)
+                v.minimumHeight = dp(48)
+                v.setPadding(dp(10), dp(6), dp(4), dp(6))
+            }
+            is android.widget.SeekBar -> {
+                v.progressTintList = android.content.res.ColorStateList.valueOf(gold)
+                v.thumbTintList = android.content.res.ColorStateList.valueOf(gold)
+                v.progressBackgroundTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#2A2F3B"))
+            }
+            is Spinner -> {
+                v.background = bg(Color.parseColor("#10131A"), dp(12)).apply { setStroke(dp(1), Color.parseColor("#2A2F3B")) }
+                v.setPadding(dp(10), dp(8), dp(10), dp(8))
             }
         }
         if (v is android.view.ViewGroup) for (i in 0 until v.childCount) styleTree(v.getChildAt(i))
@@ -637,7 +651,24 @@ class MainActivity : Activity() {
     )
 
     private fun status(ok: Boolean, label: String) {
-        put(text((if (ok) "✔  " else "✘  ") + label, 13f, false, if (ok) C_OK else C_BAD))
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.gravity = Gravity.CENTER_VERTICAL
+        row.setPadding(0, dp(5), 0, dp(5))
+        val col = if (ok) C_OK else C_BAD
+        row.addView(TextView(this).apply {
+            text = if (ok) "✓" else "!"
+            textSize = 11f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(col)
+            gravity = Gravity.CENTER
+            background = bg(Color.argb(38, Color.red(col), Color.green(col), Color.blue(col)), dp(10))
+            layoutParams = LinearLayout.LayoutParams(dp(20), dp(20)).apply { rightMargin = dp(10) }
+        })
+        row.addView(text(label, 13.5f, false, if (ok) C_TEXT else Color.parseColor("#F0B9B3")).apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        put(row)
     }
 
     private fun button(label: String, onClick: () -> Unit): Button =
@@ -668,7 +699,8 @@ class MainActivity : Activity() {
             isAllCaps = false
             textSize = 12f
             setTextColor(C_PRIMARY)
-            background = bg(C_FIELD, dp(12)).apply { setStroke(dp(1), Color.argb(110, 212, 175, 106)) }
+            background = bg(Color.parseColor("#10131A"), dp(14)).apply { setStroke(dp(1), Color.argb(130, 212, 175, 106)) }
+            setTypeface(null, Typeface.BOLD)
             minHeight = dp(44)
             minimumHeight = dp(44)
             setPadding(dp(8), dp(6), dp(8), dp(6))
@@ -683,7 +715,7 @@ class MainActivity : Activity() {
     private fun scrollBox(heightDp: Int, content: View): ScrollView {
         val sv = ScrollView(this)
         sv.addView(content)
-        sv.background = bg(C_FIELD, dp(10))
+        sv.background = bg(Color.parseColor("#0A0C10"), dp(14)).apply { setStroke(dp(1), C_CHIP) }
         sv.isVerticalScrollBarEnabled = true
         sv.isScrollbarFadingEnabled = false
         sv.isNestedScrollingEnabled = true
@@ -740,8 +772,10 @@ class MainActivity : Activity() {
                 row.addView(text("Aktif", 12f, true, C_OK).apply {
                     setPadding(dp(8), dp(6), dp(8), dp(6))
                 })
-                row.addView(text("✕", 15f, true, C_BAD).apply {
-                    setPadding(dp(14), dp(8), dp(6), dp(8))
+                row.addView(text("✕", 13f, true, C_BAD).apply {
+                    gravity = Gravity.CENTER
+                    background = bg(Color.argb(30, 229, 115, 107), dp(14))
+                    layoutParams = LinearLayout.LayoutParams(dp(28), dp(28)).apply { leftMargin = dp(8) }
                     setOnClickListener {
                         if (Store.strictOn(this@MainActivity)) {
                             toast("Mode Ketat aktif: tidak bisa mengubah keyword bawaan")
@@ -751,7 +785,12 @@ class MainActivity : Activity() {
                     }
                 })
             }
+            row.setPadding(0, dp(6), 0, dp(6))
             col.addView(row)
+            col.addView(View(this).apply {
+                setBackgroundColor(Color.parseColor("#1B1F28"))
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1))
+            })
         }
         return scrollBox(240, col)
     }
@@ -768,11 +807,18 @@ class MainActivity : Activity() {
             row.addView(text(item, 13f).apply {
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
-            row.addView(text("✕", 15f, true, C_BAD).apply {
-                setPadding(dp(14), dp(8), dp(6), dp(8))
+            row.addView(text("✕", 13f, true, C_BAD).apply {
+                gravity = Gravity.CENTER
+                background = bg(Color.argb(30, 229, 115, 107), dp(14))
+                layoutParams = LinearLayout.LayoutParams(dp(28), dp(28)).apply { leftMargin = dp(8) }
                 setOnClickListener { onRemove(item) }
             })
+            row.setPadding(0, dp(6), 0, dp(6))
             col.addView(row)
+            col.addView(View(this).apply {
+                setBackgroundColor(Color.parseColor("#1B1F28"))
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1))
+            })
         }
         return scrollBox(180, col)
     }
@@ -1386,9 +1432,9 @@ class MainActivity : Activity() {
         lockCard.addView(text("5 layar blokir dalam 10 menit → terkunci 5 menit", 12f, false, C_SUB))
         eyebrow("ATURAN & MODE")
         homeGroup("ATURAN BLOKIR")
-        homeRow(R.drawable.ic_ly_phone, "Aplikasi", "Blokir, batasi waktu, atau beri timer tunggu.", "${Store.apps(this).size} diblokir", Color.parseColor("#6EA8FF"), "apps")
-        homeRow(R.drawable.ic_nav_globe, "Situs & kata", "Situs, kata kunci, kategori, dan bagian aplikasi sosmed.", "$wordCount aturan • $cats kategori", Color.parseColor("#B794F6"), "words")
-        homeRow(R.drawable.ic_ly_calendar, "Jadwal & profil", "Aturan otomatis per hari dan jam (Kerja, Tidur, dll.).", scheduleTileLabel() + " • $activeP profil aktif", Color.parseColor("#4FD1B5"), "sched")
+        homeRow(R.drawable.ic_ly_phone, "Aplikasi", "Blokir, batasi waktu, atau beri timer tunggu.", "${Store.apps(this).size} diblokir", Color.parseColor("#C99A45"), "apps")
+        homeRow(R.drawable.ic_nav_globe, "Situs & kata", "Situs, kata kunci, kategori, dan bagian aplikasi sosmed.", "$wordCount aturan • $cats kategori", Color.parseColor("#A9A396"), "words")
+        homeRow(R.drawable.ic_ly_calendar, "Jadwal & profil", "Aturan otomatis per hari dan jam (Kerja, Tidur, dll.).", scheduleTileLabel() + " • $activeP profil aktif", Color.parseColor("#5FC9A0"), "sched")
         homeGroup("MODE")
         homeRow(R.drawable.ic_ly_target, "Mode Fokus", "Sesi waktu yang menutup aplikasi dan situs pemicu.", focusTileLabel(), Color.parseColor("#F687B3"), "focus")
         homeRow(R.drawable.ic_nav_shield, "Mode Ketat & status", "Kunci pengaturan dan cek perlindungan diri.", modeLabel(), C_PRIMARY, "strict")
@@ -1436,9 +1482,9 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { bottomMargin = dp(12) }
         val locks = try { Strikes.count(this).toString() } catch (t: Throwable) { "0" }
-        row.addView(statTile(blocks, "Diblokir hari ini", Color.parseColor("#F6A35E"), true, false, "stats"))
+        row.addView(statTile(blocks, "Diblokir hari ini", Color.parseColor("#E6C987"), true, false, "stats"))
         row.addView(statTile(cleanStreak().toString(), "Hari bersih", Color.parseColor("#68D391"), false, false, "stats"))
-        row.addView(statTile(locks, "Kunci layar", Color.parseColor("#B794F6"), false, true, "stats"))
+        row.addView(statTile(locks, "Kunci layar", Color.parseColor("#A9A396"), false, true, "stats"))
         root.addView(row)
     }
 
@@ -3771,7 +3817,7 @@ class MainActivity : Activity() {
             right.orientation = LinearLayout.VERTICAL
             right.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             if (rows.isEmpty()) right.addView(text("—", 12f, false, C_SUB))
-            for (r in rows) right.addView(chip(r.second, Color.parseColor("#4FD1B5")).apply {
+            for (r in rows) right.addView(chip(r.second, Color.parseColor("#5FC9A0")).apply {
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { bottomMargin = dp(4) }
@@ -4305,8 +4351,8 @@ class MainActivity : Activity() {
         } else ""
         put(text("penggunaan (aplikasi yang bisa dibuka, tanpa launcher dan Pengaturan)$diff", 11f, false, C_SUB))
         put(chipRow(
-            chip("${s.blocksToday}x diblokir", Color.parseColor("#F6A35E")),
-            chip("${s.attemptsToday}x percobaan", Color.parseColor("#B794F6"))
+            chip("${s.blocksToday}x diblokir", Color.parseColor("#E6C987")),
+            chip("${s.attemptsToday}x percobaan", Color.parseColor("#A9A396"))
         ))
         if (s.reasonsToday.isNotEmpty()) {
             put(text(s.reasonsToday.joinToString(", ") { reasonName(it.first) + " " + it.second }, 11f, false, C_SUB))
@@ -4319,13 +4365,13 @@ class MainActivity : Activity() {
         if (s.topSitesToday.isNotEmpty()) {
             put(text("Situs (yang punya aturan; sudah termasuk dalam waktu Chrome)", 12f, true))
             val maxS = Math.max(1L, s.topSitesToday.maxOf { it.ms })
-            for (it in s.topSitesToday) put(barRow(it.label, it.ms, maxS, Color.parseColor("#B794F6")))
+            for (it in s.topSitesToday) put(barRow(it.label, it.ms, maxS, Color.parseColor("#A9A396")))
         }
 
         if (s.appCategories.isNotEmpty() || s.siteCategories.isNotEmpty()) {
             header("Kategori hari ini")
             val catMax = Math.max(1L, s.appCategories.take(6).maxOf { it.second })
-            for ((n, ms) in s.appCategories.take(6)) put(barRow(n, ms, catMax, Color.parseColor("#4FD1B5")))
+            for ((n, ms) in s.appCategories.take(6)) put(barRow(n, ms, catMax, Color.parseColor("#5FC9A0")))
             if (s.siteCategories.isNotEmpty()) {
                 put(text("Situs:", 12f, true))
                 for ((n, ms) in s.siteCategories) put(text("$n — ${Dashboard.dur(ms)}", 12f))
@@ -4352,17 +4398,14 @@ class MainActivity : Activity() {
         put(BarChartView(this, s.days30.map { it.second / 60000L }, s.days30.map { it.first.substring(8) }, C_PRIMARY, C_TEXT, C_SUB) { "${it}m" }
             .apply { layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(150)) })
 
-        header("Mode Fokus")
-        put(text("Data belum tersedia: riwayat sesi Fokus belum dicatat oleh aplikasi.", 12f, false, C_SUB))
-
         header("Teratas 7 hari")
         if (s.topAppsWeek.isEmpty()) put(text("Belum ada data.", 12f, false, C_SUB))
         val maxW = Math.max(1L, s.topAppsWeek.maxOfOrNull { it.ms } ?: 1L)
-        for (it in s.topAppsWeek) put(barRow(it.label, it.ms, maxW, Color.parseColor("#6EA8FF")))
+        for (it in s.topAppsWeek) put(barRow(it.label, it.ms, maxW, Color.parseColor("#C99A45")))
         if (s.topSitesWeek.isNotEmpty()) {
             put(text("Situs:", 12f, true))
             val maxSW = Math.max(1L, s.topSitesWeek.maxOf { it.ms })
-            for (it in s.topSitesWeek) put(barRow(it.label, it.ms, maxSW, Color.parseColor("#B794F6")))
+            for (it in s.topSitesWeek) put(barRow(it.label, it.ms, maxSW, Color.parseColor("#A9A396")))
         }
 
         header("Riwayat per aplikasi atau situs")
@@ -5026,11 +5069,11 @@ class MainActivity : Activity() {
             Store.nsfwAi(this), strict, false) { toggleNsfwAi(strict) })
         box.addView(luxRow(R.drawable.ic_ly_send, "Telegram Kerja",
             "${Store.tgAllow(this).size} chat boleh · pribadi selalu boleh",
-            Store.tgWorkOn(this), strict && Store.tgWorkOn(this), false, Color.parseColor("#6EA8FF")) { toggleTgWork(strict) })
+            Store.tgWorkOn(this), strict && Store.tgWorkOn(this), false, Color.parseColor("#C99A45")) { toggleTgWork(strict) })
         box.addView(luxRow(R.drawable.ic_ly_globe, "Situs & kata kunci", "Hanya Chrome · DNS aman",
-            Store.featureOn(this, "sites"), strict, false, Color.parseColor("#B794F6")) { toggleFeature("sites", "Situs", strict) })
+            Store.featureOn(this, "sites"), strict, false, Color.parseColor("#A9A396")) { toggleFeature("sites", "Situs", strict) })
         box.addView(luxRow(R.drawable.ic_ly_app, "Aplikasi baru", "Diblokir otomatis saat baru dipasang",
-            Store.autoBlockNew(this), strict, true, Color.parseColor("#4FD1B5")) {
+            Store.autoBlockNew(this), strict, true, Color.parseColor("#5FC9A0")) {
             if (Store.autoBlockNew(this) && strict) toast("Mode Ketat aktif: tidak bisa dimatikan")
             else { Store.setAutoBlockNew(this, !Store.autoBlockNew(this)); render() }
         })
