@@ -11,8 +11,9 @@ android {
         applicationId = "com.mas.strictguard"
         minSdk = 29
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        val buildNo = (project.findProperty("buildNumber") as String?)?.toIntOrNull() ?: 1
+        versionCode = buildNo
+        versionName = "1.0.$buildNo"
     }
 
     signingConfigs {
