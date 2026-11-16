@@ -3085,6 +3085,18 @@ class MainActivity : Activity() {
     // ---------- Uji perlindungan ----------
     private fun renderSelfTest() {
         header("Uji perlindungan")
+        put(ghostButton("Simpan laporan diagnosis (untuk laporan bug)") {
+            val i = Intent(Intent.ACTION_CREATE_DOCUMENT)
+            i.addCategory(Intent.CATEGORY_OPENABLE)
+            i.type = "text/plain"
+            i.putExtra(Intent.EXTRA_TITLE, "PenjagaKetat_Diagnosis.txt")
+            try {
+                startActivityForResult(i, 5105)
+            } catch (t: Throwable) {
+                toast("Tidak ada aplikasi penyimpan file")
+            }
+        })
+        put(infoNote("Laporan hanya berisi versi, tipe HP, status perlindungan, dan jumlah aturan. Tanpa PIN, nama situs, atau isi layar."))
         put(text("Membuka halaman Pengaturan satu per satu dan memeriksa apakah penandanya terdeteksi di HP ini (Opsi pengembang, VPN, izin instal, tambah pengguna, admin perangkat). Layar akan berpindah sendiri selama sekitar 20 detik.", 12f))
         put(button("Mulai uji") {
             val svc = GuardService.instance
@@ -5158,9 +5170,12 @@ class MainActivity : Activity() {
         }
         if (requestCode == 5101 && resultCode == RESULT_OK && data?.data != null) {
             val uri = data.data!!
-            val json = Backup.export(this)
+            val plain = Backup.export(this)
+            val pass = pendingPass
+            pendingPass = null
             Thread {
                 val ok = try {
+                    val json = if (pass != null) BackupCrypto.encrypt(plain, pass) else plain
                     contentResolver.openOutputStream(uri, "wt")!!.use { it.write(json.toByteArray(Charsets.UTF_8)) }
                     true
                 } catch (t: Throwable) {
@@ -5185,6 +5200,20 @@ class MainActivity : Activity() {
                     render()
                 }
             }
+            return
+        }
+        if (requestCode == 5105 && resultCode == RESULT_OK && data?.data != null) {
+            val uri = data.data!!
+            val txt = Diag.text(this)
+            Thread {
+                val ok = try {
+                    contentResolver.openOutputStream(uri, "wt")!!.use { it.write(txt.toByteArray(Charsets.UTF_8)) }
+                    true
+                } catch (t: Throwable) {
+                    false
+                }
+                runOnUiThread { toast(if (ok) "Laporan tersimpan" else "Gagal menyimpan laporan") }
+            }.start()
             return
         }
         if (requestCode == 5103 && resultCode == RESULT_OK && data?.data != null) {
@@ -5222,7 +5251,10 @@ class MainActivity : Activity() {
                 } catch (t: Throwable) {
                     text = null
                 }
-                runOnUiThread { confirmRestore(text) }
+                runOnUiThread {
+                    val t0 = text
+                    if (t0 != null && BackupCrypto.isEnvelope(t0)) askRestorePass(t0) else confirmRestore(t0)
+                }
             }.start()
             return
         }
@@ -5247,6 +5279,22 @@ class MainActivity : Activity() {
                 toast("Tidak ada aplikasi penyimpan file")
             }
         })
+        put(ghostButton("Ekspor backup terenkripsi (kata sandi)") {
+            askPass("Enkripsi backup", true) { pw ->
+                pendingPass = pw.toCharArray()
+                val i = Intent(Intent.ACTION_CREATE_DOCUMENT)
+                i.addCategory(Intent.CATEGORY_OPENABLE)
+                i.type = "application/json"
+                i.putExtra(Intent.EXTRA_TITLE, Backup.fileName().replace(".json", "_enc.json"))
+                try {
+                    startActivityForResult(i, 5101)
+                } catch (t: Throwable) {
+                    pendingPass = null
+                    toast("Tidak ada aplikasi penyimpan file")
+                }
+            }
+        })
+        put(infoNote("Backup terenkripsi aman disimpan di Drive. Kalau kata sandi hilang, isinya tidak bisa dipulihkan siapa pun, termasuk aku. Cadangan otomatis tetap tanpa enkripsi."))
         put(button("Impor / restore dari file") {
             val i = Intent(Intent.ACTION_OPEN_DOCUMENT)
             i.addCategory(Intent.CATEGORY_OPENABLE)
@@ -5295,6 +5343,39 @@ class MainActivity : Activity() {
             val parsed = Backup.parse(try { last.readText() } catch (t: Throwable) { "" })
             if (!parsed.ok) toast("Cadangan sebelum restore tidak bisa dibaca") else confirmRestore(last.readText(), "Kembalikan konfigurasi sebelum restore terakhir?")
         })
+    }
+
+    private var pendingPass: CharArray? = null
+
+    private fun askPass(title: String, confirm: Boolean, onOk: (String) -> Unit) {
+        val box = LinearLayout(this)
+        box.orientation = LinearLayout.VERTICAL
+        val f1 = luxField(if (confirm) "Kata sandi (min 8 karakter)" else "Kata sandi", true)
+        box.addView(f1)
+        val f2 = luxField("Ulangi kata sandi", true)
+        if (confirm) box.addView(f2)
+        val ld = luxDialog("BACKUP", title, if (confirm) "Catat kata sandi ini. Tanpanya backup tidak bisa dibuka." else "Masukkan kata sandi backup.", box, "Lanjut", "Batal") { }
+        ld.pos.setOnClickListener {
+            val a = f1.text.toString()
+            if (confirm && a.length < 8) { toast("Minimal 8 karakter"); return@setOnClickListener }
+            if (confirm && a != f2.text.toString()) { toast("Kata sandi tidak sama"); return@setOnClickListener }
+            if (!confirm && a.isEmpty()) { toast("Isi kata sandi"); return@setOnClickListener }
+            ld.dlg.dismiss()
+            onOk(a)
+        }
+        ld.dlg.show()
+    }
+
+    private fun askRestorePass(env: String) {
+        askPass("Backup terenkripsi", false) { pw ->
+            Thread {
+                val plain = BackupCrypto.decrypt(env, pw.toCharArray())
+                runOnUiThread {
+                    if (plain == null) luxConfirm("BACKUP", "Gagal dibuka", "Kata sandi salah atau berkas rusak. Konfigurasi kamu tidak diubah.", "Coba lagi") { askRestorePass(env) }
+                    else confirmRestore(plain)
+                }
+            }.start()
+        }
     }
 
     private fun confirmRestore(text: String?, title: String = "Restore backup") {
