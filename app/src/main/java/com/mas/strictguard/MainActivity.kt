@@ -1310,7 +1310,7 @@ class MainActivity : Activity() {
             Store.setUpdateAuto(this, v)
             render()
         }
-        put(infoNote("Pemeriksaan menghubungi GitHub, jadi alamat IP-mu terlihat oleh GitHub. Ini satu-satunya koneksi keluar Penjaga Ketat, dan hanya terjadi bila kamu menekan Periksa atau menyalakan otomatis."))
+        put(infoNote("Pemeriksaan menghubungi GitHub, jadi alamat IP-mu terlihat oleh GitHub. Koneksi ini hanya terjadi bila kamu menekan Periksa atau menyalakan otomatis."))
     }
 
     private fun renderThermal() {
@@ -1361,7 +1361,7 @@ class MainActivity : Activity() {
     private fun renderAbout() {
         val ver = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "" } catch (t: Throwable) { "" }
         header("Data kamu")
-        put(infoNote("Semua pemrosesan terjadi di HP ini. Penjaga Ketat tidak mengirim data apa pun ke server, tidak memakai akun, dan tidak memasang pelacak. Satu-satunya koneksi keluar adalah pemeriksaan pembaruan ke GitHub, dan hanya bila kamu memakainya. Pengaturan, log, dan statistik hanya tersimpan di perangkat. Cadangan hanya berupa file yang kamu simpan sendiri."))
+        put(infoNote("Semua pemrosesan terjadi di HP ini. Penjaga Ketat tidak punya server sendiri, tidak memakai akun, dan tidak memasang pelacak. Koneksi keluar hanya ada di tiga keadaan: (1) filter DNS yang aktif meneruskan nama situs yang dibuka ke server DNS (Cloudflare Family, lalu DNS jaringanmu atau Google sebagai cadangan); (2) memilih titik di peta memuat peta dari OpenStreetMap; (3) pemeriksaan pembaruan ke GitHub bila kamu memakainya. Pengaturan, log, dan statistik hanya tersimpan di perangkat. Cadangan hanya berupa file yang kamu simpan sendiri."))
         header("Izin dan gunanya")
         put(infoNote("Aksesibilitas: membaca nama aplikasi, alamat browser, dan teks layar untuk memutuskan apa yang diblokir. Teks tidak disimpan atau dikirim."))
         put(infoNote("Tangkapan layar (AI): layar dianalisis di HP oleh model AI untuk mendeteksi gambar terlarang. Gambar tidak disimpan."))
@@ -1387,7 +1387,7 @@ class MainActivity : Activity() {
             box.addView(text(t, 14.5f, true, C_TEXT).apply { setPadding(0, dp(14), 0, 0) })
             box.addView(text(d, 12.5f, false, px("#A9A396")))
         }
-        item("Semua diproses di HP", "Tidak ada data yang dikirim ke server, tidak ada akun, dan tidak ada pelacak. Hanya pemeriksaan pembaruan ke GitHub yang menghubungi internet, dan itu hanya bila kamu memakainya.")
+        item("Semua diproses di HP", "Tidak ada server milik kami, tidak ada akun, dan tidak ada pelacak. Koneksi keluar hanya untuk filter DNS (nama situs diteruskan ke server DNS), peta lokasi (OpenStreetMap), dan pemeriksaan pembaruan (GitHub) bila kamu memakainya.")
         item("Akses yang akan diminta", "Aksesibilitas (membaca nama aplikasi, alamat browser, dan teks layar), tangkapan layar untuk deteksi AI, VPN DNS, dan Administrator perangkat. Semuanya hanya untuk memblokir sesuai aturanmu dan bisa kamu cabut lewat Pengaturan HP.")
         item("Mode Ketat sengaja sulit dimatikan", "Setelah aktif, kamu harus memenuhi metode keluar yang kamu pilih. Pilih dengan sadar. Panduan keluar darurat ada di Pengaturan, Bantuan darurat.")
         item("Ada batasnya", "Penjaga Ketat tidak bisa mencegah Safe Mode, ADB, atau factory reset, dan kadang salah blokir. Ini alat bantu kebiasaan, bukan layanan medis atau terapi.")
