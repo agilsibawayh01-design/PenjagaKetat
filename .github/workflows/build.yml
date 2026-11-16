@@ -85,7 +85,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Build release APK
-        run: ./gradlew assembleRelease --no-daemon
+        run: ./gradlew assembleRelease --no-daemon -PbuildNumber=${{ github.run_number }}
 
       # Penandatanganan rilis. Kunci lama (debug.keystore) tetap dipakai sebagai penanda awal; kunci baru
       # dari GitHub Secrets ditambahkan lewat rotasi kunci APK (lineage) supaya APK baru MENIMPA aplikasi
