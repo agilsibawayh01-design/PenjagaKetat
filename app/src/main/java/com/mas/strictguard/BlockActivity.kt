@@ -277,6 +277,13 @@ class BlockActivity : Activity() {
                 showSiteWaitCountdown()
             }
             "location" -> info.text = "Aplikasi ini diblokir berdasarkan lokasi kamu saat ini."
+            "thermal" -> {
+                val t = Thermal.tempC
+                val ts = if (t.isNaN()) "" else String.format(java.util.Locale.US, " (%.1f°C)", t)
+                info.text = if (Thermal.level >= Thermal.DANGER)
+                    "Suhu baterai berbahaya$ts.\nHentikan pemakaian dan pengisian, lepas casing, dan biarkan HP dingin."
+                else "Baterai panas$ts.\nAplikasi ini ditutup sementara dan terbuka lagi otomatis setelah suhu di bawah 40°C."
+            }
             "night" -> info.text = "Jam rawan.\nAplikasi ini ditutup sampai " + Night.fmt(Night.end(this)) + "."
             "pause" -> {
                 title.text = "Jeda sebentar"
@@ -371,6 +378,7 @@ class BlockActivity : Activity() {
             "location" -> "Aturan lokasi"
             "focus" -> "Mode Fokus"
             "night" -> "Jam rawan"
+            "thermal" -> "Proteksi suhu"
             "profile" -> {
                 val names = try {
                     ProfileStore.load(this).filter { pkg in it.apps && ProfileEngine.isActive(this, it) }.map { it.name }

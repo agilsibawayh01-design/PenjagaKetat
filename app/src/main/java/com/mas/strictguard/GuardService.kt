@@ -63,6 +63,14 @@ class GuardService : AccessibilityService() {
     private var strictNow = false
     private var blockUnknownNow = false
     private var nightLocked: Set<String> = emptySet()
+    private var thermalLevel = 0
+    private var thermalTickOn = false
+    private val thermalRunnable = object : Runnable {
+        override fun run() {
+            thermalLevel = Thermal.update(this@GuardService, System.currentTimeMillis(), true)
+            if (thermalLevel > 0) handler.postDelayed(this, 30_000L) else thermalTickOn = false
+        }
+    }
     private var pauseAppsNow: Set<String> = emptySet()
     private var lastPauseAt = 0L
     private var pausedNow = false
@@ -708,6 +716,7 @@ class GuardService : AccessibilityService() {
         handler.removeCallbacks(timerRunnable)
         handler.removeCallbacks(nsfwRunnable)
         handler.removeCallbacks(pipRunnable)
+        handler.removeCallbacks(thermalRunnable)
         removePipCover()
         restoreMedia()
         handler.removeCallbacks(limitRunnable)
@@ -724,6 +733,11 @@ class GuardService : AccessibilityService() {
         strictNow = Store.strictOn(this)
         blockUnknownNow = Store.blockUnknownInstall(this)
         nightLocked = Night.lockedPackages(this)
+        thermalLevel = Thermal.update(this, now)
+        if (thermalLevel > 0 && !thermalTickOn) {
+            thermalTickOn = true
+            handler.postDelayed(thermalRunnable, 30_000L)
+        }
         DnsGuard.check(this, strictNow)
         pauseAppsNow = Store.pauseApps(this)
         pausedNow = Store.pausedNow(this)
@@ -814,6 +828,14 @@ class GuardService : AccessibilityService() {
         // Jam rawan: Play Store / Pengaturan ditutup total bila saklarnya aktif.
         if (pkg in nightLocked && !selfTesting) {
             startBlock("night", pkg)
+            return
+        }
+
+        // Proteksi suhu: game/video (dan di suhu berbahaya, aplikasi pihak ketiga non-esensial) ditutup sementara.
+        if (thermalLevel >= Thermal.BLOCK && !selfTesting && pkg !in lockAllowed() && pkg !in inputMethodPackages &&
+            Thermal.shouldBlock(this, pkg, thermalLevel)
+        ) {
+            startBlock("thermal", pkg)
             return
         }
 
@@ -1506,7 +1528,7 @@ class GuardService : AccessibilityService() {
         if (backing || now - lastBlockAt < 800L) return
         var mode = mode0
         // Layar blokir berulang dalam waktu dekat = ada upaya akses konten terlarang: kunci layar sementara.
-        if (mode0 != "lock" && mode0 != "pause" && Strikes.record(this) >= Strikes.LOCK_AT) mode = "lock"
+        if (mode0 != "lock" && mode0 != "pause" && mode0 != "thermal" && Strikes.record(this) >= Strikes.LOCK_AT) mode = "lock"
         lastBlockAt = now
         backing = true
         if (mode == "screen_keyword" || mode == "content" || mode == "typed" || mode == "nsfw" || mode == "lock") showShield()

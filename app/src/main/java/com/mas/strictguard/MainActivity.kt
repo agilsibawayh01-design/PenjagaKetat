@@ -712,6 +712,7 @@ class MainActivity : Activity() {
         "set_help" -> "Langkah jika terkunci atau terjebak"
         "set_theme" -> "Terang, gelap, atau ikut sistem"
         "set_update" -> "Periksa versi terbaru dari GitHub"
+        "set_thermal" -> "Tutup game dan video saat HP panas"
         "set_about" -> "Data, izin, dan batas perlindungan"
         else -> "Keamanan, cadangan, dan pengaturan lain"
     }
@@ -982,7 +983,7 @@ class MainActivity : Activity() {
         else -> 3
     }
 
-    private val MORE_SUB = setOf("set_lock", "set_friend", "set_zone", "set_sec", "vpn", "notif", "set_backup", "set_test", "set_misc", "set_help", "set_about", "set_theme", "set_update")
+    private val MORE_SUB = setOf("set_lock", "set_friend", "set_zone", "set_sec", "vpn", "notif", "set_backup", "set_test", "set_misc", "set_help", "set_about", "set_theme", "set_update", "set_thermal")
 
     private fun isTabRoot(s: String): Boolean = s == "home" || s == "proteksi" || s == "words" || s == "more"
 
@@ -1130,6 +1131,7 @@ class MainActivity : Activity() {
                 "set_help" -> renderHelp()
                 "set_theme" -> renderTheme()
                 "set_update" -> renderUpdate()
+                "set_thermal" -> renderThermal()
                 "set_about" -> renderAbout()
                 else -> renderMoreHub(strict)
             }
@@ -1245,6 +1247,7 @@ class MainActivity : Activity() {
         val upd = Store.updateAvail(this)
         navGroup("TAMPILAN DAN PEMBARUAN", listOf(
             NavItem(R.drawable.ic_ly_eye, "Tampilan", "Terang, gelap, atau ikut sistem", when (Store.themeMode(this)) { 1 -> "Terang"; 2 -> "Gelap"; else -> "Sistem" }, C_PRIMARY, "set_theme"),
+            NavItem(R.drawable.ic_ly_phone, "Proteksi suhu", "Tutup game dan video saat HP panas", if (Thermal.enabled(this)) "Aktif" else "Mati", C_PRIMARY, "set_thermal"),
             NavItem(R.drawable.ic_ly_plug, "Pembaruan", "Periksa versi terbaru",
                 if (upd > Updater.currentBuild(this)) "Build $upd" else "", C_OK, "set_update")
         ))
@@ -1308,6 +1311,25 @@ class MainActivity : Activity() {
             render()
         }
         put(infoNote("Pemeriksaan menghubungi GitHub, jadi alamat IP-mu terlihat oleh GitHub. Ini satu-satunya koneksi keluar Penjaga Ketat, dan hanya terjadi bila kamu menekan Periksa atau menyalakan otomatis."))
+    }
+
+    private fun renderThermal() {
+        header("Suhu baterai sekarang")
+        val t = Thermal.read(this)
+        put(text(if (t.isNaN()) "Sensor tidak tersedia" else String.format(java.util.Locale.US, "%.1f°C", t), 22f, true, C_TEXT))
+        val lv = if (t.isNaN()) "Proteksi tidak bisa bekerja tanpa data suhu." else when {
+            t > 45f -> "Berbahaya"
+            t >= 42f -> "Panas, game dan video ditutup"
+            t >= 40f -> "Hangat"
+            else -> "Normal"
+        }
+        put(text(lv, 13f, false, C_SUB))
+        switchLine("Proteksi suhu", "Aktif secara otomatis saat HP panas", Thermal.enabled(this)) { v ->
+            Thermal.setEnabled(this, v)
+            render()
+        }
+        put(infoNote("Di bawah 40°C normal. 40 sampai 42°C hanya peringatan. Mulai 42°C game dan video ditutup sementara. Di atas 45°C aplikasi pihak ketiga lain juga ditutup, kecuali telepon, pesan, peta, dan bank. Semuanya terbuka lagi otomatis setelah di bawah 40°C."))
+        put(infoNote("Yang dibaca adalah suhu baterai, bukan suhu CPU. Mengisi daya sambil bermain bisa menaikkan suhu baterai dengan cepat. Ini tidak mengubah Mode Ketat atau daftar blokirmu."))
     }
 
     private fun renderUpdateBanner() {
@@ -1407,6 +1429,7 @@ class MainActivity : Activity() {
         "set_help" -> "Bantuan darurat"
         "set_theme" -> "Tampilan"
         "set_update" -> "Pembaruan"
+        "set_thermal" -> "Proteksi suhu"
         "set_about" -> "Privasi dan batasan"
         else -> "Setelan"
     }
