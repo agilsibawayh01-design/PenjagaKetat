@@ -536,6 +536,19 @@ object Store {
     fun setVpnExcludeBanks(c: Context, v: Boolean) { sp(c).edit().putBoolean("vpn_excl_bank", v).commit() }
     fun vpnUpstream(c: Context): Int = sp(c).getInt("vpn_up", 0)
     fun setVpnUpstream(c: Context, v: Int) { sp(c).edit().putInt("vpn_up", v).commit() }
+    /** 0 = ikut sistem, 1 = terang, 2 = gelap. */
+    fun themeMode(c: Context): Int = sp(c).getInt("theme_mode", 0)
+    fun setThemeMode(c: Context, v: Int) { sp(c).edit().putInt("theme_mode", v).commit() }
+    fun updateRepo(c: Context): String = sp(c).getString("upd_repo", "") ?: ""
+    fun setUpdateRepo(c: Context, v: String) { sp(c).edit().putString("upd_repo", v).commit() }
+    fun updateAuto(c: Context): Boolean = sp(c).getBoolean("upd_auto", false)
+    fun setUpdateAuto(c: Context, v: Boolean) { sp(c).edit().putBoolean("upd_auto", v).commit() }
+    fun updateLast(c: Context): Long = sp(c).getLong("upd_last", 0L)
+    fun updateAvail(c: Context): Int = sp(c).getInt("upd_avail", 0)
+    fun updateUrl(c: Context): String = sp(c).getString("upd_url", "") ?: ""
+    fun setUpdateResult(c: Context, avail: Int, url: String) {
+        sp(c).edit().putLong("upd_last", System.currentTimeMillis()).putInt("upd_avail", avail).putString("upd_url", url).commit()
+    }
     fun consent(c: Context): Boolean = sp(c).getBoolean("consent_v1", false)
     fun setConsent(c: Context, v: Boolean) { sp(c).edit().putBoolean("consent_v1", v).commit() }
     fun safeSearch(c: Context): Boolean = sp(c).getBoolean("safe_search", true)
