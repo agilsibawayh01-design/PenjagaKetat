@@ -2252,25 +2252,24 @@ class MainActivity : Activity() {
         })
         box.addView(radiusLabel)
         box.addView(seek)
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Tambah Zona Ketat")
-            .setView(ScrollView(this).apply { addView(box) })
-            .setOnDismissListener { zoneMap?.destroy() }
-            .setPositiveButton("Simpan") { _, _ ->
-                val lat = latF.text.toString().trim().toDoubleOrNull()
-                val lon = lonF.text.toString().trim().toDoubleOrNull()
-                if (lat == null || lon == null || lat !in -90.0..90.0 || lon !in -180.0..180.0) {
-                    toast("Lokasi tidak valid: isi lintang dan bujur, atau pakai lokasi saya sekarang.")
-                } else if (!Zone.add(this, lat, lon, radii[seek.progress])) {
-                    toast("Jumlah zona sudah penuh")
-                } else {
-                    if (!LocationTracker.hasPermission(this) || !LocationTracker.hasBackground(this)) askLocationPermission()
-                    Zone.update(this)
-                    render()
-                }
+        box.setPadding(dp(22), dp(6), dp(22), dp(16))
+        val zdlg = luxScreenDialog("", "ZONA KETAT", "Tambah zona", box, "Simpan zona", emptyList(), false, save@{
+            val lat = latF.text.toString().trim().toDoubleOrNull()
+            val lon = lonF.text.toString().trim().toDoubleOrNull()
+            if (lat == null || lon == null || lat !in -90.0..90.0 || lon !in -180.0..180.0) {
+                toast("Lokasi tidak valid: isi lintang dan bujur, atau pakai lokasi saya sekarang.")
+                return@save false
             }
-            .setNegativeButton("Batal", null)
-            .show()
+            if (!Zone.add(this, lat, lon, radii[seek.progress])) {
+                toast("Jumlah zona sudah penuh")
+                return@save false
+            }
+            if (!LocationTracker.hasPermission(this) || !LocationTracker.hasBackground(this)) askLocationPermission()
+            Zone.update(this)
+            render()
+            true
+        }, { render() }, "Zona Ketat", R.drawable.ic_ly_target)
+        zdlg.setOnDismissListener { zoneMap?.destroy() }
     }
 
     private fun dialogExpire() {
@@ -2494,22 +2493,20 @@ class MainActivity : Activity() {
                 if (strict) {
                     toast("Mode Ketat aktif: kunci aplikasi tidak bisa dimatikan")
                 } else if (mode == 1) {
-                    val et = EditText(this)
-                    et.inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
-                    et.hint = "PIN saat ini"
-                    android.app.AlertDialog.Builder(this)
-                        .setTitle("Matikan kunci aplikasi")
-                        .setView(et)
-                        .setPositiveButton("Matikan") { _, _ ->
-                            if (AppLock.verifyPin(this, et.text.toString())) {
-                                AppLock.turnOff(this)
-                            } else {
-                                toast("PIN salah atau terkunci")
-                            }
-                            render()
+                    val et = luxField("PIN saat ini").apply {
+                        inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
+                    }
+                    val ld = luxDialog("KUNCI APLIKASI", "Matikan kunci aplikasi", "Masukkan PIN saat ini.", et, "Matikan", "Batal") { }
+                    ld.pos.setOnClickListener {
+                        if (AppLock.verifyPin(this, et.text.toString())) {
+                            AppLock.turnOff(this)
+                            ld.dlg.dismiss()
+                        } else {
+                            toast("PIN salah atau terkunci")
                         }
-                        .setNegativeButton("Batal", null)
-                        .show()
+                        render()
+                    }
+                    ld.dlg.show()
                 } else {
                     AppLock.turnOff(this)
                     render()
@@ -2521,37 +2518,28 @@ class MainActivity : Activity() {
     private fun pinDialog() {
         val box = LinearLayout(this)
         box.orientation = LinearLayout.VERTICAL
-        box.setPadding(dp(20), dp(8), dp(20), dp(8))
         val pw = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
-        val old = EditText(this)
-        old.inputType = pw
-        old.hint = "PIN lama"
+        val old = luxField("PIN lama").apply { inputType = pw }
         if (AppLock.hasPin(this)) box.addView(old)
-        val n1 = EditText(this)
-        n1.inputType = pw
-        n1.hint = "PIN baru (4 sampai 8 angka)"
+        val n1 = luxField("PIN baru (4 sampai 8 angka)").apply { inputType = pw }
         box.addView(n1)
-        val n2 = EditText(this)
-        n2.inputType = pw
-        n2.hint = "Ulangi PIN baru"
+        val n2 = luxField("Ulangi PIN baru").apply { inputType = pw }
         box.addView(n2)
-        android.app.AlertDialog.Builder(this)
-            .setTitle("PIN aplikasi")
-            .setView(box)
-            .setPositiveButton("Simpan") { _, _ ->
-                if (AppLock.hasPin(this) && !AppLock.verifyPin(this, old.text.toString())) {
-                    toast("PIN lama salah atau terkunci")
-                } else if (n1.text.toString() != n2.text.toString()) {
-                    toast("PIN tidak sama")
-                } else {
-                    val err = AppLock.setPin(this, n1.text.toString())
-                    if (err == null) AppLock.markUnlocked()
-                    toast(err ?: "PIN tersimpan")
-                }
-                render()
+        val ld = luxDialog("KUNCI APLIKASI", "PIN aplikasi", "", box, "Simpan", "Batal") { }
+        ld.pos.setOnClickListener {
+            if (AppLock.hasPin(this) && !AppLock.verifyPin(this, old.text.toString())) {
+                toast("PIN lama salah atau terkunci")
+            } else if (n1.text.toString() != n2.text.toString()) {
+                toast("PIN tidak sama")
+            } else {
+                val err = AppLock.setPin(this, n1.text.toString())
+                if (err == null) AppLock.markUnlocked()
+                toast(err ?: "PIN tersimpan")
+                if (err == null) ld.dlg.dismiss()
             }
-            .setNegativeButton("Batal", null)
-            .show()
+            render()
+        }
+        ld.dlg.show()
     }
 
     private fun renderBrowsers(strict: Boolean) {
@@ -4049,18 +4037,17 @@ class MainActivity : Activity() {
     }
 
     private fun askName(title: String, initial: String, onOk: (String) -> Unit) {
-        val et = EditText(this)
+        val et = luxField("Nama")
         et.setText(initial)
-        et.setSingleLine(true)
-        android.app.AlertDialog.Builder(this)
-            .setTitle(title)
-            .setView(et)
-            .setPositiveButton("Simpan") { _, _ ->
-                val v = et.text.toString().trim()
-                if (v.isNotEmpty()) onOk(v)
+        val ld = luxDialog("NAMA", title, "", et, "Simpan", "Batal") { }
+        ld.pos.setOnClickListener {
+            val v = et.text.toString().trim()
+            if (v.isNotEmpty()) {
+                ld.dlg.dismiss()
+                onOk(v)
             }
-            .setNegativeButton("Batal", null)
-            .show()
+        }
+        ld.dlg.show()
     }
 
     private fun renderSchedule(strict: Boolean) {
@@ -4446,25 +4433,23 @@ class MainActivity : Activity() {
 
     /** Dialog daftar teks (satu item per baris). [normalize] menormalkan domain. */
     private fun editListDialog(title: String, current: Set<String>, domain: Boolean, onSave: (Set<String>) -> Unit) {
-        val et = EditText(this).apply {
+        val et = luxField(if (domain) "satu situs per baris, mis. contoh.com" else "satu per baris").apply {
+            setSingleLine(false)
             setText(current.sorted().joinToString("\n"))
-            hint = if (domain) "satu situs per baris, mis. contoh.com" else ""
-            minLines = 4
+            minLines = 5
             gravity = Gravity.TOP
         }
-        android.app.AlertDialog.Builder(this)
-            .setTitle(title)
-            .setView(et)
-            .setPositiveButton("Simpan") { _, _ ->
-                val out = HashSet<String>()
-                for (line in et.text.toString().split('\n', ',', ';')) {
-                    val v = if (domain) Rules.normalizeDomain(line) else line.trim()
-                    if (v.isNotEmpty()) out.add(v)
-                }
-                onSave(out)
+        val ld = luxDialog("DAFTAR", title, "Satu item per baris. Koma juga boleh.", et, "Simpan", "Batal") { }
+        ld.pos.setOnClickListener {
+            val out = HashSet<String>()
+            for (line in et.text.toString().split('\n', ',', ';')) {
+                val v = if (domain) Rules.normalizeDomain(line) else line.trim()
+                if (v.isNotEmpty()) out.add(v)
             }
-            .setNegativeButton("Batal", null)
-            .show()
+            ld.dlg.dismiss()
+            onSave(out)
+        }
+        ld.dlg.show()
     }
 
     private fun renderFocus(strict: Boolean) {
@@ -4547,19 +4532,39 @@ class MainActivity : Activity() {
         })
         put(rowButton("Kategori", "${x.blockCats.size} dipilih") {
             if (locked) toast("Terkunci") else {
-                val labels = Focus.CATS.map { it.name }.toTypedArray()
                 val checked = BooleanArray(Focus.CATS.size) { Focus.CATS[it].key in x.blockCats }
-                android.app.AlertDialog.Builder(this)
-                    .setTitle("Kategori yang diblokir")
-                    .setMultiChoiceItems(labels, checked) { _, which, on -> checked[which] = on }
-                    .setPositiveButton("Simpan") { _, _ ->
-                        val cats = HashSet<String>()
-                        for (i in Focus.CATS.indices) if (checked[i]) cats.add(Focus.CATS[i].key)
-                        Focus.setCfg(this, Focus.Cfg(x.blockApps, x.blockSites, cats, x.allowApps, x.allowSites))
-                        render()
+                val list = LinearLayout(this)
+                list.orientation = LinearLayout.VERTICAL
+                fun paintCats() {
+                    list.removeAllViews()
+                    for (i in Focus.CATS.indices) {
+                        val row = LinearLayout(this)
+                        row.orientation = LinearLayout.HORIZONTAL
+                        row.gravity = Gravity.CENTER_VERTICAL
+                        row.setPadding(dp(6), dp(13), dp(6), dp(13))
+                        row.addView(text(Focus.CATS[i].name, 14.5f, checked[i], C_TEXT), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                        row.addView(ImageView(this).apply {
+                            setImageResource(if (checked[i]) R.drawable.lux_check_on else R.drawable.lux_check_off)
+                            layoutParams = LinearLayout.LayoutParams(dp(22), dp(22))
+                        })
+                        row.setOnClickListener { checked[i] = !checked[i]; paintCats() }
+                        list.addView(row)
+                        list.addView(View(this).apply {
+                            setBackgroundColor(Color.parseColor("#1B1F28"))
+                            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1))
+                        })
                     }
-                    .setNegativeButton("Batal", null)
-                    .show()
+                }
+                paintCats()
+                val ld = luxDialog("MODE FOKUS", "Kategori diblokir", "", list, "Simpan", "Batal") { }
+                ld.pos.setOnClickListener {
+                    val cats = HashSet<String>()
+                    for (i in Focus.CATS.indices) if (checked[i]) cats.add(Focus.CATS[i].key)
+                    Focus.setCfg(this, Focus.Cfg(x.blockApps, x.blockSites, cats, x.allowApps, x.allowSites))
+                    ld.dlg.dismiss()
+                    render()
+                }
+                ld.dlg.show()
             }
         })
         put(text("Kategori aplikasi memakai kategori bawaan Android, jadi tidak semua aplikasi terdeteksi. Aplikasi bank, telepon, Pengaturan, dan Penjaga Ketat tidak pernah ikut diblokir Fokus.", 11f, false, C_SUB))
@@ -4590,14 +4595,17 @@ class MainActivity : Activity() {
 
     private fun showHistory(key: String, title: String, isSite: Boolean) {
         val rows = Dashboard.history(this, key, isSite)
-        val maxMs = Math.max(1L, rows.maxOf { it.ms })
+        val maxMs = Math.max(1L, rows.maxOfOrNull { it.ms } ?: 1L)
         val sb = StringBuilder()
         for (r in rows) sb.append(barLine(r.label, r.ms, maxMs, if (r.blocks > 0) " • ${r.blocks}x blokir" else "")).append('\n')
-        android.app.AlertDialog.Builder(this)
-            .setTitle(title)
-            .setMessage(sb.toString().trim())
-            .setPositiveButton("Tutup", null)
-            .show()
+        val body = text(sb.toString().trim(), 12f, false, C_TEXT).apply {
+            typeface = Typeface.MONOSPACE
+            background = bg(Color.parseColor("#0A0C10"), dp(14)).apply { setStroke(dp(1), C_CHIP) }
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+        }
+        val ld = luxDialog("RIWAYAT PEMAKAIAN", title, "", body, "Tutup", null) { }
+        ld.pos.setOnClickListener { ld.dlg.dismiss() }
+        ld.dlg.show()
     }
 
     private fun renderDashboard(strict: Boolean) {
@@ -5062,25 +5070,16 @@ class MainActivity : Activity() {
         }
         val parsed = Backup.parse(text)
         if (!parsed.ok) {
-            android.app.AlertDialog.Builder(this)
-                .setTitle("Backup tidak valid")
-                .setMessage(parsed.error + "\nKonfigurasi kamu tidak diubah.")
-                .setPositiveButton("OK", null)
-                .show()
+            luxConfirm("BACKUP", "Backup tidak valid", parsed.error + "\nKonfigurasi kamu tidak diubah.", "Mengerti") { }
             return
         }
         val strict = Store.strictRaw(this)
-        android.app.AlertDialog.Builder(this)
-            .setTitle(title)
-            .setMessage(parsed.summary + "\n\n" +
-                (if (strict) "Mode Ketat aktif: hanya aturan baru yang ditambahkan." else "Konfigurasi sekarang diganti isi backup. Salinan konfigurasi sekarang disimpan dulu.") )
-            .setPositiveButton("Restore") { _, _ ->
-                val msg = try { Backup.apply(this, parsed.root!!) } catch (t: Throwable) { "Restore gagal. Konfigurasi lama tetap ada." }
-                toast(msg)
-                render()
-            }
-            .setNegativeButton("Batalkan", null)
-            .show()
+        luxConfirm("BACKUP", title, parsed.summary + "\n\n" +
+            (if (strict) "Mode Ketat aktif: hanya aturan baru yang ditambahkan." else "Konfigurasi sekarang diganti isi backup. Salinan konfigurasi sekarang disimpan dulu."), "Restore") {
+            val msg = try { Backup.apply(this, parsed.root!!) } catch (t: Throwable) { "Restore gagal. Konfigurasi lama tetap ada." }
+            toast(msg)
+            render()
+        }
     }
 
     private fun renderFriend() {
@@ -5116,19 +5115,15 @@ class MainActivity : Activity() {
     }
 
     private fun friendClearDialog() {
-        val et = EditText(this)
-        et.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-        et.hint = "Kode teman"
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Hapus kode teman")
-            .setView(et)
-            .setPositiveButton("Hapus") { _, _ ->
-                val err = FriendApproval.clear(this, et.text.toString())
-                toast(err ?: "Kode teman dihapus")
-                render()
-            }
-            .setNegativeButton("Batal", null)
-            .show()
+        val et = luxField("Kode teman", true)
+        val ld = luxDialog("PERSETUJUAN TEMAN", "Hapus kode teman", "Temanmu perlu mengetik kodenya.", et, "Hapus", "Batal") { }
+        ld.pos.setOnClickListener {
+            val err = FriendApproval.clear(this, et.text.toString())
+            toast(err ?: "Kode teman dihapus")
+            if (err == null) ld.dlg.dismiss()
+            render()
+        }
+        ld.dlg.show()
     }
 
     private fun renderDetection() {
