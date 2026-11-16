@@ -536,6 +536,8 @@ object Store {
     fun setVpnExcludeBanks(c: Context, v: Boolean) { sp(c).edit().putBoolean("vpn_excl_bank", v).commit() }
     fun vpnUpstream(c: Context): Int = sp(c).getInt("vpn_up", 0)
     fun setVpnUpstream(c: Context, v: Int) { sp(c).edit().putInt("vpn_up", v).commit() }
+    fun consent(c: Context): Boolean = sp(c).getBoolean("consent_v1", false)
+    fun setConsent(c: Context, v: Boolean) { sp(c).edit().putBoolean("consent_v1", v).commit() }
     fun safeSearch(c: Context): Boolean = sp(c).getBoolean("safe_search", true)
     fun setSafeSearch(c: Context, v: Boolean) { sp(c).edit().putBoolean("safe_search", v).commit() }
 

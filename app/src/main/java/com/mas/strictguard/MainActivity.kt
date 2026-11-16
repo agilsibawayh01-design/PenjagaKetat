@@ -190,6 +190,7 @@ class MainActivity : Activity() {
         if (Store.strictRaw(this) && !WatchdogService.running) WatchdogService.start(this)
         VpnManager.ensure(this)
         if (AppLock.needsAuth(this)) showLockScreen() else render()
+        if (!Store.consent(this)) showConsent()
     }
 
     override fun onPause() {
@@ -642,6 +643,8 @@ class MainActivity : Activity() {
         "notif" -> "Pengingat waktu dan kontrol notifikasi"
         "set_lock", "set_friend", "set_zone", "set_sec" -> "Mengunci dan melindungi pengaturan"
         "set_backup", "set_test", "set_misc" -> "Cadangan, uji, dan catatan"
+        "set_help" -> "Langkah jika terkunci atau terjebak"
+        "set_about" -> "Data, izin, dan batas perlindungan"
         else -> "Keamanan, cadangan, dan pengaturan lain"
     }
 
@@ -911,7 +914,7 @@ class MainActivity : Activity() {
         else -> 3
     }
 
-    private val MORE_SUB = setOf("set_lock", "set_friend", "set_zone", "set_sec", "vpn", "notif", "set_backup", "set_test", "set_misc")
+    private val MORE_SUB = setOf("set_lock", "set_friend", "set_zone", "set_sec", "vpn", "notif", "set_backup", "set_test", "set_misc", "set_help", "set_about")
 
     private fun isTabRoot(s: String): Boolean = s == "home" || s == "proteksi" || s == "words" || s == "more"
 
@@ -1056,6 +1059,8 @@ class MainActivity : Activity() {
                     renderMotivation(strict)
                     renderLog()
                 }
+                "set_help" -> renderHelp()
+                "set_about" -> renderAbout()
                 else -> renderMoreHub(strict)
             }
         }
@@ -1167,6 +1172,67 @@ class MainActivity : Activity() {
             NavItem(R.drawable.ic_ly_eye, "Uji perlindungan", "Cek halaman Setelan HP terdeteksi", "", C_PRIMARY, "set_test"),
             NavItem(R.drawable.ic_ly_calendar, "Catatan dan motivasi", "Riwayat dan teks penyemangat", "", C_PRIMARY, "set_misc")
         ))
+        navGroup("BANTUAN DAN INFO", listOf(
+            NavItem(R.drawable.ic_lock, "Bantuan darurat", "Jika terkunci di Mode Ketat atau butuh keluar", "", C_PRIMARY, "set_help"),
+            NavItem(R.drawable.ic_nav_shield, "Privasi dan batasan", "Data yang dipakai dan yang tidak bisa dicegah", "", C_PRIMARY, "set_about")
+        ))
+    }
+
+    private fun renderHelp() {
+        header("Terkunci di Mode Ketat?")
+        put(infoNote("Mode Ketat memang dibuat sulit dimatikan, tetapi selalu ada jalan keluar yang sah. Tarik napas dulu, lalu coba urutan ini."))
+        put(text("1. Jalur resmi", 14f, true, C_TEXT).apply { setPadding(0, dp(8), 0, 0) })
+        put(infoNote("Buka Mode Ketat, tekan Minta nonaktifkan, tunggu waktu jeda sampai habis, lalu ketik teks acak (dan kode teman bila diatur). Ini jalur yang selalu tersedia tanpa komputer."))
+        put(text("2. Jika Mode Ketat punya waktu kedaluwarsa", 14f, true, C_TEXT).apply { setPadding(0, dp(8), 0, 0) })
+        put(infoNote("Mode Ketat mati sendiri saat waktunya habis. Cek sisa waktunya di Mode Ketat, Metode keluar."))
+        put(text("3. Jika aplikasi tidak bisa dibuka sama sekali", 14f, true, C_TEXT).apply { setPadding(0, dp(8), 0, 0) })
+        put(infoNote("Nyalakan Safe Mode HP (umumnya: tahan tombol daya, tahan Matikan, pilih Safe Mode). Di Safe Mode aplikasi pihak ketiga tidak berjalan, sehingga kamu bisa menonaktifkan Administrator perangkat dan mencopot Penjaga Ketat lewat Pengaturan. Caranya sedikit berbeda tiap merek HP."))
+        header("Sedang berat?")
+        put(infoNote("Dorongan itu naik dan turun. Ruang Tenang di Beranda punya langkah singkat: napas, gerak, pindah tempat. Kamu tidak sendirian menghadapinya, dan memulai lagi kapan pun itu boleh."))
+        put(button("Buka Ruang Tenang") {
+            urgeEnd = 0L
+            rtStep = 0
+            goScreen("urge")
+        })
+    }
+
+    private fun renderAbout() {
+        val ver = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "" } catch (t: Throwable) { "" }
+        header("Data kamu")
+        put(infoNote("Semua pemrosesan terjadi di HP ini. Penjaga Ketat tidak mengirim data apa pun ke server, tidak memakai akun, dan tidak memasang pelacak. Pengaturan, log, dan statistik hanya tersimpan di perangkat. Cadangan hanya berupa file yang kamu simpan sendiri."))
+        header("Izin dan gunanya")
+        put(infoNote("Aksesibilitas: membaca nama aplikasi, alamat browser, dan teks layar untuk memutuskan apa yang diblokir. Teks tidak disimpan atau dikirim."))
+        put(infoNote("Tangkapan layar (AI): layar dianalisis di HP oleh model AI untuk mendeteksi gambar terlarang. Gambar tidak disimpan."))
+        put(infoNote("VPN DNS: memeriksa nama situs yang dibuka di HP ini untuk memblokir situs terlarang dan menyalakan SafeSearch. Lalu lintas tidak dikirim ke pihak lain."))
+        put(infoNote("Administrator perangkat: mencegah Penjaga Ketat dicopot saat Mode Ketat aktif. Lokasi: hanya untuk Zona Ketat, bila kamu menyalakannya."))
+        header("Yang tidak bisa dicegah")
+        put(infoNote("Penjaga Ketat tidak bisa mencegah: Force Stop lewat ADB, pencabutan izin lewat ADB, Safe Mode, profil kerja, atau factory reset. Ia hanya bisa mendeteksi dan memberi tahu. Salah blokir juga bisa terjadi."))
+        put(infoNote("Penjaga Ketat adalah alat bantu kebiasaan, bukan layanan medis atau terapi."))
+        if (ver.isNotEmpty()) put(text("Versi $ver", 12f, false, Color.parseColor("#7C7768")).apply { setPadding(0, dp(8), 0, 0) })
+    }
+
+    private var consentShown = false
+
+    /** Persetujuan awal: dijelaskan sebelum izin-izin sensitif diminta. */
+    private fun showConsent() {
+        if (consentShown) return
+        consentShown = true
+        val box = LinearLayout(this)
+        box.orientation = LinearLayout.VERTICAL
+        box.setPadding(dp(22), dp(6), dp(22), dp(16))
+        box.addView(text("Penjaga Ketat membantumu menjaga diri dari konten dan kebiasaan yang ingin kamu jauhi. Sebelum mulai, ini yang perlu kamu tahu:", 13f, false, C_SUB))
+        fun item(t: String, d: String) {
+            box.addView(text(t, 14.5f, true, C_TEXT).apply { setPadding(0, dp(14), 0, 0) })
+            box.addView(text(d, 12.5f, false, Color.parseColor("#A9A396")))
+        }
+        item("Semua diproses di HP", "Tidak ada data yang dikirim ke server, tidak ada akun, dan tidak ada pelacak.")
+        item("Akses yang akan diminta", "Aksesibilitas (membaca nama aplikasi, alamat browser, dan teks layar), tangkapan layar untuk deteksi AI, VPN DNS, dan Administrator perangkat. Semuanya hanya untuk memblokir sesuai aturanmu dan bisa kamu cabut lewat Pengaturan HP.")
+        item("Mode Ketat sengaja sulit dimatikan", "Setelah aktif, kamu harus memenuhi metode keluar yang kamu pilih. Pilih dengan sadar. Panduan keluar darurat ada di Pengaturan, Bantuan darurat.")
+        item("Ada batasnya", "Penjaga Ketat tidak bisa mencegah Safe Mode, ADB, atau factory reset, dan kadang salah blokir. Ini alat bantu kebiasaan, bukan layanan medis atau terapi.")
+        luxScreenDialog("", "SEBELUM MULAI", "Persetujuan", box, "Saya mengerti dan setuju", emptyList(), false, {
+            Store.setConsent(this, true)
+            true
+        }, { finish() }, "Keluar", R.drawable.ic_nav_shield)
     }
 
     private fun screenTitle(s: String): String = when (s) {
@@ -1198,6 +1264,8 @@ class MainActivity : Activity() {
         "set_backup" -> "Cadangan dan pulihkan"
         "set_test" -> "Uji perlindungan"
         "set_misc" -> "Catatan dan motivasi"
+        "set_help" -> "Bantuan darurat"
+        "set_about" -> "Privasi dan batasan"
         else -> "Setelan"
     }
 
@@ -1974,6 +2042,33 @@ class MainActivity : Activity() {
 
     private var exitTick: Runnable? = null
 
+    private fun confirmStrict() {
+        val box = LinearLayout(this)
+        box.orientation = LinearLayout.VERTICAL
+        box.addView(text("Yang akan terkunci", 13f, true, C_PRIMARY))
+        box.addView(infoNote("Daftar blokir hanya bisa ditambah, pengaturan lain terkunci, dan Penjaga Ketat tidak bisa dicopot."))
+        box.addView(text("Cara keluar yang kamu pilih", 13f, true, C_PRIMARY).apply { setPadding(0, dp(8), 0, 0) })
+        box.addView(infoNote(methodSummary() + ". Panduan keluar darurat ada di Pengaturan, Bantuan darurat."))
+        val noExpiry = Store.expireMin(this) <= 0
+        var wantExpiry: () -> Boolean = { false }
+        if (noExpiry) {
+            val (view, get) = toggleRow("Batas 7 hari", "Mode Ketat mati sendiri setelah 7 hari. Disarankan untuk pertama kali.", true)
+            box.addView(view)
+            wantExpiry = get
+        }
+        val ld = luxDialog("MODE KETAT", "Aktifkan sekarang?", "", box, "Aktifkan", "Batal") { }
+        ld.pos.setOnClickListener {
+            if (noExpiry && wantExpiry()) Store.setExpireMin(this, 10080)
+            Store.setStrict(this, true)
+            SafeTimer.cancel(this, "exit")
+            Store.log(this, "Mode Ketat diaktifkan")
+            WatchdogService.start(this)
+            ld.dlg.dismiss()
+            render()
+        }
+        ld.dlg.show()
+    }
+
     private fun renderStrict(strict: Boolean, ready: Boolean) {
         val raw = Store.strictRaw(this)
         renderModeSwitch()
@@ -1989,11 +2084,7 @@ class MainActivity : Activity() {
                 } else if (!Store.exitWaitOn(this) && Store.exitTextLen(this) == 0 && !FriendApproval.isSet(this)) {
                     toast("Pilih minimal satu metode keluar: Jeda, Teks acak, atau Persetujuan teman")
                 } else {
-                    Store.setStrict(this, true)
-                    SafeTimer.cancel(this, "exit")
-                    Store.log(this, "Mode Ketat diaktifkan")
-                    WatchdogService.start(this)
-                    render()
+                    confirmStrict()
                 }
             })
             return
