@@ -3782,10 +3782,12 @@ class MainActivity : Activity() {
         var passSel = passOptions.indexOf(cfg.pass).let { if (it < 0) 0 else it }
         box.addView(chipChoices(passOptions, passSel, "mnt") { i -> passSel = i })
 
+        box.addView(text("BERLAKU PADA HARI", 11f, true, Color.parseColor("#7C7768")).apply { letterSpacing = 0.18f; setPadding(0, dp(18), 0, dp(2)) })
+        val (daysView, daysMask) = dayChips(cfg.days)
+        box.addView(daysView)
+
         val doSave: () -> Boolean = save@{
-                var mask = 0
-                for (i in 0 until 7) if (dayBoxes[i].isChecked) mask = mask or (1 shl i)
-                if (mask == 0) mask = 127
+                val mask = daysMask()
                 fun num(e: EditText, max: Int): Int = (e.text.toString().toIntOrNull() ?: 0).coerceIn(0, max)
                 val full = fullCb.isChecked
                 val newCfg = cfg.copy(
@@ -3849,7 +3851,7 @@ class MainActivity : Activity() {
                 }
             })
         }
-        luxScreenDialog(pkg, "ATURAN APLIKASI", label, box, if (isNew) "Blokir aplikasi ini" else "Simpan aturan", extras, strict, doSave) { render() }
+        luxScreenDialog(pkg, "ATURAN APLIKASI", label, box, if (isNew) "Blokir aplikasi ini" else "Simpan aturan", extras, strict, doSave, { render() })
     }
 
     /** Layar penuh bergaya Lux untuk mengatur satu aplikasi: header, isi yang bisa digulir, tombol emas di bawah. */
