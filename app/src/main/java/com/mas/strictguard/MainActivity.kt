@@ -362,6 +362,31 @@ class MainActivity : Activity() {
         return LuxDlg(dlg, posTv, negTv)
     }
 
+    /** Pilihan dari daftar: kartu emas dengan baris berpisah garis tipis. */
+    private fun luxPicker(eyebrowText: String, title: String, labels: List<String>, current: Int = -1, onPick: (Int) -> Unit) {
+        val list = LinearLayout(this)
+        list.orientation = LinearLayout.VERTICAL
+        lateinit var ld: LuxDlg
+        for ((i, l) in labels.withIndex()) {
+            val row = LinearLayout(this)
+            row.orientation = LinearLayout.HORIZONTAL
+            row.gravity = Gravity.CENTER_VERTICAL
+            row.setPadding(dp(6), dp(14), dp(6), dp(14))
+            row.addView(text(l, 14.5f, i == current, if (i == current) C_PRIMARY else C_TEXT),
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            if (i == current) row.addView(text("✓", 15f, true, C_PRIMARY))
+            row.setOnClickListener { ld.dlg.dismiss(); onPick(i) }
+            list.addView(row)
+            list.addView(View(this).apply {
+                setBackgroundColor(Color.parseColor("#1B1F28"))
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1))
+            })
+        }
+        ld = luxDialog(eyebrowText, title, "", list, "Batal", null) { }
+        ld.pos.setOnClickListener { ld.dlg.dismiss() }
+        ld.dlg.show()
+    }
+
     /** Cincin hitung mundur: lingkar abu-abu, busur emas sebesar sisa waktu, angka di tengah. */
     private inner class RingView(ctx: Context) : View(ctx) {
         var frac = 1f
@@ -482,7 +507,7 @@ class MainActivity : Activity() {
             shown.letterSpacing = 0.18f
             shown.setTextColor(Color.parseColor("#E6D6B0"))
             shown.setPadding(dp(12), dp(12), dp(12), dp(12))
-            shown.background = bg(C_FIELD, dp(10))
+            shown.background = bg(Color.parseColor("#0A0C10"), dp(14)).apply { setStroke(dp(1), C_CHIP) }
             shown.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
             col.addView(shown)
             val counter = text("0/$textLen", 12f, true, C_SUB)
@@ -602,6 +627,10 @@ class MainActivity : Activity() {
         "focus" -> "Sesi fokus untuk menjaga konsentrasi"
         "words" -> "Browser, kategori, kata kunci, dan fitur sosmed"
         "w_tg" -> "Daftar boleh grup, channel, dan bot"
+        "s_method" -> "Cara keluar dari Mode Ketat"
+        "s_guard" -> "Pemeriksaan dan pemulihan otomatis"
+        "s_ai" -> "Pemindaian gambar di layar"
+        "s_night" -> "Gerbang lebih berat di jam rawan"
         "w_browser" -> "Browser yang dipantau"
         "w_cat" -> "Blokir satu kelompok topik sekaligus"
         "w_kw" -> "Situs, kata kunci, dan channel Telegram"
@@ -876,7 +905,7 @@ class MainActivity : Activity() {
 
     private fun tabOf(s: String): Int = when (s) {
         "home", "urge" -> 0
-        "proteksi", "strict", "apps", "profiles", "sched", "net", "focus" -> 1
+        "proteksi", "strict", "s_method", "s_guard", "s_ai", "s_night", "apps", "profiles", "sched", "net", "focus" -> 1
         "words", "w_tg", "w_browser", "w_cat", "w_kw", "w_feed" -> 2
         "stats" -> 0
         else -> 3
@@ -887,10 +916,12 @@ class MainActivity : Activity() {
     private fun isTabRoot(s: String): Boolean = s == "home" || s == "proteksi" || s == "words" || s == "more"
 
     private val WORDS_SUB = setOf("w_tg", "w_browser", "w_cat", "w_kw", "w_feed")
+    private val STRICT_SUB = setOf("s_method", "s_guard", "s_ai", "s_night")
 
     private fun parentOf(s: String): String = when {
         s == "urge" -> "home"
         s in WORDS_SUB -> "words"
+        s in STRICT_SUB -> "strict"
         s in MORE_SUB -> "more"
         isTabRoot(s) -> "home"
         tabOf(s) == 1 -> "proteksi"
@@ -975,11 +1006,15 @@ class MainActivity : Activity() {
                 "strict" -> {
                     renderStrictStatus(acc, adm)
                     renderStrict(strict, acc && adm)
+                    renderStrictHub(strict)
+                }
+                "s_method" -> renderMethods(strict)
+                "s_guard" -> {
                     renderProtection(strict)
                     renderBypassGuard(strict)
-                    renderNsfwAi(strict)
-                    renderNight(strict)
                 }
+                "s_ai" -> renderNsfwAi(strict)
+                "s_night" -> renderNight(strict)
                 "apps" -> {
                     renderApps(strict)
                     renderPauseApps(strict)
@@ -1139,6 +1174,10 @@ class MainActivity : Activity() {
         "apps" -> "Aplikasi diblokir"
         "words" -> "Situs dan kata kunci"
         "w_tg" -> "Telegram Kerja"
+        "s_method" -> "Metode keluar"
+        "s_guard" -> "Perlindungan diri"
+        "s_ai" -> "Deteksi gambar AI"
+        "s_night" -> "Jam rawan"
         "w_browser" -> "Browser"
         "w_cat" -> "Kategori situs"
         "w_kw" -> "Situs dan kata kunci"
@@ -1173,7 +1212,7 @@ class MainActivity : Activity() {
         "apps" -> "ATURAN BLOKIR"
         "sched", "profiles" -> "ATURAN OTOMATIS"
         "focus" -> "MODE"
-        "strict" -> "MODE KETAT"
+        "strict", "s_method", "s_guard", "s_ai", "s_night" -> "MODE KETAT"
         "net", "vpn", "notif" -> "JARINGAN"
         "stats" -> "STATISTIK"
         "urge" -> "RUANG TENANG"
@@ -1617,13 +1656,215 @@ class MainActivity : Activity() {
     }
 
     private fun renderStrictStatus(acc: Boolean, adm: Boolean) {
-        header("Status")
+        if (acc && adm) return
+        header("Perlu tindakan")
         status(acc, "Aksesibilitas Penjaga Ketat aktif")
         status(adm, "Perlindungan uninstall (Administrator perangkat) aktif")
         if (!acc) put(button("Buka pengaturan Aksesibilitas") {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         })
         if (!adm) put(button("Aktifkan perlindungan uninstall") { requestAdmin() })
+    }
+
+    /** Catatan penjelasan: teks panjang yang redup, dengan garis emas di kiri. */
+    private fun infoNote(s: String): View {
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.setPadding(0, dp(6), 0, dp(6))
+        row.addView(View(this).apply {
+            background = bg(Color.argb(120, 212, 175, 106), dp(1))
+            layoutParams = LinearLayout.LayoutParams(dp(2), LinearLayout.LayoutParams.MATCH_PARENT).apply { rightMargin = dp(10) }
+        })
+        row.addView(text(s, 12f, false, Color.parseColor("#8A8576")).apply {
+            setPadding(0, 0, 0, 0)
+            setLineSpacing(0f, 1.15f)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        return row
+    }
+
+    /** Baris saklar tanpa ikon: judul, keterangan singkat, saklar emas. */
+    private fun switchLine(title: String, sub: String, on: Boolean, locked: Boolean = false, onToggle: (Boolean) -> Unit) {
+        put(luxRow(0, title, sub, on, locked, false) { onToggle(!on) })
+    }
+
+    /** Dua ubin waktu berdampingan, mis. Mulai dan Selesai. */
+    private fun timeRow(l1: String, v1: String, c1: () -> Unit, l2: String, v2: String, c2: () -> Unit): View {
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.setPadding(0, dp(6), 0, dp(6))
+        fun tile(l: String, v: String, click: () -> Unit, first: Boolean): View {
+            val t = LinearLayout(this)
+            t.orientation = LinearLayout.VERTICAL
+            t.setPadding(dp(14), dp(10), dp(14), dp(10))
+            t.background = bg(Color.parseColor("#10131A"), dp(16)).apply { setStroke(dp(1), C_CHIP) }
+            t.addView(text(l, 11f, false, Color.parseColor("#8A8576")))
+            val vt = text(v, 28f, true, C_PRIMARY)
+            t.addView(vt)
+            t.tag = vt
+            t.setOnClickListener { click() }
+            t.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                if (first) rightMargin = dp(5) else leftMargin = dp(5)
+            }
+            return t
+        }
+        val t1 = tile(l1, v1, c1, true)
+        val t2 = tile(l2, v2, c2, false)
+        row.addView(t1)
+        row.addView(t2)
+        row.tag = listOf(t1.tag, t2.tag)
+        return row
+    }
+
+    private fun timeTv(holder: View, idx: Int): Any? = (holder.tag as? List<*>)?.getOrNull(idx)
+
+    /** Pilihan segmen (mis. Selalu | Interval waktu). */
+    private fun segmented(labels: List<String>, selected: Int, onSel: (Int) -> Unit): View {
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.background = bg(Color.parseColor("#0A0C10"), dp(18)).apply { setStroke(dp(1), C_CHIP) }
+        row.setPadding(dp(3), dp(3), dp(3), dp(3))
+        row.layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = dp(4); bottomMargin = dp(6) }
+        fun paint(sel: Int) {
+            row.removeAllViews()
+            for ((i, l) in labels.withIndex()) {
+                row.addView(segPill(l, i == sel, C_PRIMARY) {
+                    paint(i)
+                    onSel(i)
+                }.apply { textSize = 13f })
+            }
+        }
+        paint(selected)
+        return row
+    }
+
+    /** Deretan chip pilihan angka (mis. 5 / 10 / 15 / 30 menit). */
+    private fun chipChoices(options: List<Int>, selected: Int, suffix: String, onSel: (Int) -> Unit): View {
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = dp(4); bottomMargin = dp(6) }
+        fun paint(sel: Int) {
+            row.removeAllViews()
+            for ((i, o) in options.withIndex()) {
+                val on = i == sel
+                row.addView(TextView(this).apply {
+                    text = "$o $suffix"
+                    textSize = 12.5f
+                    gravity = Gravity.CENTER
+                    setTypeface(null, if (on) Typeface.BOLD else Typeface.NORMAL)
+                    setTextColor(if (on) C_ON_GOLD else C_SUB)
+                    setPadding(0, dp(11), 0, dp(11))
+                    background = if (on) goldBg(dp(12)) else bg(Color.parseColor("#10131A"), dp(12)).apply { setStroke(dp(1), C_CHIP) }
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                        leftMargin = if (i == 0) 0 else dp(3); rightMargin = if (i == options.size - 1) 0 else dp(3)
+                    }
+                    setOnClickListener { paint(i); onSel(i) }
+                })
+            }
+        }
+        paint(selected)
+        return row
+    }
+
+    /** Saklar yang menyimpan statusnya sendiri; mengembalikan tampilan dan pembaca status. */
+    private fun toggleRow(title: String, sub: String, initial: Boolean, card: Boolean = true): Pair<View, () -> Boolean> {
+        var state = initial
+        val holder = LinearLayout(this)
+        holder.orientation = LinearLayout.VERTICAL
+        if (card) {
+            holder.setPadding(dp(14), 0, dp(14), 0)
+            holder.background = bg(Color.parseColor("#10131A"), dp(16)).apply { setStroke(dp(1), C_CHIP) }
+            holder.layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(10) }
+        }
+        fun build() {
+            holder.removeAllViews()
+            holder.addView(luxRow(0, title, sub, state, false, true) {
+                state = !state
+                build()
+            })
+        }
+        build()
+        return Pair(holder, { state })
+    }
+
+    private fun ghostButton(label: String, onClick: () -> Unit): Button =
+        Button(this).apply {
+            text = label
+            isAllCaps = false
+            textSize = 14f
+            setTextColor(C_TEXT)
+            background = bg(Color.parseColor("#10131A"), dp(16)).apply { setStroke(dp(1), Color.parseColor("#2A2F3B")) }
+            stateListAnimator = null
+            elevation = 0f
+            minHeight = dp(48)
+            minimumHeight = dp(48)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(8) }
+            setOnClickListener { onClick() }
+        }
+
+    private fun methodSummary(): String {
+        val parts = ArrayList<String>()
+        val tl = Store.exitTextLen(this)
+        if (tl > 0) parts.add("Teks acak $tl")
+        if (Store.exitWaitOn(this)) parts.add("Jeda " + fmtDur(Store.exitDelayMin(this)))
+        if (FriendApproval.isSet(this)) parts.add("Teman")
+        if (Store.expireMin(this) > 0) parts.add("Kedaluwarsa")
+        return if (parts.isEmpty()) "Belum diatur" else parts.joinToString(" · ")
+    }
+
+    private fun renderStrictHub(strict: Boolean) {
+        val bad = AntiBypass.checks(this).count { !it.first }
+        navGroup("ATURAN KELUAR", listOf(
+            NavItem(R.drawable.ic_lock, "Metode keluar", methodSummary(), "", C_PRIMARY, "s_method"),
+            NavItem(R.drawable.ic_ly_target, "Zona Ketat", "Perketat otomatis di lokasi tertentu", "", C_PRIMARY, "set_zone")
+        ))
+        navGroup("PERLINDUNGAN", listOf(
+            NavItem(R.drawable.ic_nav_shield, "Perlindungan diri", "Pemeriksaan, pemulih, dan celah pemasangan",
+                if (bad == 0) "Aman" else "$bad perlu dicek", if (bad == 0) C_OK else C_BAD, "s_guard"),
+            NavItem(R.drawable.ic_ly_eye, "Deteksi gambar AI", "Tutup layar saat ada gambar terlarang",
+                if (Store.nsfwAi(this)) "Aktif" else "Mati", if (Store.nsfwAi(this)) C_OK else C_SUB, "s_ai"),
+            NavItem(R.drawable.ic_ly_calendar, "Jam rawan", "Gerbang dua kali lebih berat di jam tertentu",
+                if (Night.enabled(this)) "Aktif" else "Mati", if (Night.enabled(this)) C_OK else C_SUB, "s_night")
+        ))
+    }
+
+    private fun renderMethods(strict: Boolean) {
+        val raw = Store.strictRaw(this)
+        put(infoNote(
+            if (raw) "Mode Ketat aktif, jadi metode di bawah terkunci. Metode ini berlaku untuk keluar dari Mode Ketat."
+            else "Pilih cara keluar dari Mode Ketat. Semua metode yang dipilih harus dipenuhi."
+        ))
+        header("Metode keluar")
+        val editable = !raw
+        val exp = Store.expireMin(this)
+        methodRow("Waktu kedaluwarsa", if (exp > 0) "Nonaktif otomatis setelah " + fmtDur(exp) else "Tidak ada", editable) { dialogExpire() }
+        methodRow("Kode QR", "Belum tersedia", false) {}
+        val sch = Store.strictSchedules(this)
+        methodRow(
+            "Dijadwalkan",
+            if (sch.isEmpty()) "Tidak ada (aktif terus)" else "Aktif hanya: " + sch.joinToString("; ") { "${fmt(it.start)}-${fmt(it.end)} ${dayNames(it.days)}" },
+            editable
+        ) { dialogStrictSchedule() }
+        val tl = Store.exitTextLen(this)
+        methodRow("Teks acak", if (tl > 0) "$tl huruf" else "Mati", editable) { dialogTextLen() }
+        methodRow(
+            "Jeda",
+            if (Store.exitWaitOn(this)) "Tunggu " + fmtDur(Store.exitDelayMin(this)) else "Mati",
+            editable
+        ) { dialogWait() }
+        methodRow(
+            "Persetujuan teman",
+            if (FriendApproval.isSet(this)) "Kode teman sudah diatur" else "Belum diatur (ketuk untuk mengatur)",
+            true
+        ) { friendDialog() }
     }
 
     private fun modeLabel(): String {
@@ -1705,14 +1946,10 @@ class MainActivity : Activity() {
     private fun pauseDialog() {
         val labels = arrayOf("15 menit", "30 menit", "1 jam", "2 jam", "4 jam", "Sampai saya nyalakan lagi")
         val mins = intArrayOf(15, 30, 60, 120, 240, 0)
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Mode Off: kunci Ketat mati, blokir tetap aktif")
-            .setItems(labels) { _, i ->
-                Store.pauseStart(this, mins[i])
-                render()
-            }
-            .setNegativeButton("Batal", null)
-            .show()
+        luxPicker("MODE OFF", "Jeda berapa lama?", labels.toList()) { i ->
+            Store.pauseStart(this, mins[i])
+            render()
+        }
     }
 
     private fun methodRow(title: String, summary: String, enabled: Boolean, onClick: () -> Unit) {
@@ -1735,39 +1972,11 @@ class MainActivity : Activity() {
         put(row)
     }
 
+    private var exitTick: Runnable? = null
+
     private fun renderStrict(strict: Boolean, ready: Boolean) {
         val raw = Store.strictRaw(this)
         renderModeSwitch()
-        header("Metode penonaktifan")
-        put(text(
-            if (raw) "Metode di bawah berlaku untuk keluar dari Mode Ketat dan terkunci selama Mode Ketat aktif."
-            else "Pilih bagaimana Mode Ketat dapat dinonaktifkan. Semua metode yang dipilih harus dipenuhi.",
-            12f, false, C_SUB
-        ))
-        val editable = !raw
-        val exp = Store.expireMin(this)
-        methodRow("Waktu kedaluwarsa", if (exp > 0) "Nonaktif otomatis setelah " + fmtDur(exp) else "Tidak ada", editable) { dialogExpire() }
-        methodRow("Kode QR", "Belum tersedia", false) {}
-        val sch = Store.strictSchedules(this)
-        methodRow(
-            "Dijadwalkan",
-            if (sch.isEmpty()) "Tidak ada (aktif terus)" else "Aktif hanya: " + sch.joinToString("; ") { "${fmt(it.start)}-${fmt(it.end)} ${dayNames(it.days)}" },
-            editable
-        ) { dialogStrictSchedule() }
-        val tl = Store.exitTextLen(this)
-        methodRow("Teks acak", if (tl > 0) "$tl huruf" else "Mati", editable) { dialogTextLen() }
-        methodRow(
-            "Jeda",
-            if (Store.exitWaitOn(this)) "Tunggu " + fmtDur(Store.exitDelayMin(this)) else "Mati",
-            editable
-        ) { dialogWait() }
-        methodRow(
-            "Persetujuan teman",
-            if (FriendApproval.isSet(this)) "Kode teman sudah diatur" else "Belum diatur (atur di Lainnya atau ketuk di sini)",
-            true
-        ) { friendDialog() }
-
-        renderZoneSection(strict)
         header("Mode Ketat")
         if (Zone.active(this)) {
             put(text("Kamu berada di Zona Ketat: untuk keluar dari Mode Ketat wajib mengetik teks acak ${Zone.MIN_TEXT} huruf (selain metode lain yang sudah diatur). Keluar dari radius zona mengembalikan Mode Ketat ke pengaturan semula.", 13f, true, C_BAD))
@@ -1810,12 +2019,34 @@ class MainActivity : Activity() {
         }
         val left = waitMin * 60000L - SafeTimer.elapsed(this, "exit")
         if (left > 0) {
-            put(text("Permintaan nonaktif berjalan. Sisa ${left / 60000L + 1} menit. Waktu dihitung dari jam internal, jadi mengubah jam HP tidak mempercepatnya.", 14f, true))
-            put(button("Batalkan permintaan") {
+            val total = (waitMin * 60000L).coerceAtLeast(1L)
+            put(text("MASIH MENUNGGU", 11f, true, C_PRIMARY).apply { letterSpacing = 0.22f; gravity = Gravity.CENTER })
+            put(text("Tunggu sebentar lagi", 26f, true, C_TEXT).apply { gravity = Gravity.CENTER })
+            val wb = waitBox(clockText(left), "tersisa", left / total.toFloat())
+            put(wb)
+            put(text("Waktu dihitung dari jam internal HP, jadi mengubah jam tidak mempercepatnya. Setelah habis, kamu bisa melanjutkan.", 12.5f, false, C_SUB).apply { gravity = Gravity.CENTER })
+            put(ghostButton("Batalkan permintaan") {
                 SafeTimer.cancel(this, "exit")
                 render()
             })
-            handler.postDelayed({ render() }, 30000L)
+            val ring = wb.tag as RingView
+            exitTick?.let { handler.removeCallbacks(it) }
+            val tick = object : Runnable {
+                override fun run() {
+                    if (!ring.isAttachedToWindow) return
+                    val l = waitMin * 60000L - SafeTimer.elapsed(this@MainActivity, "exit")
+                    if (l <= 0L) {
+                        render()
+                        return
+                    }
+                    ring.big = clockText(l)
+                    ring.frac = l / total.toFloat()
+                    ring.invalidate()
+                    handler.postDelayed(this, 1000L)
+                }
+            }
+            exitTick = tick
+            handler.postDelayed(tick, 1000L)
             return
         }
         var code = ""
@@ -1827,7 +2058,9 @@ class MainActivity : Activity() {
             }
             code = gateText!!
             gateShown = true
-            put(text("Ketik teks ini persis ($textLen huruf, huruf besar dan kecil dibedakan). Hanya 5 huruf berikutnya yang ditampilkan, ketik tanpa spasi. Layar ini tidak bisa di-screenshot.", 13f))
+            put(text("GERBANG KEAMANAN", 11f, true, C_PRIMARY).apply { letterSpacing = 0.22f; gravity = Gravity.CENTER })
+            put(text("Ketik teks ini", 28f, true, C_TEXT).apply { gravity = Gravity.CENTER })
+            put(text("Ketik teks acak $textLen huruf persis seperti yang tertulis. Hanya 5 huruf berikutnya yang ditampilkan. Layar ini tidak bisa di-screenshot.", 13f, false, C_SUB).apply { gravity = Gravity.CENTER; setPadding(0, dp(2), 0, dp(10)) })
             val shown = TextView(this)
             shown.textSize = 30f
             shown.typeface = Typeface.MONOSPACE
@@ -1835,10 +2068,11 @@ class MainActivity : Activity() {
             shown.letterSpacing = 0.18f
             shown.setTextColor(Color.parseColor("#E6D6B0"))
             shown.setPadding(dp(12), dp(12), dp(12), dp(12))
-            shown.background = bg(C_FIELD, dp(10))
+            shown.background = bg(Color.parseColor("#0A0C10"), dp(14)).apply { setStroke(dp(1), C_CHIP) }
             shown.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
             put(shown)
-            val counter = text("0/$textLen", 12f, true, C_SUB)
+            val counter = text("0 / $textLen", 12f, true, C_PRIMARY).apply { gravity = Gravity.END }
+            put(text("Huruf besar dan kecil dibedakan. Ketik tanpa spasi.", 12f, false, Color.parseColor("#8A8576")))
             put(counter)
             val warn = text("", 12f, true, C_BAD)
             put(warn)
@@ -1860,7 +2094,7 @@ class MainActivity : Activity() {
                 while (cp < gateTyped.length && cp < code.length && gateTyped[cp] == code[cp]) cp++
                 val end = Math.min(code.length, cp + 5)
                 shown.text = code.substring(cp, end)
-                counter.text = "${gateTyped.length}/$textLen"
+                counter.text = "${gateTyped.length} / $textLen"
                 warn.text = if (gateTyped.length > cp) "Huruf ke-${cp + 1} salah. Hapus sampai huruf ke-$cp lalu ketik ulang." else ""
             }
             et.setText(gateTyped)
@@ -1916,7 +2150,7 @@ class MainActivity : Activity() {
             gateTyped = ""
             render()
         })
-        put(button("Batalkan permintaan") {
+        put(ghostButton("Batalkan permintaan") {
             SafeTimer.cancel(this, "exit")
             gateText = null
             gateTyped = ""
@@ -2042,73 +2276,129 @@ class MainActivity : Activity() {
     private fun dialogExpire() {
         val labels = arrayOf("Tidak ada (manual)", "1 jam", "3 jam", "6 jam", "12 jam", "1 hari", "3 hari", "7 hari", "14 hari", "30 hari")
         val mins = intArrayOf(0, 60, 180, 360, 720, 1440, 4320, 10080, 20160, 43200)
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Waktu kedaluwarsa")
-            .setItems(labels) { _, i ->
-                Store.setExpireMin(this, mins[i])
-                render()
-            }
-            .setNegativeButton("Batal", null)
-            .show()
+        luxPicker("METODE KELUAR", "Waktu kedaluwarsa", labels.toList(), mins.indexOf(Store.expireMin(this))) { i ->
+            Store.setExpireMin(this, mins[i])
+            render()
+        }
     }
+
+    private fun luxField(hint: String, password: Boolean = false): EditText = EditText(this).apply {
+        this.hint = hint
+        setSingleLine()
+        if (password) inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        setTextColor(C_TEXT)
+        setHintTextColor(Color.parseColor("#7C7768"))
+        textSize = 14.5f
+        background = bg(Color.parseColor("#10131A"), dp(14)).apply { setStroke(dp(1), Color.parseColor("#2A2F3B")) }
+        setPadding(dp(14), dp(12), dp(14), dp(12))
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = dp(8) }
+    }
+
+    /** Konfirmasi bergaya Lux. */
+    private fun luxConfirm(eyebrowText: String, title: String, body: String, posLabel: String, onPos: () -> Unit) {
+        val ld = luxDialog(eyebrowText, title, body, null, posLabel, "Batal") { }
+        ld.pos.setOnClickListener { ld.dlg.dismiss(); onPos() }
+        ld.dlg.show()
+    }
+
+    /** Tujuh chip hari; mengembalikan tampilan dan pembaca mask hari. */
+    private fun dayChips(initial: Int): Pair<View, () -> Int> {
+        var mask = initial
+        val names = arrayOf("Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min")
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = dp(6); bottomMargin = dp(6) }
+        fun paint() {
+            row.removeAllViews()
+            for (i in 0 until 7) {
+                val on = (mask and (1 shl i)) != 0
+                row.addView(TextView(this).apply {
+                    text = names[i]
+                    textSize = 12f
+                    gravity = Gravity.CENTER
+                    setTypeface(null, if (on) Typeface.BOLD else Typeface.NORMAL)
+                    setTextColor(if (on) C_ON_GOLD else C_SUB)
+                    setPadding(0, dp(11), 0, dp(11))
+                    background = if (on) goldBg(dp(12)) else bg(Color.parseColor("#10131A"), dp(12)).apply { setStroke(dp(1), C_CHIP) }
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                        leftMargin = if (i == 0) 0 else dp(3); rightMargin = if (i == 6) 0 else dp(3)
+                    }
+                    setOnClickListener { mask = mask xor (1 shl i); paint() }
+                })
+            }
+        }
+        paint()
+        return Pair(row, { if (mask == 0) 127 else mask })
+    }
+
+    private fun rowButton(title: String, sub: String, onClick: () -> Unit): View =
+        listRow(title, sub, C_TEXT, onClick, null)
 
     private fun dialogStrictSchedule() {
         val sch = Store.strictSchedules(this)
-        val msg = if (sch.isEmpty()) "Belum ada jadwal: Mode Ketat aktif terus."
-        else sch.joinToString("\n") { "${fmt(it.start)}-${fmt(it.end)} ${dayNames(it.days)}" }
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Jadwal Mode Ketat")
-            .setMessage(msg + "\n\nDi luar jadwal, Mode Ketat berperilaku seperti Normal.")
-            .setPositiveButton("Tambah jadwal") { _, _ ->
-                editSchedule { s ->
-                    Store.setStrictSchedules(this, Store.strictSchedules(this) + s)
-                    render()
-                }
-            }
-            .setNeutralButton("Hapus semua") { _, _ ->
-                Store.setStrictSchedules(this, emptyList())
+        val box = LinearLayout(this)
+        box.orientation = LinearLayout.VERTICAL
+        if (sch.isEmpty()) {
+            box.addView(text("Belum ada jadwal: Mode Ketat aktif terus.", 13f, false, C_SUB))
+        } else for (it in sch) {
+            box.addView(text("${fmt(it.start)} - ${fmt(it.end)}   ${dayNames(it.days)}", 14f, true, C_TEXT).apply {
+                background = bg(Color.parseColor("#10131A"), dp(14)).apply { setStroke(dp(1), C_CHIP) }
+                setPadding(dp(14), dp(12), dp(14), dp(12))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = dp(6) }
+            })
+        }
+        box.addView(infoNote("Di luar jadwal, Mode Ketat berperilaku seperti Normal."))
+        lateinit var ld: LuxDlg
+        if (sch.isNotEmpty()) box.addView(ghostButton("Hapus semua jadwal") {
+            Store.setStrictSchedules(this, emptyList())
+            ld.dlg.dismiss()
+            render()
+        })
+        ld = luxDialog("METODE KELUAR", "Jadwal Mode Ketat", "", box, "Tambah jadwal", "Tutup") { }
+        ld.pos.setOnClickListener {
+            ld.dlg.dismiss()
+            editSchedule { s ->
+                Store.setStrictSchedules(this, Store.strictSchedules(this) + s)
                 render()
             }
-            .setNegativeButton("Tutup", null)
-            .show()
+        }
+        ld.dlg.show()
     }
 
     private fun dialogTextLen() {
         val lens = intArrayOf(0, 10, 50, 100, 200, 500, 600, 2000)
         val labels = lens.map { if (it == 0) "Mati (tanpa teks acak)" else "$it huruf" }.toTypedArray()
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Panjang teks acak")
-            .setItems(labels) { _, i ->
-                Store.setExitTextLen(this, lens[i])
-                gateText = null
-                gateTyped = ""
-                render()
-            }
-            .setNegativeButton("Batal", null)
-            .show()
+        luxPicker("METODE KELUAR", "Panjang teks acak", labels.toList(), lens.indexOf(Store.exitTextLen(this))) { i ->
+            Store.setExitTextLen(this, lens[i])
+            gateText = null
+            gateTyped = ""
+            render()
+        }
     }
 
     private fun dialogWait() {
         val box = LinearLayout(this)
         box.orientation = LinearLayout.VERTICAL
-        box.setPadding(dp(20), dp(8), dp(20), dp(8))
-        val cb = CheckBox(this)
-        cb.text = "Pakai waktu tunggu"
-        cb.isChecked = Store.exitWaitOn(this)
-        box.addView(cb)
-        box.addView(text("Menit tunggu (10 sampai 1440)", 12f))
-        val f = numberField(Store.exitDelayMin(this))
-        box.addView(f)
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Jeda")
-            .setView(box)
-            .setPositiveButton("Simpan") { _, _ ->
-                Store.setExitWaitOn(this, cb.isChecked)
-                Store.setExitDelayMin(this, (f.text.toString().toIntOrNull() ?: 60).coerceIn(10, 1440))
-                render()
-            }
-            .setNegativeButton("Batal", null)
-            .show()
+        val (swView, swState) = toggleRow("Pakai waktu tunggu", "Mode Ketat baru bisa dimatikan setelah menunggu", Store.exitWaitOn(this), false)
+        box.addView(swView)
+        val (tile, f) = bigNumber("Menit tunggu", "menit", Store.exitDelayMin(this),
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) })
+        box.addView(tile)
+        box.addView(text("Antara 10 dan 1440 menit.", 12f, false, C_SUB).apply { setPadding(0, dp(6), 0, 0) })
+        val ld = luxDialog("METODE KELUAR", "Jeda", "", box, "Simpan", "Batal") { }
+        ld.pos.setOnClickListener {
+            Store.setExitWaitOn(this, swState())
+            Store.setExitDelayMin(this, (f.text.toString().toIntOrNull() ?: 60).coerceIn(10, 1440))
+            ld.dlg.dismiss()
+            render()
+        }
+        ld.dlg.show()
     }
 
     // ---- Kunci aplikasi ----
@@ -2356,7 +2646,7 @@ class MainActivity : Activity() {
                 startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
             }
         })
-        put(text("Batas yang tidak bisa ditutup tanpa root/device-owner: Force Stop lewat ADB, pencabutan izin lewat ADB, Safe Mode, profil kerja, dan factory reset. Penjaga Ketat hanya bisa mendeteksi dan memberi tahu, bukan mencegahnya.", 11f, false, C_SUB))
+        put(infoNote("Batas yang tidak bisa ditutup tanpa root/device-owner: Force Stop lewat ADB, pencabutan izin lewat ADB, Safe Mode, profil kerja, dan factory reset. Penjaga Ketat hanya bisa mendeteksi dan memberi tahu, bukan mencegahnya."))
         header("Perlindungan diri")
         val secure = SelfProtector.canWriteSecure(this)
         val usage = Foreground.hasUsageAccess(this)
@@ -2364,13 +2654,13 @@ class MainActivity : Activity() {
         status(usage, "Akses Penggunaan (mengenali aplikasi bank terbuka)")
         status(WatchdogService.running, "Pengawas berjalan (hanya saat Mode Ketat aktif)")
         if (!secure) {
-            put(text("Agar aksesibilitas yang dimatikan otomatis menyala lagi, jalankan SEKALI dari PC (USB debugging aktif):", 12f))
+            put(infoNote("Agar aksesibilitas yang dimatikan otomatis menyala lagi, jalankan SEKALI dari PC (USB debugging aktif). Tanpa izin ini, pengawas hanya memberi peringatan lewat notifikasi."))
             put(text("adb shell pm grant $packageName android.permission.WRITE_SECURE_SETTINGS", 12f).apply {
+                typeface = Typeface.MONOSPACE
                 setTextIsSelectable(true)
-                setBackgroundColor(C_CHIP)
-                setPadding(dp(8), dp(8), dp(8), dp(8))
+                background = bg(Color.parseColor("#0A0C10"), dp(12)).apply { setStroke(dp(1), C_CHIP) }
+                setPadding(dp(12), dp(10), dp(12), dp(10))
             })
-            put(text("Tanpa izin ini, pengawas hanya memberi peringatan lewat notifikasi, tidak bisa menyalakan sendiri.", 12f))
         }
         if (!usage) put(button("Buka pengaturan Akses Penggunaan") {
             startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
@@ -2382,70 +2672,58 @@ class MainActivity : Activity() {
                 requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
             })
         }
-        put(text("Jam HP diubah saat Mode Ketat aktif: jadwal diabaikan dan blokir berlaku penuh 30 menit.", 12f))
-        put(text("Pemulihan darurat: keluar Mode Ketat lewat tombol di atas (tunggu lalu ketik teks acak). Itu jalur pemulihan yang selalu tersedia, tanpa PC.", 12f))
+        put(infoNote("Jam HP diubah saat Mode Ketat aktif: jadwal diabaikan dan blokir berlaku penuh 30 menit."))
+        put(infoNote("Pemulihan darurat: keluar Mode Ketat lewat tombol di layar Mode Ketat (tunggu lalu ketik teks acak). Itu jalur pemulihan yang selalu tersedia, tanpa PC."))
     }
 
     // ---------- Deteksi gambar AI ----------
     private fun renderNsfwAi(strict: Boolean) {
         header("Deteksi gambar AI (NSFW)")
-        put(text("Layar difoto tiap sekitar 1 detik saat HP menyala, lalu dianalisis di HP oleh model AI (tanpa internet, tidak ada gambar yang disimpan atau dikirim). Bila ada gambar telanjang, layar langsung ditutup dan kamu dikembalikan ke beranda. Hanya aplikasi yang bisa memuat media (browser, sosmed, galeri, pemutar video) dan aplikasi yang baru dipasang (14 hari) yang dipotret; aplikasi lain dilewati agar hemat baterai. Butuh Android 11 ke atas. Salah blokir bisa terjadi.", 12f))
-        val cb = CheckBox(this)
-        cb.text = "Aktifkan deteksi gambar AI"
-        cb.isChecked = Store.nsfwAi(this)
-        cb.setOnClickListener {
-            val v = cb.isChecked
+        val on = Store.nsfwAi(this)
+        switchLine("Aktifkan deteksi", "Layar dianalisis di HP, tanpa internet", on, strict && on) { v ->
             if (!v && strict) {
                 toast("Mode Ketat aktif: tidak bisa dimatikan")
+                render()
             } else {
                 gateOff(!v, "mematikan deteksi gambar AI") { Store.setNsfwAi(this, v) }
             }
-            render()
         }
-        put(cb)
-        put(text(NsfwAi.status(this), 11f))
-        if (android.os.Build.VERSION.SDK_INT < 30) put(text("HP ini di bawah Android 11: tangkapan layar tidak tersedia.", 11f))
-        put(text("Bila status tidak menunjukkan pemindaian setelah beberapa menit, matikan lalu hidupkan lagi layanan Aksesibilitas Penjaga Ketat (izin tangkapan layar baru dibaca saat layanan dimulai ulang).", 11f))
+        put(text(NsfwAi.status(this), 12f, false, C_SUB))
+        if (android.os.Build.VERSION.SDK_INT < 30) put(text("HP ini di bawah Android 11: tangkapan layar tidak tersedia.", 12f, false, C_BAD))
+        put(infoNote("Layar difoto tiap sekitar 1 detik saat HP menyala, lalu dianalisis di HP oleh model AI. Tidak ada gambar yang disimpan atau dikirim. Bila ada gambar telanjang, layar langsung ditutup dan kamu dikembalikan ke beranda."))
+        put(infoNote("Hanya aplikasi yang bisa memuat media (browser, sosmed, galeri, pemutar video) dan aplikasi yang baru dipasang (14 hari) yang dipotret, supaya hemat baterai. Butuh Android 11 ke atas. Salah blokir bisa terjadi."))
+        put(infoNote("Bila status tidak menunjukkan pemindaian setelah beberapa menit, matikan lalu hidupkan lagi layanan Aksesibilitas Penjaga Ketat."))
     }
 
     // ---------- Celah pemasangan (saklar terpisah) ----------
     private fun renderBypassGuard(strict: Boolean) {
         header("Celah pemasangan")
-        put(text("Saat Mode Ketat aktif, halaman Pengaturan untuk menambah pengguna/tamu dan Aplikasi admin perangkat selalu ditutup.", 12f))
-        val cb = CheckBox(this)
-        cb.text = "Saat Mode Ketat: blokir pemasangan APK dari luar Play Store (kecuali Penjaga Ketat & Channel Blocker) dan tutup halaman izin Instal aplikasi tidak dikenal"
-        cb.isChecked = Store.blockUnknownInstall(this)
-        cb.setOnClickListener {
-            val v = cb.isChecked
+        val on = Store.blockUnknownInstall(this)
+        switchLine("Blokir pemasangan APK luar", "Saat Mode Ketat, kecuali aplikasi buatanmu", on, strict && on) { v ->
             if (!v && strict) {
                 toast("Mode Ketat aktif: tidak bisa dimatikan")
+                render()
             } else {
                 gateOff(!v, "mematikan blokir pemasangan APK") { Store.setBlockUnknownInstall(this, v) }
             }
-            render()
         }
-        put(cb)
-        put(text("Layar pemasang APK ditutup bila yang dipasang bukan aplikasi buatanmu. Update Penjaga Ketat dan Channel Blocker lewat Chrome atau Pengelola file tetap bisa. Instal dari Play Store tidak terpengaruh.", 11f, false, C_SUB))
+        put(infoNote("Saat Mode Ketat aktif, halaman Pengaturan untuk menambah pengguna/tamu dan Aplikasi admin perangkat selalu ditutup."))
+        put(infoNote("Layar pemasang APK ditutup bila yang dipasang bukan aplikasi buatanmu, dan halaman izin Instal aplikasi tidak dikenal ikut ditutup. Update Penjaga Ketat dan Channel Blocker lewat Chrome atau Pengelola file tetap bisa. Instal dari Play Store tidak terpengaruh."))
     }
 
     // ---------- Jam rawan ----------
     private fun renderNight(strict: Boolean) {
         header("Jam rawan")
-        put(text("Di jam rawan, gerbang keluar Mode Ketat dan gerbang mematikan fitur dua kali lebih berat: teks acak dua kali lebih panjang dan waktu tunggu dua kali lebih lama.", 12f))
         if (Night.active(this)) put(text("Sekarang sedang jam rawan (gerbang x2).", 13f, true, C_BAD))
-        val cb = CheckBox(this)
-        cb.text = "Aktifkan jam rawan"
-        cb.isChecked = Night.enabled(this)
-        cb.setOnClickListener {
-            val v = cb.isChecked
+        val on = Night.enabled(this)
+        switchLine("Aktifkan jam rawan", "Gerbang keluar dua kali lebih berat", on, strict && on) { v ->
             if (!v && strict) {
                 toast("Mode Ketat aktif: tidak bisa dimatikan")
+                render()
             } else {
                 gateOff(!v, "mematikan jam rawan") { Night.setEnabled(this, v) }
             }
-            render()
         }
-        put(cb)
         fun pick(isStart: Boolean) {
             if (strict) {
                 toast("Mode Ketat aktif: jam rawan tidak bisa diubah")
@@ -2460,30 +2738,25 @@ class MainActivity : Activity() {
                 }, { render() })
             }, cur / 60, cur % 60, true).show()
         }
-        put(button("Mulai: " + Night.fmt(Night.start(this))) { pick(true) })
-        put(button("Selesai: " + Night.fmt(Night.end(this))) { pick(false) })
-        put(text("Kunci total di jam rawan (pilihan):", 12f, true))
-        val cp = CheckBox(this)
-        cp.text = "Tutup Play Store"
-        cp.isChecked = Night.lockPlay(this)
-        cp.setOnClickListener {
-            val v = cp.isChecked
-            if (!v && strict) toast("Mode Ketat aktif: tidak bisa dimatikan")
-            else gateOff(!v, "mematikan kunci Play Store") { Night.setLockPlay(this, v) }
-            render()
+        put(timeRow("Mulai", Night.fmt(Night.start(this)), { pick(true) }, "Selesai", Night.fmt(Night.end(this)), { pick(false) }))
+        put(infoNote("Di jam rawan, teks acak dua kali lebih panjang dan waktu tunggu dua kali lebih lama, baik untuk keluar Mode Ketat maupun mematikan fitur."))
+        header("Kunci total di jam rawan")
+        val lp = Night.lockPlay(this)
+        switchLine("Tutup Play Store", "Tidak bisa memasang aplikasi", lp, strict && lp) { v ->
+            if (!v && strict) {
+                toast("Mode Ketat aktif: tidak bisa dimatikan")
+                render()
+            } else gateOff(!v, "mematikan kunci Play Store") { Night.setLockPlay(this, v) }
         }
-        put(cp)
-        val cs = CheckBox(this)
-        cs.text = "Tutup aplikasi Pengaturan (aksesibilitas tidak bisa dinyalakan ulang sampai jam rawan selesai)"
-        cs.isChecked = Night.lockSettings(this)
-        cs.setOnClickListener {
-            val v = cs.isChecked
-            if (!v && strict) toast("Mode Ketat aktif: tidak bisa dimatikan")
-            else gateOff(!v, "mematikan kunci Pengaturan") { Night.setLockSettings(this, v) }
-            render()
+        val ls = Night.lockSettings(this)
+        switchLine("Tutup aplikasi Pengaturan", "Aksesibilitas tidak bisa dinyalakan ulang sampai selesai", ls, strict && ls) { v ->
+            if (!v && strict) {
+                toast("Mode Ketat aktif: tidak bisa dimatikan")
+                render()
+            } else gateOff(!v, "mematikan kunci Pengaturan") { Night.setLockSettings(this, v) }
         }
-        put(cs)
-        put(text("Profil Malam menutup browser dan aplikasi sosmed yang terpasang selama jam rawan, setiap hari. Saat Mode Ketat aktif, tombol ini hanya menambah aplikasi, tidak mengubah jadwal.", 12f, false, C_SUB))
+        header("Profil Malam")
+        put(infoNote("Profil Malam menutup browser dan aplikasi sosmed yang terpasang selama jam rawan, setiap hari. Saat Mode Ketat aktif, tombol ini hanya menambah aplikasi, tidak mengubah jadwal."))
         put(button("Buat / perbarui profil Malam") { createNightProfile(strict) })
     }
 
@@ -3397,15 +3670,11 @@ class MainActivity : Activity() {
 
     private fun quickBlock(pkg: String, label: String) {
         val opts = listOf(10, 30, 60, 120, 240)
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Blok cepat: $label")
-            .setItems(opts.map { "$it menit berikutnya" }.toTypedArray()) { _, i ->
-                Store.extendBlockUntil(this, pkg, opts[i])
-                Store.log(this, "Blok cepat ${opts[i]} menit: $label")
-                render()
-            }
-            .setNegativeButton("Batal", null)
-            .show()
+        luxPicker("BLOK CEPAT", label, opts.map { "$it menit berikutnya" }) { i ->
+            Store.extendBlockUntil(this, pkg, opts[i])
+            Store.log(this, "Blok cepat ${opts[i]} menit: $label")
+            render()
+        }
     }
 
     private fun editCfg(pkg: String, label: String, strict: Boolean, isNew: Boolean = false) {
@@ -3427,55 +3696,52 @@ class MainActivity : Activity() {
 
         // 1. Blokir penuh (selalu atau interval waktu)
         val fullBody = vbox()
-        fullBody.addView(text("Kapan diblokir", 12f))
-        val whenSp = spinnerOf(listOf("Selalu", "Hanya pada interval waktu"), if (cfg.schOn) 1 else 0)
-        fullBody.addView(whenSp)
-        val startBtn = Button(this)
-        startBtn.text = "Mulai: ${fmt(start)}"
-        startBtn.setOnClickListener {
+        var interval = cfg.schOn
+        val timesRow = timeRow("Mulai", fmt(start), {
             TimePickerDialog(this, { _, h, mi ->
                 start = h * 60 + mi
-                startBtn.text = "Mulai: ${fmt(start)}"
+                ((timeTv(fullBody, 0)) as TextView).text = fmt(start)
             }, start / 60, start % 60, true).show()
-        }
-        val endBtn = Button(this)
-        endBtn.text = "Selesai: ${fmt(end)}"
-        endBtn.setOnClickListener {
+        }, "Selesai", fmt(end), {
             TimePickerDialog(this, { _, h, mi ->
                 end = h * 60 + mi
-                endBtn.text = "Selesai: ${fmt(end)}"
+                ((timeTv(fullBody, 1)) as TextView).text = fmt(end)
             }, end / 60, end % 60, true).show()
-        }
-        fullBody.addView(startBtn)
-        fullBody.addView(endBtn)
-        onPick(whenSp) { pos ->
-            val v = if (pos == 1) View.VISIBLE else View.GONE
-            startBtn.visibility = v
-            endBtn.visibility = v
-        }
-        val showTimes = if (cfg.schOn) View.VISIBLE else View.GONE
-        startBtn.visibility = showTimes
-        endBtn.visibility = showTimes
+        })
+        fullBody.tag = timesRow.tag
+        timesRow.visibility = if (interval) View.VISIBLE else View.GONE
+        fullBody.addView(segmented(listOf("Selalu", "Interval waktu"), if (interval) 1 else 0) { i ->
+            interval = i == 1
+            timesRow.visibility = if (interval) View.VISIBLE else View.GONE
+        })
+        fullBody.addView(timesRow)
         val fullCb = conditionSection(box, "Blokir penuh", cfg.mode == 0 && !isNew, fullBody, "Selalu atau pada interval waktu tertentu")
 
         // 2. Batas penggunaan
         val useBody = vbox()
-        useBody.addView(text("Batas harian (menit)", 12f))
-        val limit = numberField(cfg.limitMin)
-        useBody.addView(limit)
-        useBody.addView(text("Batas per jam (menit dalam 60 menit terakhir)", 12f))
-        val hourLim = numberField(cfg.hourLimit)
-        useBody.addView(hourLim)
+        val useRow = LinearLayout(this)
+        useRow.orientation = LinearLayout.HORIZONTAL
+        val (tileDay, limit) = bigNumber("Per hari", "menit", cfg.limitMin,
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(5) })
+        val (tileHour, hourLim) = bigNumber("Per jam", "menit", cfg.hourLimit,
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = dp(5) })
+        useRow.addView(tileDay)
+        useRow.addView(tileHour)
+        useBody.addView(useRow)
+        useBody.addView(infoNote("Per jam dihitung dari 60 menit terakhir. Isi 0 untuk mematikan salah satunya."))
         val useCb = conditionSection(box, "Batas penggunaan", cfg.limitMin > 0 || cfg.hourLimit > 0, useBody, "Maksimal menit per hari atau per jam")
 
         // 3. Jumlah peluncuran
         val launchBody = vbox()
-        launchBody.addView(text("Peluncuran per hari", 12f))
-        val launchD = numberField(cfg.launchDay)
-        launchBody.addView(launchD)
-        launchBody.addView(text("Peluncuran per jam", 12f))
-        val launchH = numberField(cfg.launchHour)
-        launchBody.addView(launchH)
+        val launchRow = LinearLayout(this)
+        launchRow.orientation = LinearLayout.HORIZONTAL
+        val (tileLD, launchD) = bigNumber("Per hari", "kali", cfg.launchDay,
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(5) })
+        val (tileLH, launchH) = bigNumber("Per jam", "kali", cfg.launchHour,
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = dp(5) })
+        launchRow.addView(tileLD)
+        launchRow.addView(tileLH)
+        launchBody.addView(launchRow)
         val launchCb = conditionSection(box, "Jumlah peluncuran", cfg.launchDay > 0 || cfg.launchHour > 0, launchBody, "Batas berapa kali aplikasi dibuka")
 
         // 4. Timer tunggu
@@ -3489,70 +3755,32 @@ class MainActivity : Activity() {
         twRow.addView(tileUse)
         twRow.addView(tileWait)
         twBody.addView(twRow)
-        val twAd = CheckBox(this)
-        twAd.text = "Timer adaptif: bila tidak mencoba membuka aplikasi selama separuh masa tunggu, tunggu selesai lebih cepat"
-        twAd.textSize = 12f
-        twAd.setTextColor(C_SUB)
-        try { twAd.buttonTintList = android.content.res.ColorStateList.valueOf(C_PRIMARY) } catch (t: Throwable) { }
-        twAd.isChecked = cfg.twAdaptive
-        twBody.addView(twAd)
+        val (twAdView, twAdState) = toggleRow("Timer adaptif", "Makin sering dicoba, makin lama menunggu; tidak mencoba separuh masa tunggu membuat tunggu selesai lebih cepat", cfg.twAdaptive, false)
+        twBody.addView(twAdView)
         val twCb = conditionSection(box, "Timer tunggu", cfg.twUse > 0 && cfg.twWait > 0, twBody, "Pakai sebentar, lalu tunggu")
 
         // 5. Notifikasi
-        val notifCb = CheckBox(this)
-        notifCb.text = "Sembunyikan notifikasinya saat diblokir (butuh Akses Notifikasi)"
-        notifCb.textSize = 13.5f
-        notifCb.setTextColor(C_TEXT)
-        try { notifCb.buttonTintList = android.content.res.ColorStateList.valueOf(C_PRIMARY) } catch (t: Throwable) { }
-        notifCb.isChecked = cfg.notif
-        notifCb.setPadding(dp(8), dp(10), dp(8), dp(10))
-        notifCb.background = bg(Color.parseColor("#10131A"), dp(16)).apply { setStroke(dp(1), C_CHIP) }
-        notifCb.layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = dp(14) }
-        box.addView(notifCb)
+        val (notifView, notifState) = toggleRow("Sembunyikan notifikasinya", "Notifikasi aplikasi ini dihapus saat diblokir (butuh Akses Notifikasi)", cfg.notif)
+        box.addView(notifView)
         val locUi = locationSection(box, "app_$pkg", false)
 
         // Penghalang
         box.addView(text("PENGHALANG SAAT TERBLOKIR", 11f, true, Color.parseColor("#7C7768")).apply { letterSpacing = 0.18f; setPadding(0, dp(18), 0, dp(2)) })
         box.addView(text("Berlaku untuk blokir penuh dan batas harian.", 12.5f, false, C_SUB))
-        box.addView(text("Detik tunggu sebelum bisa membuka (0 = tidak bisa dibuka sama sekali)", 12f, false, C_SUB))
-        val wait = numberField(cfg.wait)
-        box.addView(wait)
-        box.addView(text("Lama aplikasi terbuka setelah menunggu (pass)", 12f, false, C_SUB))
-        val passSp = spinnerOf(passOptions.map { "$it menit" }, passOptions.indexOf(cfg.pass))
-        box.addView(passSp)
-        box.addView(text("Cooldown setelah pass habis (menit, 0 = tanpa cooldown)", 12f, false, C_SUB))
-        val cool = numberField(cfg.cooldown)
-        box.addView(cool)
-
-        box.addView(text("BERLAKU PADA HARI", 11f, true, Color.parseColor("#7C7768")).apply { letterSpacing = 0.18f; setPadding(0, dp(18), 0, dp(6)) })
-        val names = arrayOf("Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min")
-        val dayBoxes = ArrayList<CheckBox>()
-        val row = LinearLayout(this)
-        row.orientation = LinearLayout.HORIZONTAL
-        for (i in 0 until 7) {
-            val d = CheckBox(this)
-            d.isChecked = (cfg.days and (1 shl i)) != 0
-            dayBoxes.add(d)
-            val chip = TextView(this)
-            chip.text = names[i]
-            chip.textSize = 12f
-            chip.gravity = Gravity.CENTER
-            chip.setPadding(0, dp(11), 0, dp(11))
-            fun paintChip() {
-                chip.setTextColor(if (d.isChecked) C_ON_GOLD else C_SUB)
-                chip.setTypeface(null, if (d.isChecked) Typeface.BOLD else Typeface.NORMAL)
-                chip.background = if (d.isChecked) goldBg(dp(12)) else bg(Color.parseColor("#10131A"), dp(12)).apply { setStroke(dp(1), C_CHIP) }
-            }
-            paintChip()
-            chip.setOnClickListener { d.isChecked = !d.isChecked; paintChip() }
-            chip.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                leftMargin = if (i == 0) 0 else dp(3); rightMargin = if (i == 6) 0 else dp(3)
-            }
-            row.addView(chip)
-        }
-        box.addView(row)
+        val barRow = LinearLayout(this)
+        barRow.orientation = LinearLayout.HORIZONTAL
+        barRow.setPadding(0, dp(8), 0, 0)
+        val (tileW, wait) = bigNumber("Tunggu sebelum bisa buka", "detik", cfg.wait,
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(5) })
+        val (tileC, cool) = bigNumber("Cooldown setelah pass", "menit", cfg.cooldown,
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = dp(5) })
+        barRow.addView(tileW)
+        barRow.addView(tileC)
+        box.addView(barRow)
+        box.addView(infoNote("Isi 0 detik agar aplikasi tidak bisa dibuka sama sekali. Isi 0 menit cooldown untuk tanpa jeda setelah pass habis."))
+        box.addView(text("Lama aplikasi terbuka setelah menunggu (pass)", 12f, false, C_SUB).apply { setPadding(0, dp(6), 0, 0) })
+        var passSel = passOptions.indexOf(cfg.pass).let { if (it < 0) 0 else it }
+        box.addView(chipChoices(passOptions, passSel, "mnt") { i -> passSel = i })
 
         val doSave: () -> Boolean = save@{
                 var mask = 0
@@ -3562,10 +3790,10 @@ class MainActivity : Activity() {
                 val full = fullCb.isChecked
                 val newCfg = cfg.copy(
                     wait = num(wait, 600),
-                    pass = passOptions[passSp.selectedItemPosition],
+                    pass = passOptions[passSel],
                     cooldown = num(cool, 1440),
                     mode = if (full) 0 else 1,
-                    schOn = full && whenSp.selectedItemPosition == 1,
+                    schOn = full && interval,
                     start = start,
                     end = end,
                     days = mask,
@@ -3575,8 +3803,8 @@ class MainActivity : Activity() {
                     launchHour = if (launchCb.isChecked) num(launchH, 100) else 0,
                     twUse = if (twCb.isChecked) num(twUse, 1440) else 0,
                     twWait = if (twCb.isChecked) num(twWait, 1440) else 0,
-                    twAdaptive = twAd.isChecked,
-                    notif = notifCb.isChecked
+                    twAdaptive = twAdState(),
+                    notif = notifState()
                 )
                 val locRule = if (locUi.cb.isChecked) locUi.read() else null
                 if (locUi.cb.isChecked && locRule == null) {
@@ -3627,7 +3855,8 @@ class MainActivity : Activity() {
     /** Layar penuh bergaya Lux untuk mengatur satu aplikasi: header, isi yang bisa digulir, tombol emas di bawah. */
     private fun luxScreenDialog(pkg: String, eyebrowText: String, title: String, content: View, saveLabel: String,
                                 extras: List<Pair<String, (android.app.Dialog) -> Unit>>, strictOn: Boolean,
-                                onSave: () -> Boolean, onCancel: () -> Unit): android.app.Dialog {
+                                onSave: () -> Boolean, onCancel: () -> Unit,
+                                backLabel: String = "Aplikasi", iconRes: Int = 0): android.app.Dialog {
         val dlg = android.app.Dialog(this, android.R.style.Theme_DeviceDefault_NoActionBar)
         val rootV = LinearLayout(this)
         rootV.orientation = LinearLayout.VERTICAL
@@ -3640,7 +3869,7 @@ class MainActivity : Activity() {
         back.orientation = LinearLayout.HORIZONTAL
         back.gravity = Gravity.CENTER_VERTICAL
         back.setPadding(dp(18), dp(18), dp(22), dp(4))
-        back.addView(text("‹  Aplikasi", 14f, false, C_SUB))
+        back.addView(text("‹  $backLabel", 14f, false, C_SUB))
         back.setOnClickListener { dlg.dismiss(); onCancel() }
         rootV.addView(back)
         val head = LinearLayout(this)
@@ -3648,9 +3877,16 @@ class MainActivity : Activity() {
         head.gravity = Gravity.CENTER_VERTICAL
         head.setPadding(dp(22), dp(8), dp(22), dp(8))
         val icon = ImageView(this)
-        try { icon.setImageDrawable(packageManager.getApplicationIcon(pkg)) } catch (e: Exception) { }
+        if (iconRes != 0) {
+            icon.setImageResource(iconRes)
+            icon.setColorFilter(C_PRIMARY)
+            icon.setPadding(dp(13), dp(13), dp(13), dp(13))
+            icon.background = bg(Color.parseColor("#141821"), dp(15)).apply { setStroke(dp(1), Color.argb(100, 212, 175, 106)) }
+        } else {
+            try { icon.setImageDrawable(packageManager.getApplicationIcon(pkg)) } catch (e: Exception) { }
+            roundClip(icon, 15)
+        }
         icon.layoutParams = LinearLayout.LayoutParams(dp(52), dp(52))
-        roundClip(icon, 15)
         head.addView(icon)
         val hc = LinearLayout(this)
         hc.orientation = LinearLayout.VERTICAL
@@ -3727,62 +3963,82 @@ class MainActivity : Activity() {
         var end = 5 * 60
         val box = LinearLayout(this)
         box.orientation = LinearLayout.VERTICAL
-        box.setPadding(dp(20), dp(8), dp(20), dp(8))
-        val startBtn = Button(this)
-        startBtn.text = "Mulai: ${fmt(start)}"
-        startBtn.setOnClickListener {
-            TimePickerDialog(this, { _, h, mi ->
-                start = h * 60 + mi
-                startBtn.text = "Mulai: ${fmt(start)}"
-            }, start / 60, start % 60, true).show()
+        val timesRow = timeRow("Mulai", fmt(start), {
+            TimePickerDialog(this, { _, h, mi -> start = h * 60 + mi; (timeTv(box, 0) as TextView).text = fmt(start) }, start / 60, start % 60, true).show()
+        }, "Selesai", fmt(end), {
+            TimePickerDialog(this, { _, h, mi -> end = h * 60 + mi; (timeTv(box, 1) as TextView).text = fmt(end) }, end / 60, end % 60, true).show()
+        })
+        box.tag = timesRow.tag
+        box.addView(timesRow)
+        box.addView(text("BERLAKU PADA HARI", 11f, true, Color.parseColor("#7C7768")).apply { letterSpacing = 0.18f; setPadding(0, dp(10), 0, 0) })
+        val (daysView, daysMask) = dayChips(127)
+        box.addView(daysView)
+        box.addView(infoNote("Jika jam selesai lebih awal dari jam mulai, jadwal berlanjut sampai esok hari."))
+        val ld = luxDialog("JADWAL", "Tambah jadwal", "", box, "Tambah", "Batal") { }
+        ld.pos.setOnClickListener {
+            ld.dlg.dismiss()
+            onDone(Sched(start, end, daysMask()))
         }
-        box.addView(startBtn)
-        val endBtn = Button(this)
-        endBtn.text = "Selesai: ${fmt(end)}"
-        endBtn.setOnClickListener {
-            TimePickerDialog(this, { _, h, mi ->
-                end = h * 60 + mi
-                endBtn.text = "Selesai: ${fmt(end)}"
-            }, end / 60, end % 60, true).show()
-        }
-        box.addView(endBtn)
-        val names = arrayOf("Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min")
-        val dayBoxes = ArrayList<CheckBox>()
-        val row = LinearLayout(this)
-        row.orientation = LinearLayout.HORIZONTAL
-        for (i in 0 until 7) {
-            val d = CheckBox(this)
-            d.text = names[i]
-            d.textSize = 10f
-            d.isChecked = true
-            dayBoxes.add(d)
-            row.addView(d)
-        }
-        box.addView(row)
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Tambah jadwal")
-            .setView(box)
-            .setPositiveButton("Tambah") { _, _ ->
-                var mask = 0
-                for (i in 0 until 7) if (dayBoxes[i].isChecked) mask = mask or (1 shl i)
-                if (mask == 0) mask = 127
-                onDone(Sched(start, end, mask))
-            }
-            .setNegativeButton("Batal", null)
-            .show()
+        ld.dlg.show()
     }
 
     private fun pickApps(chosen: MutableSet<String>, onDone: () -> Unit) {
         val rows = loadApps()
-        val labels = Array(rows.size) { rows[it].label }
-        val checked = BooleanArray(rows.size) { rows[it].pkg in chosen }
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Pilih aplikasi")
-            .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
-                if (isChecked) chosen.add(rows[which].pkg) else chosen.remove(rows[which].pkg)
+        val box = LinearLayout(this)
+        box.orientation = LinearLayout.VERTICAL
+        box.setPadding(dp(22), dp(6), dp(22), dp(16))
+        val counter = text("", 12.5f, true, C_PRIMARY)
+        box.addView(counter)
+        val search = luxField("Cari aplikasi")
+        box.addView(search)
+        val list = LinearLayout(this)
+        list.orientation = LinearLayout.VERTICAL
+        box.addView(list)
+        fun paint() {
+            counter.text = "${chosen.size} aplikasi dipilih"
+            list.removeAllViews()
+            val q = search.text.toString().trim().lowercase()
+            for (r in rows) {
+                if (q.isNotEmpty() && !r.label.lowercase().contains(q)) continue
+                val on = r.pkg in chosen
+                val row = LinearLayout(this)
+                row.orientation = LinearLayout.HORIZONTAL
+                row.gravity = Gravity.CENTER_VERTICAL
+                row.setPadding(0, dp(10), 0, dp(10))
+                val ic = ImageView(this)
+                try { ic.setImageDrawable(packageManager.getApplicationIcon(r.pkg)) } catch (e: Exception) { }
+                ic.layoutParams = LinearLayout.LayoutParams(dp(40), dp(40))
+                roundClip(ic, 11)
+                row.addView(ic)
+                row.addView(text(r.label, 14.5f, on, if (on) C_TEXT else Color.parseColor("#CFC9BC")).apply {
+                    setPadding(dp(14), 0, dp(8), 0)
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                })
+                row.addView(ImageView(this).apply {
+                    setImageResource(if (on) R.drawable.lux_check_on else R.drawable.lux_check_off)
+                    layoutParams = LinearLayout.LayoutParams(dp(22), dp(22))
+                })
+                row.setOnClickListener {
+                    if (on) chosen.remove(r.pkg) else chosen.add(r.pkg)
+                    paint()
+                }
+                list.addView(row)
+                list.addView(View(this).apply {
+                    setBackgroundColor(Color.parseColor("#1B1F28"))
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1))
+                })
             }
-            .setPositiveButton("OK") { _, _ -> onDone() }
-            .show()
+            if (list.childCount == 0) list.addView(text("Tidak ada aplikasi yang cocok.", 13f, false, C_SUB).apply { setPadding(0, dp(16), 0, 0) })
+        }
+        search.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}
+            override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(s: Editable?) { paint() }
+        })
+        paint()
+        luxScreenDialog("", "PILIH", "Aplikasi", box, "Selesai", emptyList(), false, { onDone(); true }, { onDone() }, "Kembali", R.drawable.ic_ly_app)
     }
 
     private fun scheduleTileLabel(): String {
@@ -3883,14 +4139,10 @@ class MainActivity : Activity() {
             })
             acts.addView(actBtn("Hapus") {
                 if (strict) toast("Mode Ketat aktif: profil tidak bisa dihapus")
-                else android.app.AlertDialog.Builder(this)
-                    .setTitle("Hapus " + p.name + "?")
-                    .setPositiveButton("Hapus") { _, _ ->
-                        if (!ProfileStore.remove(this, p.id)) toast("Minimal harus ada satu profil")
-                        render()
-                    }
-                    .setNegativeButton("Batal", null)
-                    .show()
+                else luxConfirm("PROFIL", "Hapus " + p.name + "?", "Profil dan jadwalnya dihapus.", "Hapus") {
+                    if (!ProfileStore.remove(this, p.id)) toast("Minimal harus ada satu profil")
+                    render()
+                }
             })
             card.addView(acts)
             put(card)
@@ -3948,40 +4200,46 @@ class MainActivity : Activity() {
         val scheds = ArrayList(p.schedules)
         val box = LinearLayout(this)
         box.orientation = LinearLayout.VERTICAL
-        box.setPadding(dp(20), dp(8), dp(20), dp(8))
-        if (strict) box.addView(text("Mode Ketat aktif: perubahan hanya menambah, tidak mengurangi.", 12f, true, C_BAD))
+        box.setPadding(dp(22), dp(6), dp(22), dp(16))
+        if (strict) box.addView(infoNote("Mode Ketat aktif: perubahan hanya menambah, tidak mengurangi."))
 
-        box.addView(text("Batas harian per aplikasi (menit, 0 = blokir penuh)", 12f))
-        val limit = numberField(p.limitMin)
-        box.addView(limit)
+        box.addView(text("BATAS HARIAN", 11f, true, Color.parseColor("#7C7768")).apply { letterSpacing = 0.18f; setPadding(0, dp(8), 0, dp(6)) })
+        val (limTile, limit) = bigNumber("Per aplikasi", "menit", p.limitMin,
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        box.addView(limTile)
+        box.addView(infoNote("Isi 0 untuk blokir penuh semua aplikasi di profil ini."))
 
-        val appsBtn = Button(this)
-        appsBtn.text = "Pilih aplikasi (${apps.size})"
-        appsBtn.setOnClickListener {
-            pickApps(apps) { appsBtn.text = "Pilih aplikasi (${apps.size})" }
+        box.addView(text("ISI PROFIL", 11f, true, Color.parseColor("#7C7768")).apply { letterSpacing = 0.18f; setPadding(0, dp(14), 0, 0) })
+        val appsHolder = LinearLayout(this)
+        appsHolder.orientation = LinearLayout.VERTICAL
+        fun paintApps() {
+            appsHolder.removeAllViews()
+            appsHolder.addView(rowButton("Aplikasi", "${apps.size} dipilih") {
+                pickApps(apps) { paintApps() }
+            })
         }
-        box.addView(appsBtn)
-
-        box.addView(text("Kata kunci (pisahkan dengan koma)", 12f))
-        val kw = EditText(this)
+        paintApps()
+        box.addView(appsHolder)
+        box.addView(text("Kata kunci (pisahkan dengan koma)", 12f, false, C_SUB).apply { setPadding(0, dp(8), 0, 0) })
+        val kw = luxField("mis. judi, slot")
         kw.setText(p.keywords.sorted().joinToString(", "))
         box.addView(kw)
-
-        box.addView(text("Situs (pisahkan dengan koma)", 12f))
-        val dm = EditText(this)
+        box.addView(text("Situs (pisahkan dengan koma)", 12f, false, C_SUB).apply { setPadding(0, dp(10), 0, 0) })
+        val dm = luxField("mis. contoh.com, situs.net")
         dm.setText(p.domains.sorted().joinToString(", "))
         box.addView(dm)
 
-        box.addView(text("Jadwal (boleh lebih dari satu)", 12f, true))
+        box.addView(text("JADWAL", 11f, true, Color.parseColor("#7C7768")).apply { letterSpacing = 0.18f; setPadding(0, dp(16), 0, dp(2)) })
+        box.addView(text("Boleh lebih dari satu.", 12.5f, false, C_SUB))
         val schedBox = LinearLayout(this)
         schedBox.orientation = LinearLayout.VERTICAL
         box.addView(schedBox)
-
         fun refreshScheds() {
             schedBox.removeAllViews()
+            if (scheds.isEmpty()) schedBox.addView(text("Tanpa jadwal: aktif terus bila profil dinyalakan.", 12.5f, false, C_SUB).apply { setPadding(0, dp(6), 0, dp(6)) })
             for (i in scheds.indices) {
-                val s = scheds[i]
-                schedBox.addView(button("Hapus: ${fmt(s.start)}-${fmt(s.end)} ${dayNames(s.days)}") {
+                val sc = scheds[i]
+                schedBox.addView(listRow("${fmt(sc.start)} - ${fmt(sc.end)}", dayNames(sc.days), C_TEXT, null) {
                     if (strict) {
                         toast("Mode Ketat aktif: jadwal tidak bisa dihapus")
                     } else {
@@ -3992,39 +4250,33 @@ class MainActivity : Activity() {
             }
         }
         refreshScheds()
-        box.addView(button("Tambah jadwal") {
-            editSchedule { s ->
-                scheds.add(s)
+        box.addView(ghostButton("Tambah jadwal") {
+            editSchedule { sc ->
+                scheds.add(sc)
                 refreshScheds()
             }
         })
 
-        val scrollBox = ScrollView(this)
-        scrollBox.addView(box)
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Profil: " + p.name)
-            .setView(scrollBox)
-            .setPositiveButton("Simpan") { _, _ ->
-                val newKw = kw.text.toString().split(',').map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
-                val newDm = dm.text.toString().split(',').map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
-                var np = p.copy(
-                    apps = apps,
-                    keywords = newKw,
-                    domains = newDm,
-                    schedules = scheds,
-                    limitMin = (limit.text.toString().toIntOrNull() ?: 0).coerceIn(0, 1440)
-                )
-                if (strict) np = ProfileStore.mergeStrict(p, np)
-                // Menyimpan profil yang berisi aturan otomatis mengaktifkannya (lebih ketat, tidak pernah mematikan).
-                if (!np.enabled && (np.apps.isNotEmpty() || np.keywords.isNotEmpty() || np.domains.isNotEmpty())) {
-                    np = np.copy(enabled = true)
-                    toast("Profil ${np.name} diaktifkan")
-                }
-                ProfileStore.replace(this, np)
-                render()
+        val doSave: () -> Boolean = save@{
+            val newKw = kw.text.toString().split(',').map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
+            val newDm = dm.text.toString().split(',').map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
+            var np = p.copy(
+                apps = apps,
+                keywords = newKw,
+                domains = newDm,
+                schedules = scheds,
+                limitMin = (limit.text.toString().toIntOrNull() ?: 0).coerceIn(0, 1440)
+            )
+            if (strict) np = ProfileStore.mergeStrict(p, np)
+            if (!np.enabled && (np.apps.isNotEmpty() || np.keywords.isNotEmpty() || np.domains.isNotEmpty())) {
+                np = np.copy(enabled = true)
+                toast("Profil ${np.name} diaktifkan")
             }
-            .setNegativeButton("Batal", null)
-            .show()
+            ProfileStore.replace(this, np)
+            render()
+            true
+        }
+        luxScreenDialog("", "PROFIL", p.name, box, "Simpan profil", emptyList(), false, doSave, { render() }, "Jadwal", R.drawable.ic_ly_calendar)
     }
 
     private var protQuery = ""
@@ -4235,14 +4487,10 @@ class MainActivity : Activity() {
                 if (Store.strictOn(this)) {
                     toast("Mode Ketat aktif: Fokus tidak bisa dihentikan sebelum waktunya")
                 } else {
-                    android.app.AlertDialog.Builder(this)
-                        .setTitle("Hentikan Mode Fokus?")
-                        .setPositiveButton("Hentikan") { _, _ ->
-                            Focus.stop(this)
-                            render()
-                        }
-                        .setNegativeButton("Batal", null)
-                        .show()
+                    luxConfirm("MODE FOKUS", "Hentikan Mode Fokus?", "Aturan permanen tetap berlaku.", "Hentikan") {
+                        Focus.stop(this)
+                        render()
+                    }
                 }
             })
             handler.postDelayed({ if (screen == "focus") render() }, 30000L)
@@ -4262,19 +4510,17 @@ class MainActivity : Activity() {
             row.addView(pill("1 jam", false, C_PRIMARY) { startFor(60) })
             row.addView(pill("2 jam", false, C_PRIMARY) { startFor(120) })
             row.addView(pill("Custom", false, C_PRIMARY) {
-                val et = EditText(this).apply {
-                    inputType = InputType.TYPE_CLASS_NUMBER
-                    hint = "menit (1-1440)"
+                val (tile, et) = bigNumber("Durasi", "menit", 45,
+                    LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+                val ld = luxDialog("MODE FOKUS", "Durasi Fokus", "Isi antara 1 dan 1440 menit.", tile, "Mulai", "Batal") { }
+                ld.pos.setOnClickListener {
+                    val m = (et.text.toString().toIntOrNull() ?: 0).coerceIn(0, 1440)
+                    if (m > 0) {
+                        ld.dlg.dismiss()
+                        startFor(m)
+                    } else toast("Isi durasi dalam menit")
                 }
-                android.app.AlertDialog.Builder(this)
-                    .setTitle("Durasi Fokus")
-                    .setView(et)
-                    .setPositiveButton("Mulai") { _, _ ->
-                        val m = (et.text.toString().toIntOrNull() ?: 0).coerceIn(0, 1440)
-                        if (m > 0) startFor(m) else toast("Isi durasi dalam menit")
-                    }
-                    .setNegativeButton("Batal", null)
-                    .show()
+                ld.dlg.show()
             })
             put(row)
         }
@@ -4282,7 +4528,7 @@ class MainActivity : Activity() {
         val x = Focus.cfg(this)
         header("Diblokir saat Fokus")
         if (locked) put(text("Mode Ketat aktif dan Fokus berjalan: daftar ini terkunci.", 11f, false, C_SUB))
-        put(button("Aplikasi (${x.blockApps.size})") {
+        put(rowButton("Aplikasi", "${x.blockApps.size} dipilih") {
             if (locked) toast("Terkunci") else {
                 val chosen = x.blockApps.toMutableSet()
                 pickApps(chosen) {
@@ -4291,13 +4537,13 @@ class MainActivity : Activity() {
                 }
             }
         })
-        put(button("Situs (${x.blockSites.size})") {
+        put(rowButton("Situs", "${x.blockSites.size} dipilih") {
             if (locked) toast("Terkunci") else editListDialog("Situs diblokir saat Fokus", x.blockSites, true) { s ->
                 Focus.setCfg(this, Focus.Cfg(x.blockApps, s, x.blockCats, x.allowApps, x.allowSites))
                 render()
             }
         })
-        put(button("Kategori (${x.blockCats.size})") {
+        put(rowButton("Kategori", "${x.blockCats.size} dipilih") {
             if (locked) toast("Terkunci") else {
                 val labels = Focus.CATS.map { it.name }.toTypedArray()
                 val checked = BooleanArray(Focus.CATS.size) { Focus.CATS[it].key in x.blockCats }
@@ -4318,7 +4564,7 @@ class MainActivity : Activity() {
 
         header("Pengecualian (ALLOW)")
         put(text("Pengecualian hanya membebaskan dari aturan Fokus. Aturan permanen (blokir penuh, timer, jadwal, profil) tetap berlaku.", 12f, false, C_SUB))
-        put(button("Aplikasi diizinkan (${x.allowApps.size})") {
+        put(rowButton("Aplikasi diizinkan", "${x.allowApps.size} dipilih") {
             if (locked) toast("Terkunci") else {
                 val chosen = x.allowApps.toMutableSet()
                 pickApps(chosen) {
@@ -4327,7 +4573,7 @@ class MainActivity : Activity() {
                 }
             }
         })
-        put(button("Situs diizinkan (${x.allowSites.size})") {
+        put(rowButton("Situs diizinkan", "${x.allowSites.size} dipilih") {
             if (locked) toast("Terkunci") else editListDialog("Situs diizinkan saat Fokus", x.allowSites, true) { s ->
                 Focus.setCfg(this, Focus.Cfg(x.blockApps, x.blockSites, x.blockCats, x.allowApps, s))
                 render()
@@ -4449,13 +4695,9 @@ class MainActivity : Activity() {
             if (entries.isEmpty()) {
                 toast("Belum ada data")
             } else {
-                android.app.AlertDialog.Builder(this)
-                    .setTitle("Pilih")
-                    .setItems(entries.map { (if (it.third) "🌐 " else "") + it.second }.toTypedArray()) { _, i ->
-                        showHistory(entries[i].first, entries[i].second, entries[i].third)
-                    }
-                    .setNegativeButton("Batal", null)
-                    .show()
+                luxPicker("STATISTIK", "Pilih aplikasi atau situs", entries.map { (if (it.third) "🌐 " else "") + it.second }) { i ->
+                    showHistory(entries[i].first, entries[i].second, entries[i].third)
+                }
             }
         })
         put(text("Catatan: pemakaian situs hanya tercatat untuk situs yang punya aturan dan saat kolom alamat Chrome terlihat.", 11f, false, C_SUB))
@@ -4851,35 +5093,24 @@ class MainActivity : Activity() {
     private fun friendDialog() {
         val box = LinearLayout(this)
         box.orientation = LinearLayout.VERTICAL
-        box.setPadding(dp(20), dp(8), dp(20), dp(8))
-        val pw = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-        val old = EditText(this)
-        old.inputType = pw
-        old.hint = "Kode lama"
+        val old = luxField("Kode lama", true)
         if (FriendApproval.isSet(this)) box.addView(old)
-        val n1 = EditText(this)
-        n1.inputType = pw
-        n1.hint = "Kode baru (min 6 karakter)"
+        val n1 = luxField("Kode baru (min 6 karakter)", true)
         box.addView(n1)
-        val n2 = EditText(this)
-        n2.inputType = pw
-        n2.hint = "Ulangi kode baru"
+        val n2 = luxField("Ulangi kode baru", true)
         box.addView(n2)
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Kode teman")
-            .setMessage("Serahkan HP ke temanmu. Dia yang mengetik kodenya.")
-            .setView(box)
-            .setPositiveButton("Simpan") { _, _ ->
-                if (n1.text.toString() != n2.text.toString()) {
-                    toast("Kode tidak sama")
-                } else {
-                    val err = FriendApproval.set(this, old.text.toString(), n1.text.toString())
-                    toast(err ?: "Kode teman tersimpan")
-                }
-                render()
+        val ld = luxDialog("PERSETUJUAN TEMAN", "Kode teman", "Serahkan HP ke temanmu. Dia yang mengetik kodenya.", box, "Simpan", "Batal") { }
+        ld.pos.setOnClickListener {
+            if (n1.text.toString() != n2.text.toString()) {
+                toast("Kode tidak sama")
+            } else {
+                val err = FriendApproval.set(this, old.text.toString(), n1.text.toString())
+                toast(err ?: "Kode teman tersimpan")
+                if (err == null) ld.dlg.dismiss()
             }
-            .setNegativeButton("Batal", null)
-            .show()
+            render()
+        }
+        ld.dlg.show()
     }
 
     private fun friendClearDialog() {
@@ -5185,134 +5416,153 @@ class MainActivity : Activity() {
         put(text("Menambah daftar saat mode aktif wajib lewat teks acak dan tidak bisa saat Mode Ketat. Menghapus entri langsung. Selama mode belum dicentang, daftar bebas diisi.", 12f, false, C_SUB).apply { setPadding(0, dp(10), 0, 0) })
     }
 
+    private var kwTab = 0
+
+    /** Kolom isian dengan tombol tambah emas di sebelah kanan. */
+    private fun addField(hint: String, onAdd: (String) -> Unit): View {
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.gravity = Gravity.CENTER_VERTICAL
+        row.setPadding(0, dp(6), 0, dp(6))
+        val et = EditText(this).apply {
+            this.hint = hint
+            setSingleLine()
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
+        }
+        row.addView(et, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        val btn = TextView(this).apply {
+            text = "Tambah"
+            textSize = 13.5f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(C_ON_GOLD)
+            gravity = Gravity.CENTER
+            background = goldBg(dp(14))
+            setPadding(dp(16), 0, dp(16), 0)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(48)).apply { leftMargin = dp(10) }
+            setOnClickListener {
+                val v = et.text.toString().trim()
+                if (v.isNotEmpty()) onAdd(v)
+            }
+        }
+        row.addView(btn)
+        return row
+    }
+
+    /** Baris daftar: judul, keterangan, panah, dan tombol hapus bulat. */
+    private fun listRow(title: String, sub: String, titleColor: Int, onClick: (() -> Unit)?, onRemove: (() -> Unit)?): View {
+        val wrap = LinearLayout(this)
+        wrap.orientation = LinearLayout.VERTICAL
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.gravity = Gravity.CENTER_VERTICAL
+        row.setPadding(0, dp(10), 0, dp(10))
+        val col = LinearLayout(this)
+        col.orientation = LinearLayout.VERTICAL
+        col.addView(text(title, 14f, true, titleColor).apply { typeface = Typeface.DEFAULT_BOLD })
+        if (sub.isNotEmpty()) col.addView(text(sub, 12f, false, Color.parseColor("#8A8576")))
+        row.addView(col, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        if (onClick != null) {
+            row.addView(text("›", 22f, true, C_PRIMARY))
+            row.setOnClickListener { onClick() }
+        }
+        if (onRemove != null) row.addView(text("✕", 13f, true, C_BAD).apply {
+            gravity = Gravity.CENTER
+            background = bg(Color.argb(30, 229, 115, 107), dp(14))
+            layoutParams = LinearLayout.LayoutParams(dp(28), dp(28)).apply { leftMargin = dp(12) }
+            setOnClickListener { onRemove() }
+        })
+        wrap.addView(row)
+        wrap.addView(View(this).apply {
+            setBackgroundColor(Color.parseColor("#1B1F28"))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1))
+        })
+        return wrap
+    }
+
     private fun renderWords(strict: Boolean) {
-        header("Kata kunci")
-        put(text("Pisahkan antara keyword yang hanya diperiksa di URL browser dan keyword yang diperiksa pada teks seluruh layar.", 12f, false, C_SUB))
-
-        header("🕘 Riwayat Situs")
-        put(text("Domain utama yang baru terdeteksi dari browser. Riwayat disimpan lokal di perangkat dan terus diperbarui saat situs dibuka.", 12f, false, C_SUB))
+        val domains = Store.domains(this).sorted()
+        val urlKw = Store.urlKeywords(this).sorted()
+        val scrKw = Store.screenKeywords(this).sorted()
         val history = SiteHistory.list(this, 30)
-        if (history.isEmpty()) {
-            put(text("Belum ada situs yang terdeteksi.", 12f, false, C_SUB))
-        } else {
-            val historyCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-            for (entry in history) {
-                val row = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(0, dp(5), 0, dp(5))
-                }
-                val col = LinearLayout(this).apply {
-                    orientation = LinearLayout.VERTICAL
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                }
-                val blocked = Store.domains(this).contains(entry.domain)
-                col.addView(text(entry.domain + if (blocked) "  • diblokir" else "", 13f, true, if (blocked) C_BAD else C_TEXT))
-                col.addView(text("Terakhir: ${SiteHistory.formatTime(entry.lastOpened)} • ${entry.visits}x terdeteksi", 11f, false, C_SUB))
-                row.addView(col)
-                row.addView(smallButton(if (blocked) "Atur" else "Atur blokir") {
-                    editSiteDialog(entry.domain, strict, !Store.domains(this).contains(entry.domain))
+        put(segmented(listOf("Situs ${domains.size}", "Kata kunci ${urlKw.size + scrKw.size}", "Riwayat"), kwTab) { i ->
+            kwTab = i
+            render()
+        })
+        when (kwTab) {
+            0 -> {
+                header("Tambah situs")
+                put(addField("mis. contoh.com") { raw ->
+                    val d = Rules.normalizeDomain(raw)
+                    if (d.isEmpty()) toast("Masukkan domain situs terlebih dahulu")
+                    else if (Store.domains(this).contains(d)) editSiteDialog(d, strict)
+                    else editSiteDialog(d, false, true)
                 })
-                historyCol.addView(row)
-            }
-            put(scrollBox(320, historyCol))
-        }
-
-        header("🛡️ Keyword Bawaan PenjagaKetat")
-        put(text("Daftar keyword bawaan yang dapat kamu ubah. Jika terlalu luas, tekan ✕ untuk mematikannya. Jika ingin mengaktifkan kembali, tekan Aktifkan.", 12f, false, C_SUB))
-        put(builtinKeywordList())
-
-        header("🔗 Keyword URL")
-        put(text("Diperiksa hanya pada kolom alamat/URL semua browser yang dipantau. Tidak memblokir kata yang hanya muncul sebagai teks halaman.", 12f, false, C_SUB))
-        val urlInput = EditText(this).apply { hint = "Tambah keyword URL"; setSingleLine() }
-        put(urlInput)
-        put(button("Tambah keyword URL") {
-            val k = urlInput.text.toString().trim()
-            if (k.isNotEmpty()) {
-                Store.addUrlKeyword(this, k)
-                render()
-            }
-        })
-        put(chipList(Store.urlKeywords(this).sorted()) { k ->
-            if (strict) toast("Mode Ketat aktif: tidak bisa menghapus")
-            else gateOff(true, "menghapus keyword URL") { Store.removeUrlKeyword(this, k) }
-        })
-
-        header("📱 Keyword Layar")
-        put(text("Diperiksa pada teks dan contentDescription yang dapat dibaca Accessibility di seluruh layar/aplikasi, bukan hanya URL browser.", 12f, false, C_SUB))
-        val screenInput = EditText(this).apply { hint = "Tambah keyword layar"; setSingleLine() }
-        put(screenInput)
-        put(button("Tambah keyword layar") {
-            val k = screenInput.text.toString().trim()
-            if (k.isNotEmpty()) {
-                Store.addScreenKeyword(this, k)
-                render()
-            }
-        })
-        put(chipList(Store.screenKeywords(this).sorted()) { k ->
-            if (strict) toast("Mode Ketat aktif: tidak bisa menghapus")
-            else gateOff(true, "menghapus keyword layar") { Store.removeScreenKeyword(this, k) }
-        })
-
-        header("Situs")
-        put(text("Dicek di kolom alamat browser dan lewat VPN DNS. Subdomain ikut terblokir.", 12f, false, C_SUB))
-        val dInput = EditText(this).apply { hint = "Tambah situs, mis. contoh.com"; setSingleLine() }
-        put(dInput)
-        put(button("Tambah situs") {
-            val d = Rules.normalizeDomain(dInput.text.toString())
-            if (d.isNotEmpty()) {
-                if (Store.domains(this).contains(d)) {
-                    editSiteDialog(d, strict)
-                } else {
-                    editSiteDialog(d, false, true)
+                put(infoNote("Dicek di kolom alamat browser dan lewat VPN DNS. Subdomain ikut terblokir. Setelah dimasukkan, pilih cara memblokirnya."))
+                header("Daftar situs")
+                if (domains.isEmpty()) put(text("Belum ada situs yang diblokir.", 13f, false, C_SUB))
+                for (d in domains) {
+                    val cfg = Store.siteCfgOrNull(this, d)
+                    val sub = when {
+                        cfg == null || (cfg.mode == 0 && !cfg.schOn) -> "Blokir penuh"
+                        cfg.twUse > 0 && cfg.twWait > 0 -> "Timer tunggu ${cfg.twUse}/${cfg.twWait} menit"
+                        cfg.limitMin > 0 || cfg.hourLimit > 0 -> "Batas penggunaan"
+                        cfg.schOn -> "Jadwal ${fmt(cfg.start)}-${fmt(cfg.end)}"
+                        else -> "Aturan khusus"
+                    }
+                    put(listRow(d, sub, C_TEXT, { editSiteDialog(d, strict) }) {
+                        if (strict) toast("Mode Ketat aktif: tidak bisa menghapus")
+                        else gateOff(true, "menghapus situs $d") { Store.removeDomain(this@MainActivity, d) }
+                    })
                 }
-            } else {
-                toast("Masukkan domain situs terlebih dahulu")
-            }
-        })
-        val siteCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        for (d in Store.domains(this).sorted()) {
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-            }
-            row.addView(text(d, 13f).apply {
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            })
-            row.addView(smallButton("Atur") { editSiteDialog(d, strict) })
-            row.addView(text("✕", 15f, true, C_BAD).apply {
-                setPadding(dp(10), dp(8), dp(6), dp(8))
-                setOnClickListener {
-                    if (strict) toast("Mode Ketat aktif: tidak bisa menghapus")
-                    else gateOff(true, "menghapus situs $d") { Store.removeDomain(this@MainActivity, d) }
-                }
-            })
-            siteCol.addView(row)
-        }
-        put(if (siteCol.childCount == 0) text("Belum ada.", 12f, false, C_SUB) else scrollBox(220, siteCol))
-
-        // Channel Telegram yang diblokir (terisi otomatis oleh pendeteksi gambar AI). Melepas blokir lewat gerbang yang sama.
-        header("Channel Telegram")
-        put(text("Channel diblokir otomatis bila 5 kali terdeteksi gambar tidak pantas dalam 10 menit. Aplikasi Telegram lain tetap bisa dipakai.", 12f, false, C_SUB))
-        val chCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        for (ch in Store.channels(this).sorted()) {
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-            }
-            row.addView(text(ch, 13f).apply {
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            })
-            row.addView(text("✕", 15f, true, C_BAD).apply {
-                setPadding(dp(10), dp(8), dp(6), dp(8))
-                setOnClickListener {
+                header("Channel Telegram")
+                put(infoNote("Channel diblokir otomatis bila 5 kali terdeteksi gambar tidak pantas dalam 10 menit. Aplikasi Telegram lain tetap bisa dipakai."))
+                val chs = Store.channels(this).sorted()
+                if (chs.isEmpty()) put(text("Belum ada channel yang diblokir.", 13f, false, C_SUB))
+                for (ch in chs) put(listRow(ch, "", C_TEXT, null) {
                     if (strict) toast("Mode Ketat aktif: tidak bisa menghapus")
                     else gateOff(true, "menghapus channel $ch") { Store.removeChannel(this@MainActivity, ch) }
+                })
+            }
+            1 -> {
+                header("Keyword URL")
+                put(infoNote("Diperiksa hanya pada kolom alamat semua browser yang dipantau. Kata yang hanya muncul di teks halaman tidak ikut diblokir."))
+                put(addField("Tambah keyword URL") { k ->
+                    Store.addUrlKeyword(this, k)
+                    render()
+                })
+                if (urlKw.isNotEmpty()) put(chipList(urlKw) { k ->
+                    if (strict) toast("Mode Ketat aktif: tidak bisa menghapus")
+                    else gateOff(true, "menghapus keyword URL") { Store.removeUrlKeyword(this, k) }
+                })
+                header("Keyword layar")
+                put(infoNote("Diperiksa pada teks dan keterangan yang terbaca Aksesibilitas di seluruh layar dan aplikasi, bukan hanya URL browser."))
+                put(addField("Tambah keyword layar") { k ->
+                    Store.addScreenKeyword(this, k)
+                    render()
+                })
+                if (scrKw.isNotEmpty()) put(chipList(scrKw) { k ->
+                    if (strict) toast("Mode Ketat aktif: tidak bisa menghapus")
+                    else gateOff(true, "menghapus keyword layar") { Store.removeScreenKeyword(this, k) }
+                })
+                header("Keyword bawaan")
+                put(infoNote("Daftar bawaan yang bisa diubah. Jika terlalu luas, tekan ✕ untuk mematikannya, lalu Aktifkan untuk menyalakan kembali."))
+                put(builtinKeywordList())
+            }
+            else -> {
+                header("Riwayat situs")
+                put(infoNote("Domain utama yang baru terdeteksi dari browser. Disimpan lokal di perangkat dan terus diperbarui saat situs dibuka."))
+                if (history.isEmpty()) put(text("Belum ada situs yang terdeteksi.", 13f, false, C_SUB))
+                for (entry in history) {
+                    val blocked = Store.domains(this).contains(entry.domain)
+                    put(listRow(
+                        entry.domain + if (blocked) "  · diblokir" else "",
+                        "Terakhir ${SiteHistory.formatTime(entry.lastOpened)} · ${entry.visits}x terdeteksi",
+                        if (blocked) C_BAD else C_TEXT,
+                        { editSiteDialog(entry.domain, strict, !Store.domains(this).contains(entry.domain)) }, null
+                    ))
                 }
-            })
-            chCol.addView(row)
+            }
         }
-        put(if (chCol.childCount == 0) text("Belum ada.", 12f, false, C_SUB) else scrollBox(160, chCol))
     }
 
     private fun editSiteDialog(domain: String, strict: Boolean, isNew: Boolean = false) {
@@ -5320,10 +5570,6 @@ class MainActivity : Activity() {
         val cfg = existing ?: SiteCfg()
         var start = cfg.start
         var end = cfg.end
-
-        // Mode UI: 0 = penuh, 1 = jadwal, 2 = batas penggunaan, 3 = timer tunggu.
-        // Penyimpanan tetap kompatibel dengan SiteCfg lama: mode 0 = penuh, mode 1 = aturan khusus.
-        // Dikunci Mode Ketat: situs yang sudah ada tidak boleh diubah. Tampilan harus mencerminkan nilai tersimpan.
         val locked = strict && !isNew
         val initialMode = when {
             cfg.twUse > 0 && cfg.twWait > 0 -> 3
@@ -5334,175 +5580,162 @@ class MainActivity : Activity() {
             LocationRules.get(this, "site_" + Rules.normalizeDomain(domain)) != null -> 4
             else -> 1
         }
+        var selected = initialMode
 
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(8), dp(20), dp(8))
-        }
+        val box = LinearLayout(this)
+        box.orientation = LinearLayout.VERTICAL
+        box.setPadding(dp(22), dp(6), dp(22), dp(16))
+        box.addView(text("KONDISI BLOKIR", 11f, true, Color.parseColor("#7C7768")).apply { letterSpacing = 0.18f; setPadding(0, dp(4), 0, dp(2)) })
         box.addView(text(
-            if (isNew) "Pilih dulu mode pemblokiran untuk $domain." else "Aturan khusus untuk $domain",
-            13f, true
-        ))
+            if (isNew) "Pilih satu cara memblokir $domain. Situs baru diblokir setelah kamu menekan Simpan."
+            else "Pilih satu cara memblokir $domain.", 12.5f, false, C_SUB))
+        if (locked) box.addView(infoNote("Mode Ketat aktif: aturan situs ini terkunci. Yang tampil adalah aturan yang tersimpan."))
 
-        val modes = RadioGroup(this).apply { orientation = RadioGroup.VERTICAL }
-        val rbFull = RadioButton(this).apply { text = "Blokir penuh"; id = View.generateViewId() }
-        val rbSchedule = RadioButton(this).apply { text = "Blokir sesuai jadwal"; id = View.generateViewId() }
-        val rbLimit = RadioButton(this).apply { text = "Batas penggunaan"; id = View.generateViewId() }
-        val rbTimer = RadioButton(this).apply { text = "Timer tunggu"; id = View.generateViewId() }
-        val rbLoc = RadioButton(this).apply { text = "Hanya berdasarkan lokasi"; id = View.generateViewId() }
-        modes.addView(rbFull); modes.addView(rbSchedule); modes.addView(rbLimit); modes.addView(rbTimer); modes.addView(rbLoc)
-        when (initialMode) {
-            0 -> rbFull.isChecked = true
-            1 -> rbSchedule.isChecked = true
-            2 -> rbLimit.isChecked = true
-            4 -> rbLoc.isChecked = true
-            else -> rbTimer.isChecked = true
+        // Pilihan tunggal: kartu radio, isi muncul di bawah pilihan yang aktif.
+        val cards = ArrayList<Pair<LinearLayout, () -> Unit>>()
+        val bodies = ArrayList<LinearLayout>()
+        fun repaintAll() { for (c in cards) c.second() }
+        fun choice(idx: Int, title: String, sub: String, body: LinearLayout?) {
+            val card = LinearLayout(this)
+            card.orientation = LinearLayout.VERTICAL
+            card.setPadding(dp(14), dp(12), dp(14), dp(12))
+            card.layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(8) }
+            val dot = android.widget.FrameLayout(this)
+            dot.layoutParams = LinearLayout.LayoutParams(dp(22), dp(22))
+            val head = LinearLayout(this)
+            head.orientation = LinearLayout.HORIZONTAL
+            head.gravity = Gravity.CENTER_VERTICAL
+            head.addView(dot)
+            val tc = LinearLayout(this)
+            tc.orientation = LinearLayout.VERTICAL
+            tc.setPadding(dp(12), 0, 0, 0)
+            tc.addView(text(title, 14.5f, true, C_TEXT).apply { typeface = Typeface.DEFAULT_BOLD })
+            tc.addView(text(sub, 12f, false, C_SUB))
+            head.addView(tc, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            card.addView(head)
+            if (body != null) {
+                body.setPadding(0, dp(10), 0, 0)
+                card.addView(body)
+            }
+            val paint = {
+                val on = selected == idx
+                card.background = (if (on) GradientDrawable(
+                    GradientDrawable.Orientation.TL_BR, intArrayOf(Color.parseColor("#161B25"), Color.parseColor("#0E1117"))
+                ) else bg(Color.parseColor("#10131A"), 0)).apply {
+                    cornerRadius = dp(16).toFloat()
+                    setStroke(dp(1), if (on) Color.argb(170, 212, 175, 106) else Color.parseColor("#232834"))
+                }
+                dot.removeAllViews()
+                dot.addView(View(this).apply {
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(Color.TRANSPARENT)
+                        setStroke(dp(2), if (on) C_PRIMARY else Color.parseColor("#4A4F5B"))
+                    }
+                }, android.widget.FrameLayout.LayoutParams(dp(22), dp(22)))
+                if (on) dot.addView(View(this).apply {
+                    background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(C_PRIMARY) }
+                }, android.widget.FrameLayout.LayoutParams(dp(10), dp(10), Gravity.CENTER))
+                body?.visibility = if (on) View.VISIBLE else View.GONE
+            }
+            cards.add(Pair(card, paint))
+            if (!locked) head.setOnClickListener { selected = idx; repaintAll() }
+            box.addView(card)
         }
-        box.addView(modes)
 
-        // Pada situs lama saat Mode Ketat aktif, pertahankan aturan lama: hanya Blokir penuh.
-        // Situs baru tidak dikunci karena pengguna belum memasukkannya ke daftar.
-        if (locked) {
-            rbFull.isEnabled = false
-            rbSchedule.isEnabled = false
-            rbLimit.isEnabled = false
-            rbTimer.isEnabled = false
-            rbLoc.isEnabled = false
-            box.addView(text("Mode Ketat aktif: aturan situs ini terkunci dan tidak bisa diubah. Yang tampil adalah aturan yang tersimpan.", 11f, false, C_SUB))
-        }
-
-        val detailBox = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(6), 0, 0)
-        }
-
-        // Jadwal
+        // 0 penuh
+        choice(0, "Blokir penuh", "Selalu ditutup saat dibuka", null)
+        // 1 jadwal
         val scheduleBody = vbox()
-        val startBtn = Button(this).apply { text = "Mulai: ${fmt(start)}" }
-        val endBtn = Button(this).apply { text = "Selesai: ${fmt(end)}" }
-        startBtn.setOnClickListener {
-            TimePickerDialog(this, { _, h, m -> start = h * 60 + m; startBtn.text = "Mulai: ${fmt(start)}" }, start / 60, start % 60, true).show()
-        }
-        endBtn.setOnClickListener {
-            TimePickerDialog(this, { _, h, m -> end = h * 60 + m; endBtn.text = "Selesai: ${fmt(end)}" }, end / 60, end % 60, true).show()
-        }
-        scheduleBody.addView(text("Situs diblokir hanya pada jam berikut:", 12f))
-        scheduleBody.addView(startBtn)
-        scheduleBody.addView(endBtn)
-        detailBox.addView(scheduleBody)
-
-        // Batas penggunaan
+        val timesRow = timeRow("Mulai", fmt(start), {
+            if (!locked) TimePickerDialog(this, { _, h, m -> start = h * 60 + m; (timeTv(scheduleBody, 0) as TextView).text = fmt(start) }, start / 60, start % 60, true).show()
+        }, "Selesai", fmt(end), {
+            if (!locked) TimePickerDialog(this, { _, h, m -> end = h * 60 + m; (timeTv(scheduleBody, 1) as TextView).text = fmt(end) }, end / 60, end % 60, true).show()
+        })
+        scheduleBody.tag = timesRow.tag
+        scheduleBody.addView(timesRow)
+        choice(1, "Jadwal", "Ditutup hanya pada jam ini", scheduleBody)
+        // 2 batas penggunaan
         val limitBody = vbox()
-        val limit = numberField(cfg.limitMin)
-        val hour = numberField(cfg.hourLimit)
-        limitBody.addView(text("Batas harian (menit, 0 = mati)", 12f))
-        limitBody.addView(limit)
-        limitBody.addView(text("Batas per jam (menit dalam 60 menit terakhir, 0 = mati)", 12f))
-        limitBody.addView(hour)
-        detailBox.addView(limitBody)
-
-        // Timer tunggu
+        val limRow = LinearLayout(this)
+        limRow.orientation = LinearLayout.HORIZONTAL
+        val (tD, limit) = bigNumber("Per hari", "menit", cfg.limitMin,
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(5) })
+        val (tH, hour) = bigNumber("Per jam", "menit", cfg.hourLimit,
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = dp(5) })
+        limRow.addView(tD); limRow.addView(tH)
+        limitBody.addView(limRow)
+        limitBody.addView(infoNote("Per jam dihitung dari 60 menit terakhir. Isi 0 untuk mematikan salah satunya."))
+        choice(2, "Batas penggunaan", "Maksimal menit per hari atau per jam", limitBody)
+        // 3 timer tunggu
         val twBody = vbox()
-        val twUse = numberField(if (cfg.twUse > 0) cfg.twUse else 5)
-        val twWait = numberField(if (cfg.twWait > 0) cfg.twWait else 30)
-        twBody.addView(text("Pakai selama (menit)", 12f))
-        twBody.addView(twUse)
-        twBody.addView(text("Lalu blokir selama (menit)", 12f))
-        twBody.addView(twWait)
-        val adaptive = CheckBox(this).apply {
-            text = "Timer adaptif"
-            isChecked = cfg.twAdaptive
-        }
-        twBody.addView(adaptive)
-        detailBox.addView(twBody)
-        box.addView(detailBox)
+        val twRow = LinearLayout(this)
+        twRow.orientation = LinearLayout.HORIZONTAL
+        val (tU, twUse) = bigNumber("Boleh dipakai", "menit", if (cfg.twUse > 0) cfg.twUse else 5,
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(5) })
+        val (tW, twWait) = bigNumber("Lalu tunggu", "menit", if (cfg.twWait > 0) cfg.twWait else 30,
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = dp(5) })
+        twRow.addView(tU); twRow.addView(tW)
+        twBody.addView(twRow)
+        val (adView, adState) = toggleRow("Timer adaptif", "Makin sering dicoba, makin lama menunggu", cfg.twAdaptive, false)
+        twBody.addView(adView)
+        choice(3, "Timer tunggu", "Pakai sebentar, lalu tunggu", twBody)
+        // 4 lokasi
+        choice(4, "Hanya berdasarkan lokasi", "Ditutup saat di tempat tertentu", null)
+        repaintAll()
+
         val locUi = locationSection(box, "site_" + Rules.normalizeDomain(domain), locked)
+        box.addView(infoNote("Hitungan peluncuran tidak dipakai untuk situs, karena situs tidak punya konsep peluncuran aplikasi."))
 
-        if (locked) {
-            startBtn.isEnabled = false
-            endBtn.isEnabled = false
-            limit.isEnabled = false
-            hour.isEnabled = false
-            twUse.isEnabled = false
-            twWait.isEnabled = false
-            adaptive.isEnabled = false
-        }
-
-        fun updateDetails(mode: Int) {
-            scheduleBody.visibility = if (mode == 1) View.VISIBLE else View.GONE
-            limitBody.visibility = if (mode == 2) View.VISIBLE else View.GONE
-            twBody.visibility = if (mode == 3) View.VISIBLE else View.GONE
-        }
-        updateDetails(if (rbFull.isChecked) 0 else if (rbSchedule.isChecked) 1 else if (rbLimit.isChecked) 2 else if (rbLoc.isChecked) 4 else 3)
-        modes.setOnCheckedChangeListener { _, checkedId ->
-            val mode = when (checkedId) {
-                rbSchedule.id -> 1
-                rbLimit.id -> 2
-                rbTimer.id -> 3
-                rbLoc.id -> 4
-                else -> 0
+        val doSave: () -> Boolean = save@{
+            if (locked) return@save true
+            fun num(e: EditText, max: Int) = (e.text.toString().toIntOrNull() ?: 0).coerceIn(0, max)
+            val full = selected == 0
+            val newCfg = SiteCfg(
+                mode = if (full) 0 else 1,
+                schOn = selected == 1,
+                start = start,
+                end = end,
+                days = 127,
+                limitMin = if (selected == 2) num(limit, 1440) else 0,
+                hourLimit = if (selected == 2) num(hour, 60) else 0,
+                twUse = if (selected == 3) num(twUse, 1440) else 0,
+                twWait = if (selected == 3) num(twWait, 1440) else 0,
+                twAdaptive = adState()
+            )
+            if (selected == 2 && newCfg.limitMin == 0 && newCfg.hourLimit == 0) {
+                toast("Isi batas penggunaan terlebih dahulu")
+                return@save false
             }
-            updateDetails(mode)
-        }
-        box.addView(text("Launch count/pass tidak diterapkan pada website karena website tidak memiliki konsep peluncuran aplikasi.", 11f, false, C_SUB))
-
-        android.app.AlertDialog.Builder(this)
-            .setTitle(if (isNew) "Atur blokir situs" else "Atur blokir situs")
-            .setView(ScrollView(this).apply { addView(box) })
-            .setPositiveButton(if (locked) "Tutup" else "Simpan") { _, _ ->
-                if (locked) return@setPositiveButton
-                fun num(e: EditText, max: Int) = (e.text.toString().toIntOrNull() ?: 0).coerceIn(0, max)
-                val selected = when {
-                    rbSchedule.isChecked -> 1
-                    rbLimit.isChecked -> 2
-                    rbTimer.isChecked -> 3
-                    rbLoc.isChecked -> 4
-                    else -> 0
-                }
-                val full = selected == 0
-                val newCfg = SiteCfg(
-                    mode = if (full) 0 else 1,
-                    schOn = selected == 1,
-                    start = start,
-                    end = end,
-                    days = 127,
-                    limitMin = if (selected == 2) num(limit, 1440) else 0,
-                    hourLimit = if (selected == 2) num(hour, 60) else 0,
-                    twUse = if (selected == 3) num(twUse, 1440) else 0,
-                    twWait = if (selected == 3) num(twWait, 1440) else 0,
-                    twAdaptive = adaptive.isChecked
-                )
-                if (newCfg.mode != 0 && selected == 2 && newCfg.limitMin == 0 && newCfg.hourLimit == 0) {
-                    toast("Isi batas penggunaan terlebih dahulu")
-                    return@setPositiveButton
-                }
-                if (selected == 3 && (newCfg.twUse <= 0 || newCfg.twWait <= 0)) {
-                    toast("Isi timer penggunaan dan timer tunggu terlebih dahulu")
-                    return@setPositiveButton
-                }
-                val locRule = if (locUi.cb.isChecked) locUi.read() else null
-                if (locUi.cb.isChecked && locRule == null) {
-                    toast("Lokasi tidak valid: isi lintang dan bujur dengan benar (atau pakai lokasi saya sekarang).")
-                    return@setPositiveButton
-                }
-                if (selected == 4 && locRule == null) {
-                    toast("Mode lokasi: aktifkan bagian lokasi dan isi titiknya.")
-                    return@setPositiveButton
-                }
-                // Simpan konfigurasi dulu, baru masukkan domain ke daftar (tanpa jeda blokir penuh sementara).
-                LocationRules.set(this, "site_" + Rules.normalizeDomain(domain), locRule)
-                if (locRule != null && (!LocationTracker.hasPermission(this) || !LocationTracker.hasBackground(this))) askLocationPermission()
-                Store.setSiteCfg(this, domain, newCfg)
-                Store.addDomain(this, domain)
-                if (newCfg.twUse > 0 && newCfg.twWait > 0 && Build.VERSION.SDK_INT >= 33 &&
-                    checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-                ) {
-                    requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1003)
-                }
-                render()
+            if (selected == 3 && (newCfg.twUse <= 0 || newCfg.twWait <= 0)) {
+                toast("Isi timer penggunaan dan timer tunggu terlebih dahulu")
+                return@save false
             }
-            .setNegativeButton("Batal", null)
-            .show()
+            val locRule = if (locUi.cb.isChecked) locUi.read() else null
+            if (locUi.cb.isChecked && locRule == null) {
+                toast("Lokasi tidak valid: isi lintang dan bujur dengan benar (atau pakai lokasi saya sekarang).")
+                return@save false
+            }
+            if (selected == 4 && locRule == null) {
+                toast("Mode lokasi: aktifkan bagian lokasi dan isi titiknya.")
+                return@save false
+            }
+            LocationRules.set(this, "site_" + Rules.normalizeDomain(domain), locRule)
+            if (locRule != null && (!LocationTracker.hasPermission(this) || !LocationTracker.hasBackground(this))) askLocationPermission()
+            Store.setSiteCfg(this, domain, newCfg)
+            Store.addDomain(this, domain)
+            if (newCfg.twUse > 0 && newCfg.twWait > 0 && Build.VERSION.SDK_INT >= 33 &&
+                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+            ) {
+                requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1003)
+            }
+            render()
+            true
+        }
+        luxScreenDialog("", "ATURAN SITUS", domain, box, if (locked) "Tutup" else if (isNew) "Blokir situs ini" else "Simpan aturan",
+            emptyList(), strict, doSave, { render() }, "Situs", R.drawable.ic_nav_globe)
     }
 
     private fun renderFeeds(strict: Boolean) {
