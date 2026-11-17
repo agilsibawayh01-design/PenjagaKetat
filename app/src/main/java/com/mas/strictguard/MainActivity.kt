@@ -525,6 +525,43 @@ class MainActivity : Activity() {
         private fun ease(x: Float): Float = x * x * (3f - 2f * x)
     }
 
+    /** Gelombang emas lembut di sekitar perisai saat terlindungi. Hanya berjalan selama Beranda terlihat. */
+    private inner class PulseView(ctx: Context) : View(ctx) {
+        private val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            style = android.graphics.Paint.Style.STROKE
+            strokeWidth = dp(2).toFloat()
+            color = px("#D4AF6A")
+        }
+        private val loop = object : Runnable {
+            override fun run() {
+                invalidate()
+                if (isAttachedToWindow) postDelayed(this, 33L)
+            }
+        }
+
+        override fun onAttachedToWindow() {
+            super.onAttachedToWindow()
+            if (animOn()) post(loop)
+        }
+
+        override fun onDetachedFromWindow() {
+            removeCallbacks(loop)
+            super.onDetachedFromWindow()
+        }
+
+        override fun onDraw(c: android.graphics.Canvas) {
+            val now = System.currentTimeMillis()
+            val inner = dp(38).toFloat()
+            val outer = Math.min(width, height) / 2f - dp(1)
+            for (k in 0..1) {
+                val ph = ((now + k * 1600L) % 3200L) / 3200f
+                val e = 1f - (1f - ph) * (1f - ph)
+                p.alpha = ((1f - ph) * 110f).toInt()
+                c.drawCircle(width / 2f, height / 2f, inner + (outer - inner) * e, p)
+            }
+        }
+    }
+
     private inner class RingView(ctx: Context) : View(ctx) {
         var frac = 1f
         var big = ""
@@ -1212,7 +1249,18 @@ class MainActivity : Activity() {
         val same = lastScreen == screen
         lastScreen = screen
         scroll.post { scroll.scrollTo(0, if (same) keepY else 0) }
-        if (!same) {
+        if (!same && screen == "home" && animOn()) {
+            root.animate().cancel()
+            root.alpha = 1f
+            root.translationY = 0f
+            for (i in 0 until Math.min(root.childCount, 12)) {
+                val v = root.getChildAt(i)
+                v.alpha = 0f
+                v.translationY = dp(18).toFloat()
+                v.animate().alpha(1f).translationY(0f).setStartDelay(45L * i).setDuration(320L)
+                    .setInterpolator(android.view.animation.DecelerateInterpolator(1.6f)).start()
+            }
+        } else if (!same) {
             root.animate().cancel()
             root.alpha = 0f
             root.translationY = dp(14).toFloat()
@@ -1704,6 +1752,12 @@ class MainActivity : Activity() {
             setStroke(dp(2), Color.argb(150, 212, 175, 106))
         }
         ring.layoutParams = LinearLayout.LayoutParams(dp(76), dp(76))
+        ring.clipChildren = false
+        banner.clipChildren = false
+        outer.clipChildren = false
+        if (protectionOk) ring.addView(PulseView(this).apply {
+            layoutParams = android.widget.FrameLayout.LayoutParams(dp(112), dp(112), Gravity.CENTER)
+        })
         ring.addView(ImageView(this).apply {
             setImageResource(R.drawable.ic_nav_shield)
             setColorFilter(C_PRIMARY)
