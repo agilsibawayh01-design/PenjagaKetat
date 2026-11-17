@@ -456,6 +456,75 @@ class MainActivity : Activity() {
     }
 
     /** Cincin hitung mundur: lingkar abu-abu, busur emas sebesar sisa waktu, angka di tengah. */
+    /** False bila pengguna mematikan animasi di Pengaturan HP (Hapus animasi). */
+    private fun animOn(): Boolean = try {
+        android.provider.Settings.Global.getFloat(contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) > 0f
+    } catch (t: Throwable) {
+        true
+    }
+
+    /** Umpan balik sentuhan halus: tombol mengecil sedikit saat ditekan. */
+    private fun pressFx(v: View) {
+        v.setOnTouchListener { view, ev ->
+            if (animOn()) when (ev.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> view.animate().scaleX(0.97f).scaleY(0.97f).setDuration(90L).start()
+                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> view.animate().scaleX(1f).scaleY(1f).setDuration(140L).start()
+            }
+            false
+        }
+    }
+
+    /** Lingkaran napas: fase dihitung dari jam dinding (4 dtk tarik, 4 tahan, 6 hembus), digambar hanya saat terlihat. */
+    private inner class BreathView(ctx: Context) : View(ctx) {
+        var elapsedMs: () -> Long = { 0L }
+        private val ring = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            style = android.graphics.Paint.Style.STROKE
+            strokeWidth = dp(2).toFloat()
+            color = px("#D4AF6A")
+        }
+        private val fill = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            style = android.graphics.Paint.Style.FILL
+            color = px("#D4AF6A")
+            alpha = 46
+        }
+        private val loop = object : Runnable {
+            override fun run() {
+                invalidate()
+                if (isAttachedToWindow) postDelayed(this, 33L)
+            }
+        }
+
+        override fun onMeasure(w: Int, h: Int) {
+            setMeasuredDimension(View.MeasureSpec.getSize(w).coerceAtLeast(dp(180)), dp(200))
+        }
+
+        override fun onAttachedToWindow() {
+            super.onAttachedToWindow()
+            if (animOn()) post(loop)
+        }
+
+        override fun onDetachedFromWindow() {
+            removeCallbacks(loop)
+            super.onDetachedFromWindow()
+        }
+
+        override fun onDraw(c: android.graphics.Canvas) {
+            val t = (elapsedMs() % 14000L) / 1000f
+            val k = if (!animOn()) 0.8f else when {
+                t < 4f -> ease(t / 4f)
+                t < 8f -> 1f
+                else -> 1f - ease((t - 8f) / 6f)
+            }
+            val maxR = Math.min(width, height) / 2f - dp(6)
+            val r = maxR * (0.5f + 0.5f * k)
+            c.drawCircle(width / 2f, height / 2f, maxR, ring.apply { alpha = 50 })
+            c.drawCircle(width / 2f, height / 2f, r, fill)
+            c.drawCircle(width / 2f, height / 2f, r, ring.apply { alpha = 200 })
+        }
+
+        private fun ease(x: Float): Float = x * x * (3f - 2f * x)
+    }
+
     private inner class RingView(ctx: Context) : View(ctx) {
         var frac = 1f
         var big = ""
@@ -798,6 +867,7 @@ class MainActivity : Activity() {
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { topMargin = dp(8) }
             setOnClickListener { onClick() }
+            pressFx(this)
         }
 
     private fun smallButton(label: String, onClick: () -> Unit): Button =
@@ -1418,6 +1488,17 @@ class MainActivity : Activity() {
             box.addView(text(t, 14.5f, true, C_TEXT).apply { setPadding(0, dp(14), 0, 0) })
             box.addView(text(d, 12.5f, false, px("#A9A396")))
         }
+        val art = ImageView(this)
+        art.setImageResource(when (page) { 0 -> R.drawable.ic_nav_shield; 1 -> R.drawable.ic_ly_target; 2 -> R.drawable.ic_ly_eye; else -> R.drawable.ic_lock })
+        art.setColorFilter(C_PRIMARY)
+        art.background = bg(px("#10131A"), dp(40)).apply { setStroke(dp(1), px("#2A2F3B")) }
+        art.setPadding(dp(18), dp(18), dp(18), dp(18))
+        art.layoutParams = LinearLayout.LayoutParams(dp(80), dp(80)).apply { gravity = Gravity.CENTER_HORIZONTAL; topMargin = dp(8); bottomMargin = dp(6) }
+        box.addView(art)
+        if (animOn()) {
+            art.scaleX = 0.6f; art.scaleY = 0.6f; art.alpha = 0f
+            art.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(420L).setInterpolator(android.view.animation.OvershootInterpolator(1.4f)).start()
+        }
         when (page) {
             0 -> {
                 box.addView(text("Penjaga Ketat membantumu menjauh dari aplikasi, situs, dan konten yang ingin kamu hindari. Ia bekerja di HP ini saja, dan kamu yang menentukan aturannya.", 13f, false, C_SUB))
@@ -1447,6 +1528,12 @@ class MainActivity : Activity() {
                 item("Kalau dorongan datang", "Tekan Ruang Tenang di Beranda untuk langkah singkat: napas, gerak, pindah tempat. Gagal sekali bukan akhir, memulai lagi kapan pun itu boleh.")
                 item("Langkah pertama", "Buka tab Aplikasi dan pilih satu aplikasi yang ingin kamu kurangi. Itu cukup untuk hari ini.")
             }
+        }
+        if (animOn()) for (i in 1 until box.childCount) {
+            val v = box.getChildAt(i)
+            v.alpha = 0f
+            v.translationY = dp(10).toFloat()
+            v.animate().alpha(1f).translationY(0f).setStartDelay(60L + 30L * i).setDuration(260L).start()
         }
         luxScreenDialog("", "PANDUAN ${page + 1} DARI ${last + 1}", when (page) {
             0 -> "Selamat datang"; 1 -> "Cara kerjanya"; 2 -> "Izin yang dibutuhkan"; else -> "Siap mulai"
@@ -3367,6 +3454,10 @@ class MainActivity : Activity() {
                 val hint = text(if (st.breath) "" else "Lakukan sampai waktunya habis.", 16f, false, C_TEXT).apply { gravity = Gravity.CENTER }
                 urgeTv = tv
                 urgeHint = hint
+                if (st.breath) {
+                    val total = st.sec * 1000L
+                    put(BreathView(this).apply { elapsedMs = { (total - (urgeEnd - System.currentTimeMillis())).coerceAtLeast(0L) } })
+                }
                 put(tv)
                 put(hint)
                 put(text(Store.motivation(this), 12f, false, C_SUB).apply { gravity = Gravity.CENTER })
