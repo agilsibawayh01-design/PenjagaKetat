@@ -7,7 +7,7 @@ import android.content.Context
  * layar dikunci LOCK_MS. Peringatan mulai tampil di WARN_AT.
  */
 object Strikes {
-    const val WINDOW_MS = 10 * 60_000L
+    const val WINDOW_MS = 3 * 60_000L
     const val WARN_AT = 3
     const val LOCK_AT = 5
     const val LOCK_MS = 5 * 60_000L

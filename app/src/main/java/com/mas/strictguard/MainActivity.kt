@@ -1940,7 +1940,7 @@ class MainActivity : Activity() {
         val lockCard = newCard()
         root.addView(lockCard)
         lockCard.addView(text("Kunci layar bertahap", 15f, true))
-        lockCard.addView(text("5 layar blokir dalam 10 menit → terkunci 5 menit", 12f, false, C_SUB))
+        lockCard.addView(text("${Strikes.LOCK_AT} layar blokir dalam ${Strikes.WINDOW_MS / 60000L} menit → terkunci ${Strikes.LOCK_MS / 60000L} menit", 12f, false, C_SUB))
         eyebrow("ATURAN & MODE")
         homeGroup("ATURAN BLOKIR")
         homeRow(R.drawable.ic_ly_phone, "Aplikasi", "Blokir, batasi waktu, atau beri timer tunggu.", "${Store.apps(this).size} diblokir", px("#C99A45"), "apps")
