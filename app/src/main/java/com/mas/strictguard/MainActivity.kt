@@ -256,6 +256,7 @@ class MainActivity : Activity() {
         VpnManager.ensure(this)
         if (AppLock.needsAuth(this)) showLockScreen() else render()
         if (!Store.consent(this)) showConsent()
+        else if (!Store.guideDone(this)) showGuide(0)
         Updater.autoCheckIfDue(this)
     }
 
@@ -1341,6 +1342,11 @@ class MainActivity : Activity() {
     }
 
     private fun renderHelp() {
+        header("Panduan penggunaan")
+        put(button("Lihat panduan awal") {
+            guideShowing = false
+            showGuide(0)
+        })
         header("Terkunci di Mode Ketat?")
         put(infoNote("Mode Ketat memang dibuat sulit dimatikan, tetapi selalu ada jalan keluar yang sah. Tarik napas dulu, lalu coba urutan ini."))
         put(text("1. Jalur resmi", 14f, true, C_TEXT).apply { setPadding(0, dp(8), 0, 0) })
@@ -1393,8 +1399,68 @@ class MainActivity : Activity() {
         item("Ada batasnya", "Penjaga Ketat tidak bisa mencegah Safe Mode, ADB, atau factory reset, dan kadang salah blokir. Ini alat bantu kebiasaan, bukan layanan medis atau terapi.")
         luxScreenDialog("", "SEBELUM MULAI", "Persetujuan", box, "Saya mengerti dan setuju", emptyList(), false, {
             Store.setConsent(this, true)
+            handler.postDelayed({ if (!Store.guideDone(this)) showGuide(0) }, 300L)
             true
         }, { finish() }, "Keluar", R.drawable.ic_nav_shield)
+    }
+
+    private var guideShowing = false
+
+    /** Panduan awal 4 halaman: bisa dilewati kapan saja dan dibuka lagi dari Bantuan. */
+    private fun showGuide(page: Int) {
+        if (guideShowing && page == 0) return
+        guideShowing = true
+        val last = 3
+        val box = LinearLayout(this)
+        box.orientation = LinearLayout.VERTICAL
+        box.setPadding(dp(22), dp(6), dp(22), dp(16))
+        fun item(t: String, d: String) {
+            box.addView(text(t, 14.5f, true, C_TEXT).apply { setPadding(0, dp(14), 0, 0) })
+            box.addView(text(d, 12.5f, false, px("#A9A396")))
+        }
+        when (page) {
+            0 -> {
+                box.addView(text("Penjaga Ketat membantumu menjauh dari aplikasi, situs, dan konten yang ingin kamu hindari. Ia bekerja di HP ini saja, dan kamu yang menentukan aturannya.", 13f, false, C_SUB))
+                item("Yang dilakukannya", "Menutup aplikasi dan situs yang kamu pilih, mengenali konten dewasa, dan memberi jeda saat dorongan datang.")
+                item("Yang tidak dilakukannya", "Tidak mengawasimu untuk orang lain dan tidak mengirim isi layar ke mana pun.")
+                item("Panduan ini singkat", "Empat halaman, dan bisa dilewati. Kamu bisa membukanya lagi dari Lainnya, Bantuan darurat.")
+            }
+            1 -> {
+                box.addView(text("Tiga fitur inti. Mulailah dengan yang sederhana.", 13f, false, C_SUB))
+                item("1. Aplikasi", "Pilih aplikasi yang ingin ditutup, atau diberi batas waktu dan timer tunggu. Buka tab Aplikasi.")
+                item("2. Situs dan konten", "Blokir situs dan kata kunci, atau nyalakan kategori siap pakai. Buka tab Situs.")
+                item("3. Mode Ketat", "Membuat aturan di atas sulit dimatikan. Jangan nyalakan di hari pertama. Coba dulu 1 sampai 2 aturan, lihat apakah cocok, baru pilih metode keluar dan aktifkan Mode Ketat dengan sadar.")
+            }
+            2 -> {
+                box.addView(text("Agar bisa bekerja, Penjaga Ketat butuh beberapa izin. Semuanya bisa kamu cabut lewat Pengaturan HP.", 13f, false, C_SUB))
+                item("Aksesibilitas (utama)", "Dipakai untuk melihat aplikasi dan teks yang terbuka, lalu menutup yang melanggar aturanmu. Teks tidak disimpan atau dikirim.")
+                box.addView(ghostButton("Buka Pengaturan Aksesibilitas") { healthFix("acc") }.apply { (layoutParams as? LinearLayout.LayoutParams)?.topMargin = dp(8) })
+                box.addView(text("Kalau tombol Penjaga Ketat abu-abu di sana: buka Info aplikasi Penjaga Ketat, tekan titik tiga di kanan atas, pilih Izinkan pengaturan terbatas, lalu ulangi.", 12f, false, C_SUB).apply { setPadding(0, dp(8), 0, 0) })
+                item("Akses pemakaian dan notifikasi", "Untuk batas waktu harian dan pengingat.")
+                box.addView(ghostButton("Buka Akses pemakaian") { healthFix("usage") })
+                box.addView(ghostButton("Izinkan notifikasi") { healthFix("notif") })
+                item("Bisa menyusul", "Administrator perangkat dan VPN DNS diminta nanti, saat kamu menyalakan fitur yang memerlukannya. Daftar status ada di Beranda.")
+            }
+            else -> {
+                box.addView(text("Dua hal terakhir sebelum mulai.", 13f, false, C_SUB))
+                item("Kalau terkunci di Mode Ketat", "Selalu ada jalan keluar yang sah tanpa komputer. Caranya ada di Lainnya, Bantuan darurat.")
+                item("Kalau dorongan datang", "Tekan Ruang Tenang di Beranda untuk langkah singkat: napas, gerak, pindah tempat. Gagal sekali bukan akhir, memulai lagi kapan pun itu boleh.")
+                item("Langkah pertama", "Buka tab Aplikasi dan pilih satu aplikasi yang ingin kamu kurangi. Itu cukup untuk hari ini.")
+            }
+        }
+        luxScreenDialog("", "PANDUAN ${page + 1} DARI ${last + 1}", when (page) {
+            0 -> "Selamat datang"; 1 -> "Cara kerjanya"; 2 -> "Izin yang dibutuhkan"; else -> "Siap mulai"
+        }, box, if (page == last) "Mulai" else "Lanjut", emptyList(), false, {
+            if (page == last) {
+                Store.setGuideDone(this, true)
+                guideShowing = false
+            } else handler.postDelayed({ showGuide(page + 1) }, 250L)
+            true
+        }, {
+            Store.setGuideDone(this, true)
+            guideShowing = false
+            render()
+        }, "Lewati", R.drawable.ic_nav_shield)
     }
 
     private fun screenTitle(s: String): String = when (s) {

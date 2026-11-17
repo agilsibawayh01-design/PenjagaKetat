@@ -551,6 +551,8 @@ object Store {
     }
     fun consent(c: Context): Boolean = sp(c).getBoolean("consent_v1", false)
     fun setConsent(c: Context, v: Boolean) { sp(c).edit().putBoolean("consent_v1", v).commit() }
+    fun guideDone(c: Context): Boolean = sp(c).getBoolean("guide_v1", false)
+    fun setGuideDone(c: Context, v: Boolean) { sp(c).edit().putBoolean("guide_v1", v).commit() }
     fun safeSearch(c: Context): Boolean = sp(c).getBoolean("safe_search", true)
     fun setSafeSearch(c: Context, v: Boolean) { sp(c).edit().putBoolean("safe_search", v).commit() }
 
