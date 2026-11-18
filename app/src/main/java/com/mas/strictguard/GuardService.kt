@@ -420,7 +420,7 @@ class GuardService : AccessibilityService() {
         if (now - nsfwLockScreenAt >= NSFW_LOCK_SCREEN_COOLDOWN_MS) {
             nsfwLockScreenAt = now
             // Membuka lagi aplikasi yang sedang dikunci juga dihitung sebagai layar blokir muncul (kunci layar 5 menit pada kali ke-5).
-            Strikes.record(this)
+            Strikes.record(this, "nsfwlock:$pkg")
             val locked = Strikes.lockLeftMs(this) > 0L
             handler.postDelayed({
                 try {
@@ -1578,7 +1578,7 @@ class GuardService : AccessibilityService() {
         if (backing || now - lastBlockAt < 800L) return
         var mode = mode0
         // Layar blokir berulang dalam waktu dekat = ada upaya akses konten terlarang: kunci layar sementara.
-        if (mode0 != "lock" && mode0 != "pause" && mode0 != "thermal" && Strikes.record(this) >= Strikes.LOCK_AT) mode = "lock"
+        if (mode0 != "lock" && mode0 != "pause" && mode0 != "thermal" && Strikes.record(this, "$mode0:$pkg") >= Strikes.LOCK_AT) mode = "lock"
         lastBlockAt = now
         backing = true
         if (mode == "screen_keyword" || mode == "content" || mode == "typed" || mode == "nsfw" || mode == "lock") showShield()

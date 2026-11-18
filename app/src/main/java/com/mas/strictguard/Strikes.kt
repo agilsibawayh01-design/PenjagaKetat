@@ -27,10 +27,22 @@ object Strikes {
         sp(c).edit().putString("strikes", list.joinToString(",")).commit()
     }
 
-    /** Catat satu kemunculan layar blokir. Mengembalikan jumlah dalam jendela waktu (termasuk yang ini). */
-    fun record(c: Context): Int {
+    /** Pemicu yang sama (mode + aplikasi) dalam jeda ini dianggap satu kejadian, bukan beberapa upaya. */
+    private const val SAME_MS = 15_000L
+
+    /**
+     * Catat satu kemunculan layar blokir. [key] mengidentifikasi pemicunya; pemicu yang sama dalam [SAME_MS]
+     * tidak dihitung lagi. Mengembalikan jumlah dalam jendela waktu (termasuk yang ini).
+     */
+    fun record(c: Context, key: String = ""): Int {
         val now = System.currentTimeMillis()
+        val p = sp(c)
+        if (key.isNotEmpty() && p.getString("strike_key", "") == key && now - p.getLong("strike_key_at", 0L) in 0..SAME_MS) {
+            return load(c, now).size
+        }
+        if (key.isNotEmpty()) p.edit().putString("strike_key", key).putLong("strike_key_at", now).commit()
         val list = load(c, now) + now
+        try { Store.log(c, "Layar blokir ke-${list.size} ($key)") } catch (t: Throwable) { }
         if (list.size >= LOCK_AT) {
             sp(c).edit().putLong("strike_lock_until", now + LOCK_MS).putString("strikes", "").commit()
         } else {

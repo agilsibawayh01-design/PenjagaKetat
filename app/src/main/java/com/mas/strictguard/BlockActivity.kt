@@ -199,6 +199,7 @@ class BlockActivity : Activity() {
             text = "Kembali ke beranda"
             setOnClickListener { closeScreen() }
         }
+        closeBtnRef = closeBtn
         styleBtn(openBtn, true)
         styleBtn(emgBtn, false)
         styleBtn(closeBtn, true)
@@ -250,6 +251,9 @@ class BlockActivity : Activity() {
             "content" -> info.text = "Konten ini diblokir oleh Penjaga Ketat." + causeLine(hitWord, hitText, hitWhere)
             "lock" -> {
                 title.text = "Layar terkunci"
+                // Terkunci penuh: tidak ada tombol yang bisa ditekan, dan tombol Kembali tidak berfungsi.
+                closeBtnRef?.visibility = View.GONE
+                emgBtn.visibility = View.GONE
                 showLockCountdown()
             }
             "tgwork" -> info.text = "Mode Telegram Kerja: chat ini tidak ada di daftar yang boleh dibuka.\nTelegram tetap bisa dipakai untuk chat kerja yang kamu daftarkan."
@@ -350,6 +354,7 @@ class BlockActivity : Activity() {
         val left = Strikes.lockLeftMs(this)
         if (left <= 0L) {
             info.text = "Kunci layar selesai. Fokus pada tujuanmu."
+            closeBtnRef?.visibility = View.VISIBLE
             return
         }
         val sec = left / 1000L
@@ -549,6 +554,8 @@ class BlockActivity : Activity() {
         finish()
     }
 
+    private var closeBtnRef: Button? = null
+
     private fun goHome() {
         val i = Intent(Intent.ACTION_MAIN)
             .addCategory(Intent.CATEGORY_HOME)
@@ -564,6 +571,7 @@ class BlockActivity : Activity() {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
+        if (modeName == "lock" && Strikes.lockLeftMs(this) > 0L) return
         closeScreen()
     }
 
