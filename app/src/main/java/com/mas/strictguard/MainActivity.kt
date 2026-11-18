@@ -1494,7 +1494,7 @@ class MainActivity : Activity() {
         put(infoNote("VPN DNS: memeriksa nama situs yang dibuka di HP ini untuk memblokir situs terlarang dan menyalakan SafeSearch. Lalu lintas tidak dikirim ke pihak lain."))
         put(infoNote("Administrator perangkat: mencegah Penjaga Ketat dicopot saat Mode Ketat aktif. Lokasi: hanya untuk Zona Ketat, bila kamu menyalakannya."))
         header("Yang tidak bisa dicegah")
-        put(infoNote("Penjaga Ketat tidak bisa mencegah: Force Stop lewat ADB, pencabutan izin lewat ADB, profil kerja, atau factory reset. Menu Safe Mode di menu daya ditutup saat Mode Ketat aktif, tetapi Safe Mode lewat tombol fisik saat HP dinyalakan tidak bisa dicegah. Ia hanya bisa mendeteksi dan memberi tahu. Salah blokir juga bisa terjadi."))
+        put(infoNote("Penjaga Ketat tidak bisa mencegah: Force Stop lewat ADB, pencabutan izin lewat ADB, profil kerja, atau factory reset. Menu Safe Mode di menu daya ditutup di semua mode, tetapi Safe Mode lewat tombol fisik saat HP dinyalakan tidak bisa dicegah. Ia hanya bisa mendeteksi dan memberi tahu. Salah blokir juga bisa terjadi."))
         put(infoNote("Penjaga Ketat adalah alat bantu kebiasaan, bukan layanan medis atau terapi."))
         if (ver.isNotEmpty()) put(text("Versi $ver", 12f, false, px("#7C7768")).apply { setPadding(0, dp(8), 0, 0) })
     }

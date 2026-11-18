@@ -792,7 +792,7 @@ class GuardService : AccessibilityService() {
         // Cek latch sebelum filter package. Jika pengguna kembali ke aplikasi yang
         // memicu deteksi, langsung keluarkan lagi tanpa menunggu screenshot berikutnya.
         if (enforceNsfwAppLock(pkg)) return
-        if (pkg == "com.android.systemui" && Store.strictOn(this)) closeSafeModePrompt(event)
+        if (pkg == "com.android.systemui") closeSafeModePrompt(event)
         if (pkg == packageName || pkg in Config.IGNORED || pkg in inputMethodPackages) return
         fgPkg = pkg
         if (pkg == BrowserStoreGuard.STORE) {
@@ -808,7 +808,7 @@ class GuardService : AccessibilityService() {
     }
 
     /**
-     * Mode Ketat: tutup dialog "mulai ulang ke Safe Mode" yang muncul dari menu daya (tahan Matikan).
+     * Semua mode (normal maupun Mode Ketat): tutup dialog "mulai ulang ke Safe Mode" yang muncul dari menu daya (tahan Matikan).
      * Upaya terbaik lewat teks dialog; tidak bisa mencegah Safe Mode lewat tombol fisik saat HP dinyalakan.
      */
     private var lastSafeModeCloseAt = 0L
@@ -828,7 +828,7 @@ class GuardService : AccessibilityService() {
             if (s.contains("safe mode") || s.contains("mode aman") || s.contains("modus aman")) {
                 lastSafeModeCloseAt = now
                 performGlobalAction(GLOBAL_ACTION_HOME)
-                Store.log(this, "Dialog Safe Mode ditutup (Mode Ketat)")
+                Store.log(this, "Dialog Safe Mode ditutup")
             }
         } catch (t: Throwable) {
             // jangan pernah membuat service crash
