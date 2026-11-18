@@ -19,6 +19,13 @@ import java.nio.ByteOrder
 object NsfwAi {
     const val THRESHOLD = 0.9f
 
+    /** Ambang aplikasi umum, sedikit lebih tinggi untuk mengurangi salah blokir (mis. foto anak berpakaian, skor sekitar 0,93). */
+    const val GENERAL_THRESHOLD = 0.95f
+
+    /** Telegram tetap memakai ambang ketat THRESHOLD; aplikasi lain memakai GENERAL_THRESHOLD. */
+    fun thresholdFor(pkg: String): Float =
+        if (pkg.startsWith("org.telegram.") || pkg == "org.thunderdog.challegram") THRESHOLD else GENERAL_THRESHOLD
+
     @Volatile var loadError = ""
     @Volatile var scans = 0
     @Volatile var hits = 0

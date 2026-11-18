@@ -514,7 +514,7 @@ class GuardService : AccessibilityService() {
      */
     private fun recordNsfwSample(pkg: String, score: Float, src: NsfwSource.Src?) {
         // Satu sampel positif saja sudah cukup untuk menutup jendela PiP (konfirmasi blokir tetap butuh 2 dari 3).
-        if (score >= NsfwAi.THRESHOLD) armPip()
+        if (score >= NsfwAi.thresholdFor(pkg)) armPip()
         if (nsfwLastPackage != pkg || score >= 0.4f) {
             nsfwLowStreak = 0
             nsfwIntervalMs = NSFW_SCAN_INTERVAL_MS
@@ -529,7 +529,7 @@ class GuardService : AccessibilityService() {
         }
         nsfwSamples.addLast(Triple(pkg, score, src))
         while (nsfwSamples.size > 3) nsfwSamples.removeFirst()
-        val hitList = nsfwSamples.filter { it.first == pkg && it.second >= NsfwAi.THRESHOLD }
+        val hitList = nsfwSamples.filter { it.first == pkg && it.second >= NsfwAi.thresholdFor(pkg) }
         val hits = hitList.size
         val now = System.currentTimeMillis()
         if (hits >= 2 && now - nsfwLastBlockAt >= 30000L) {
@@ -545,7 +545,7 @@ class GuardService : AccessibilityService() {
         armPip()
         if (backing) return
         NsfwAi.hits++
-        NsfwAi.hitInfo = "Skor " + String.format("%.2f", score) + " (ambang " + String.format("%.2f", NsfwAi.THRESHOLD) + "), " + NsfwAi.lastWhere + ", aplikasi " + p
+        NsfwAi.hitInfo = "Skor " + String.format("%.2f", score) + " (ambang " + String.format("%.2f", NsfwAi.thresholdFor(p)) + "), " + NsfwAi.lastWhere + ", aplikasi " + p
         Store.log(this, "Gambar AI: " + NsfwAi.hitInfo)
         // Bila gambar berasal dari jendela PiP di layar utama, kunci aplikasi pemilik PiP, bukan peluncur.
         val owner = pipOwnerPkg()
