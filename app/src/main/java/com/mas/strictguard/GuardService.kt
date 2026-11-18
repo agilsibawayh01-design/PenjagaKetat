@@ -458,7 +458,7 @@ class GuardService : AccessibilityService() {
         if (!pm.isInteractive) return
         val p = fgPkg
         if (p.isEmpty() || p == packageName || p == "com.android.systemui" ||
-            p in Config.PROTECTED || p in inputMethodPackages) return
+            p in Config.PROTECTED || p in Config.SCAN_EXEMPT || p in inputMethodPackages) return
         val now = System.currentTimeMillis()
         if (now - nsfwLastScanAt < nsfwIntervalMs - 200L) return
         // Hemat baterai: hanya aplikasi yang bisa memuat media dan aplikasi baru; PiP tetap dipindai.
@@ -986,6 +986,9 @@ class GuardService : AccessibilityService() {
             startActivity(pi)
             return
         }
+
+        // Aplikasi pendamping milik sendiri (daftar kata/channel terlarang tampil di layarnya): lewati pemindaian isi.
+        if (pkg in Config.SCAN_EXEMPT) return
 
         // 2. Riwayat situs browser.
         // Ambil domain utama dari address bar sebelum pemeriksaan keyword.

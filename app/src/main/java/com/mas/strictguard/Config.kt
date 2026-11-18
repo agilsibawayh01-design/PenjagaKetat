@@ -6,6 +6,13 @@ object Config {
 
     val IGNORED: Set<String> = setOf("com.android.systemui")
 
+    /**
+     * Aplikasi pendamping buatan sendiri yang layarnya memuat daftar kata/channel terlarang (milikmu sendiri).
+     * Tidak dipindai kata kunci, situs, maupun AI gambar, supaya membukanya tidak memicu blokir. Aturan blokir
+     * aplikasi, batas waktu, dan perlindungan uninstall untuk paket ini tetap berlaku seperti biasa.
+     */
+    val SCAN_EXEMPT: Set<String> = setOf("com.mas.tgblocker")
+
     /** Layar sistem tempat orang biasanya mencopot / mematikan aplikasi. Dijaga saat Mode Ketat aktif. */
     val PROTECTED: Set<String> = setOf(
         "com.android.settings",
