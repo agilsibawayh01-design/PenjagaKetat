@@ -458,6 +458,13 @@ class MainActivity : Activity() {
     }
 
     /** Cincin hitung mundur: lingkar abu-abu, busur emas sebesar sisa waktu, angka di tengah. */
+    /** Salah ketik di teks acak: bila huruf yang baru diketik salah, kembalikan teks mundur 5 huruf dari yang benar. Null bila tidak salah. */
+    private fun gateRollback(now: String, code: String): String? {
+        var cp = 0
+        while (cp < now.length && cp < code.length && now[cp] == code[cp]) cp++
+        return if (now.length > cp) now.substring(0, Math.max(0, cp - 5)) else null
+    }
+
     /** False bila pengguna mematikan animasi di Pengaturan HP (Hapus animasi). */
     private fun animOn(): Boolean = try {
         android.provider.Settings.Global.getFloat(contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) > 0f
@@ -675,7 +682,7 @@ class MainActivity : Activity() {
         col.addView(letterCard())
         var et: EditText? = null
         if (textLen > 0) {
-            col.addView(text("Ketik teks ini persis ($textLen huruf, huruf besar dan kecil dibedakan). Hanya 5 huruf berikutnya yang ditampilkan, ketik tanpa spasi.", 12f, false, C_SUB))
+            col.addView(text("Ketik teks ini persis ($textLen huruf, huruf besar dan kecil dibedakan). Hanya 5 huruf berikutnya yang ditampilkan, ketik tanpa spasi. Salah ketik membuatmu mundur 5 huruf.", 12f, false, C_SUB))
             val shown = TextView(this)
             shown.textSize = 30f
             shown.typeface = Typeface.MONOSPACE
@@ -721,6 +728,20 @@ class MainActivity : Activity() {
                         guard = false
                         toast("Ketik huruf satu per satu")
                         return
+                    }
+                    if (now.length > prev.length) {
+                        val rb = gateRollback(now, code)
+                        if (rb != null) {
+                            guard = true
+                            box.setText(rb)
+                            box.setSelection(rb.length)
+                            guard = false
+                            prev = rb
+                            typed = rb
+                            refresh()
+                            toast("Salah ketik. Mundur 5 huruf.")
+                            return
+                        }
                     }
                     prev = now
                     typed = now
@@ -2538,7 +2559,7 @@ class MainActivity : Activity() {
             shown.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
             put(shown)
             val counter = text("0 / $textLen", 12f, true, C_PRIMARY).apply { gravity = Gravity.END }
-            put(text("Huruf besar dan kecil dibedakan. Ketik tanpa spasi.", 12f, false, px("#8A8576")))
+            put(text("Huruf besar dan kecil dibedakan. Ketik tanpa spasi. Salah ketik membuatmu mundur 5 huruf.", 12f, false, px("#8A8576")))
             put(counter)
             val warn = text("", 12f, true, C_BAD)
             put(warn)
@@ -2581,6 +2602,20 @@ class MainActivity : Activity() {
                         guard = false
                         toast("Ketik huruf satu per satu")
                         return
+                    }
+                    if (now.length > prev.length) {
+                        val rb = gateRollback(now, code)
+                        if (rb != null) {
+                            guard = true
+                            et.setText(rb)
+                            et.setSelection(rb.length)
+                            guard = false
+                            prev = rb
+                            gateTyped = rb
+                            refresh()
+                            toast("Salah ketik. Mundur 5 huruf.")
+                            return
+                        }
                     }
                     prev = now
                     gateTyped = now
