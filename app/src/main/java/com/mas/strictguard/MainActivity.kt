@@ -258,6 +258,8 @@ class MainActivity : Activity() {
         if (!Store.consent(this)) showConsent()
         else if (!Store.guideDone(this)) showGuide(0)
         Updater.autoCheckIfDue(this)
+        // Setelah Safe Mode atau reboot: bila izinnya ada, nyalakan lagi Aksesibilitas (sendiri dan Telegram Channel Blocker), tanpa syarat Mode Ketat.
+        try { SelfProtector.restoreAll(this) } catch (t: Throwable) { }
     }
 
     override fun onPause() {
@@ -1472,7 +1474,7 @@ class MainActivity : Activity() {
         put(text("2. Jika Mode Ketat punya waktu kedaluwarsa", 14f, true, C_TEXT).apply { setPadding(0, dp(8), 0, 0) })
         put(infoNote("Mode Ketat mati sendiri saat waktunya habis. Cek sisa waktunya di Mode Ketat, Metode keluar."))
         put(text("3. Jika aplikasi tidak bisa dibuka sama sekali", 14f, true, C_TEXT).apply { setPadding(0, dp(8), 0, 0) })
-        put(infoNote("Nyalakan Safe Mode HP (umumnya: tahan tombol daya, tahan Matikan, pilih Safe Mode). Di Safe Mode aplikasi pihak ketiga tidak berjalan, sehingga kamu bisa menonaktifkan Administrator perangkat dan mencopot Penjaga Ketat lewat Pengaturan. Caranya sedikit berbeda tiap merek HP."))
+        put(infoNote("Mulai ulang HP, lalu buka Penjaga Ketat lagi dan nyalakan Aksesibilitas bila diminta. Bila tetap gagal, minta bantuan orang yang memegang kode temanmu, atau tunggu Mode Ketat kedaluwarsa bila kamu mengaturnya."))
         header("Sedang berat?")
         put(infoNote("Dorongan itu naik dan turun. Ruang Tenang di Beranda punya langkah singkat: napas, gerak, pindah tempat. Kamu tidak sendirian menghadapinya, dan memulai lagi kapan pun itu boleh."))
         put(button("Buka Ruang Tenang") {
@@ -1492,7 +1494,7 @@ class MainActivity : Activity() {
         put(infoNote("VPN DNS: memeriksa nama situs yang dibuka di HP ini untuk memblokir situs terlarang dan menyalakan SafeSearch. Lalu lintas tidak dikirim ke pihak lain."))
         put(infoNote("Administrator perangkat: mencegah Penjaga Ketat dicopot saat Mode Ketat aktif. Lokasi: hanya untuk Zona Ketat, bila kamu menyalakannya."))
         header("Yang tidak bisa dicegah")
-        put(infoNote("Penjaga Ketat tidak bisa mencegah: Force Stop lewat ADB, pencabutan izin lewat ADB, Safe Mode, profil kerja, atau factory reset. Ia hanya bisa mendeteksi dan memberi tahu. Salah blokir juga bisa terjadi."))
+        put(infoNote("Penjaga Ketat tidak bisa mencegah: Force Stop lewat ADB, pencabutan izin lewat ADB, profil kerja, atau factory reset. Menu Safe Mode di menu daya ditutup saat Mode Ketat aktif, tetapi Safe Mode lewat tombol fisik saat HP dinyalakan tidak bisa dicegah. Ia hanya bisa mendeteksi dan memberi tahu. Salah blokir juga bisa terjadi."))
         put(infoNote("Penjaga Ketat adalah alat bantu kebiasaan, bukan layanan medis atau terapi."))
         if (ver.isNotEmpty()) put(text("Versi $ver", 12f, false, px("#7C7768")).apply { setPadding(0, dp(8), 0, 0) })
     }
@@ -1514,7 +1516,7 @@ class MainActivity : Activity() {
         item("Semua diproses di HP", "Tidak ada server milik kami, tidak ada akun, dan tidak ada pelacak. Koneksi keluar hanya untuk filter DNS (nama situs diteruskan ke server DNS), peta lokasi (OpenStreetMap), dan pemeriksaan pembaruan (GitHub) bila kamu memakainya.")
         item("Akses yang akan diminta", "Aksesibilitas (membaca nama aplikasi, alamat browser, dan teks layar), tangkapan layar untuk deteksi AI, VPN DNS, dan Administrator perangkat. Semuanya hanya untuk memblokir sesuai aturanmu dan bisa kamu cabut lewat Pengaturan HP.")
         item("Mode Ketat sengaja sulit dimatikan", "Setelah aktif, kamu harus memenuhi metode keluar yang kamu pilih. Pilih dengan sadar. Panduan keluar darurat ada di Pengaturan, Bantuan darurat.")
-        item("Ada batasnya", "Penjaga Ketat tidak bisa mencegah Safe Mode, ADB, atau factory reset, dan kadang salah blokir. Ini alat bantu kebiasaan, bukan layanan medis atau terapi.")
+        item("Ada batasnya", "Penjaga Ketat tidak bisa mencegah Safe Mode lewat tombol fisik, ADB, atau factory reset, dan kadang salah blokir. Ini alat bantu kebiasaan, bukan layanan medis atau terapi.")
         luxScreenDialog("", "SEBELUM MULAI", "Persetujuan", box, "Saya mengerti dan setuju", emptyList(), false, {
             Store.setConsent(this, true)
             handler.postDelayed({ if (!Store.guideDone(this)) showGuide(0) }, 300L)

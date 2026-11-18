@@ -69,6 +69,54 @@ object SelfProtector {
     @Volatile
     private var lastTry = 0L
 
+    /** Aplikasi pendamping yang aksesibilitasnya juga dipulihkan (Telegram Channel Blocker). */
+    private val COMPANIONS = listOf("com.mas.tgblocker")
+    @Volatile
+    private var lastCompanionTry = 0L
+
+    /**
+     * Menyalakan lagi aksesibilitas aplikasi pendamping bila mati (mis. setelah Safe Mode). Butuh WRITE_SECURE_SETTINGS.
+     * Tidak dilakukan saat BankSwitch menjeda layanan karena aplikasi bank terbuka.
+     */
+    fun reenableCompanions(c: Context) {
+        if (!canWriteSecure(c) || bankPaused(c)) return
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (lastCompanionTry != 0L && now >= lastCompanionTry && now - lastCompanionTry < 10_000L) return
+        lastCompanionTry = now
+        try {
+            val cur = entries(c).toMutableList()
+            var changed = false
+            for (pkg in COMPANIONS) {
+                try { c.packageManager.getPackageInfo(pkg, 0) } catch (t: Throwable) { continue }
+                val svcs = c.packageManager.queryIntentServices(
+                    android.content.Intent("android.accessibilityservice.AccessibilityService").setPackage(pkg), 0
+                )
+                for (r in svcs) {
+                    val si = r.serviceInfo ?: continue
+                    val flat = ComponentName(si.packageName, si.name).flattenToString()
+                    if (cur.none { ComponentName.unflattenFromString(it)?.packageName == pkg }) {
+                        cur.add(flat)
+                        changed = true
+                        Store.log(c, "Aksesibilitas $pkg mati, dinyalakan kembali otomatis")
+                    }
+                }
+            }
+            if (changed) {
+                Settings.Secure.putString(c.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, cur.joinToString(":"))
+                Settings.Secure.putInt(c.contentResolver, Settings.Secure.ACCESSIBILITY_ENABLED, 1)
+            }
+        } catch (t: Throwable) {
+            // abaikan
+        }
+    }
+
+    /** Pemulihan umum (tanpa syarat Mode Ketat): aksesibilitas sendiri dan aplikasi pendamping. */
+    fun restoreAll(c: Context) {
+        if (!canWriteSecure(c) || bankPaused(c)) return
+        reenableAccessibility(c)
+        reenableCompanions(c)
+    }
+
     private const val NOTIF_KEY = "enabled_notification_listeners"
 
     fun notifListenerOn(c: Context): Boolean {

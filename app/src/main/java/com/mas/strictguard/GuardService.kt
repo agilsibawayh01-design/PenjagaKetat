@@ -64,6 +64,7 @@ class GuardService : AccessibilityService() {
     private var blockUnknownNow = false
     private var nightLocked: Set<String> = emptySet()
     private var thermalLevel = 0
+    private var lastCompanionAt = 0L
     private var thermalTickOn = false
     private val thermalRunnable = object : Runnable {
         override fun run() {
@@ -734,6 +735,10 @@ class GuardService : AccessibilityService() {
         blockUnknownNow = Store.blockUnknownInstall(this)
         nightLocked = Night.lockedPackages(this)
         thermalLevel = Thermal.update(this, now)
+        if (now - lastCompanionAt > 60_000L) {
+            lastCompanionAt = now
+            SelfProtector.reenableCompanions(this)
+        }
         if (thermalLevel > 0 && !thermalTickOn) {
             thermalTickOn = true
             handler.postDelayed(thermalRunnable, 30_000L)
@@ -787,6 +792,7 @@ class GuardService : AccessibilityService() {
         // Cek latch sebelum filter package. Jika pengguna kembali ke aplikasi yang
         // memicu deteksi, langsung keluarkan lagi tanpa menunggu screenshot berikutnya.
         if (enforceNsfwAppLock(pkg)) return
+        if (pkg == "com.android.systemui" && Store.strictOn(this)) closeSafeModePrompt(event)
         if (pkg == packageName || pkg in Config.IGNORED || pkg in inputMethodPackages) return
         fgPkg = pkg
         if (pkg == BrowserStoreGuard.STORE) {
@@ -798,6 +804,45 @@ class GuardService : AccessibilityService() {
             handle(event, pkg)
         } catch (t: Throwable) {
             // jangan pernah membuat service crash
+        }
+    }
+
+    /**
+     * Mode Ketat: tutup dialog "mulai ulang ke Safe Mode" yang muncul dari menu daya (tahan Matikan).
+     * Upaya terbaik lewat teks dialog; tidak bisa mencegah Safe Mode lewat tombol fisik saat HP dinyalakan.
+     */
+    private var lastSafeModeCloseAt = 0L
+    private fun closeSafeModePrompt(event: AccessibilityEvent) {
+        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && event.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return
+        val now = System.currentTimeMillis()
+        if (now - lastSafeModeCloseAt < 700L) return
+        try {
+            val sb = StringBuilder()
+            for (t in event.text) sb.append(t).append(' ')
+            val root = rootInActiveWindow
+            if (root != null) {
+                collectTexts(root, sb, 0)
+                root.recycle()
+            }
+            val s = sb.toString().lowercase()
+            if (s.contains("safe mode") || s.contains("mode aman") || s.contains("modus aman")) {
+                lastSafeModeCloseAt = now
+                performGlobalAction(GLOBAL_ACTION_HOME)
+                Store.log(this, "Dialog Safe Mode ditutup (Mode Ketat)")
+            }
+        } catch (t: Throwable) {
+            // jangan pernah membuat service crash
+        }
+    }
+
+    private fun collectTexts(n: android.view.accessibility.AccessibilityNodeInfo, sb: StringBuilder, depth: Int) {
+        if (depth > 12 || sb.length > 2000) return
+        n.text?.let { sb.append(it).append(' ') }
+        n.contentDescription?.let { sb.append(it).append(' ') }
+        for (i in 0 until n.childCount) {
+            val c = n.getChild(i) ?: continue
+            collectTexts(c, sb, depth + 1)
+            c.recycle()
         }
     }
 

@@ -22,9 +22,9 @@ class BootReceiver : BroadcastReceiver() {
                 ScheduleNotifier.snapshot(context)
                 ScheduleNotifier.rearm(context)
             }
+            SelfProtector.restoreAll(context)
             if (Store.strictRaw(context)) {
                 Store.log(context, "Pemulihan setelah boot/update")
-                SelfProtector.reenableAccessibility(context)
                 WatchdogService.start(context)
             }
         } catch (t: Throwable) {
