@@ -23,7 +23,8 @@ object Backup {
     private val SET_KEYS = setOf(
         "apps", "browsers", "domains", "keywords", "keywords_url", "keywords_screen",
         "keywords_builtin_disabled", "newapps", "prot", "vpn_excl", "store_names",
-        "focus_ba", "focus_bs", "focus_bc", "focus_aa", "focus_as", "pause_apps", "channels"
+        "focus_ba", "focus_bs", "focus_bc", "focus_aa", "focus_as", "pause_apps", "channels",
+        "tg_allow"
     )
 
     /** Himpunan yang aman digabung (union) saat Mode Ketat aktif: menambah = memperketat. */
@@ -35,7 +36,8 @@ object Backup {
         "vpn_doh", "vpn_excl_bank", "vpn_on",
         "strict_sched", "exp_min", "exit_wait_on", "exit_delay", "exit_text_len",
         "profiles", "keyword_split_v21", "seeded", "sched_notify", "warn_before", "store_block", "block_ip_urls",
-        "block_unknown_install", "night_on", "night_start", "night_end", "night_lock_play", "night_lock_settings", "letter", "nsfw_ai"
+        "block_unknown_install", "night_on", "night_start", "night_end", "night_lock_play", "night_lock_settings", "letter", "nsfw_ai",
+        "tgwork_on", "safe_search", "pause_min"
     )
 
     private val PREFIXES = listOf("cfg_", "sitecfg_", "cat_", "loc_", "feat_")
@@ -203,9 +205,9 @@ object Backup {
                             added++
                         }
                     }
-                    k == "block_unknown_install" || k == "nsfw_ai" || k == "night_on" || k == "night_lock_play" || k == "night_lock_settings" -> {
+                    k == "block_unknown_install" || k == "nsfw_ai" || k == "night_on" || k == "night_lock_play" || k == "night_lock_settings" || k == "tgwork_on" || k == "safe_search" -> {
                         // hanya boleh menyalakan (memperketat) saat Mode Ketat aktif
-                        if (o.opt("v") == true && !p.getBoolean(k, k == "night_on" || k == "nsfw_ai")) {
+                        if (o.opt("v") == true && !p.getBoolean(k, k == "night_on" || k == "nsfw_ai" || k == "safe_search")) {
                             e.putBoolean(k, true)
                             added++
                         }
