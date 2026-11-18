@@ -3105,6 +3105,11 @@ class MainActivity : Activity() {
         val secure = SelfProtector.canWriteSecure(this)
         val usage = Foreground.hasUsageAccess(this)
         status(secure, "Pemulih otomatis aksesibilitas (izin WRITE_SECURE_SETTINGS)")
+        switchLine("Perisai awal boot", "Layar tertutup ${BootShield.SECONDS} detik setelah HP menyala. Hanya bisa diubah saat Mode Ketat mati.",
+            BootShield.enabled(this), Store.strictOn(this)) { v ->
+            BootShield.setEnabled(this, v)
+            render()
+        }
         status(usage, "Akses Penggunaan (mengenali aplikasi bank terbuka)")
         status(WatchdogService.running, "Pengawas berjalan (hanya saat Mode Ketat aktif)")
         if (!secure) {

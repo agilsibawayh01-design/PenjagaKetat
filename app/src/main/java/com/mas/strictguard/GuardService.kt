@@ -689,6 +689,7 @@ class GuardService : AccessibilityService() {
             // Pemulihan lock tidak boleh menggagalkan service.
         }
         instance = this
+        BootShield.maybeShow(this)
         Store.seed(this)
         try {
             if (watcher == null) watcher = PackageWatcher.register(this)
@@ -718,6 +719,7 @@ class GuardService : AccessibilityService() {
         handler.removeCallbacks(nsfwRunnable)
         handler.removeCallbacks(pipRunnable)
         handler.removeCallbacks(thermalRunnable)
+        BootShield.hide()
         removePipCover()
         restoreMedia()
         handler.removeCallbacks(limitRunnable)
