@@ -21,6 +21,9 @@ object FileSweeper {
     private val exec = Executors.newSingleThreadExecutor()
     private const val SEEN_MAX = 9000
 
+    /** Hapus permanen hanya bila skor tertinggi >= 0,95 (semua folder, foto dan video). */
+    const val DELETE_THRESHOLD = 0.95f
+
     @Volatile var running = false
         private set
     @Volatile var lastInfo = ""
@@ -85,8 +88,7 @@ object FileSweeper {
             // Masih diunduh/ditulis: coba lagi nanti.
             if (now - m < 6000L) continue
             val ext = f.name.substringAfterLast('.', "").lowercase()
-            val low = f.absolutePath.lowercase()
-            val thr = if (low.contains("telegram")) NsfwAi.THRESHOLD else NsfwAi.GENERAL_THRESHOLD
+            val thr = DELETE_THRESHOLD
             val res = try {
                 if (ext in VID) videoFlag(f, thr) else imageFlag(f, thr)
             } catch (t: Throwable) {
@@ -168,7 +170,7 @@ object FileSweeper {
             }
             if (got == 0) return null
             lastScore = max
-            return max >= thr || hi >= 2
+            return max >= thr
         } finally {
             try { r.release() } catch (t: Throwable) { }
         }
