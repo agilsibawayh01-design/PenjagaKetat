@@ -3192,6 +3192,33 @@ class MainActivity : Activity() {
                 gateOff(!v, "mematikan blokir layar terbagi") { Store.setSplitBlock(this, v) }
             }
         }
+        header("Pembersih berkas")
+        val fs = FileSweeper.enabled(this)
+        switchLine("Hapus berkas dewasa", "Foto dan video di HP yang terdeteksi konten dewasa (unduhan Telegram, galeri, Download, dll.) DIHAPUS PERMANEN. Tidak bisa dimatikan saat Mode Ketat aktif.", fs, strict && fs) { v ->
+            if (!v && strict) {
+                toast("Mode Ketat aktif: tidak bisa dimatikan")
+                render()
+            } else {
+                gateOff(!v, "mematikan penghapus berkas dewasa") { FileSweeper.setEnabled(this, v) }
+            }
+        }
+        status(FileSweeper.hasAccess(), "Izin akses semua berkas")
+        if (!FileSweeper.hasAccess()) {
+            put(button("Beri izin akses semua berkas") {
+                try {
+                    startActivity(android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, android.net.Uri.parse("package:$packageName")))
+                } catch (t: Throwable) {
+                    startActivity(android.content.Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+                }
+            })
+        } else {
+            put(button("Pindai berkas sekarang") {
+                FileSweeper.sweepAsync(this, 0L, 400)
+                toast("Memindai di latar belakang")
+            })
+        }
+        put(text("Total dihapus: ${FileSweeper.deletedTotal(this)}" + (if (FileSweeper.lastInfo.isNotEmpty()) " · terakhir: ${FileSweeper.lastInfo}" else ""), 12f, false, C_SUB))
+        put(infoNote("Penghapusan permanen, tidak masuk tempat sampah. Salah hapus bisa terjadi (mis. foto keluarga). Folder data aplikasi lain (Android/data, termasuk cache internal Telegram) tidak bisa dijangkau; yang terjangkau adalah media yang tersimpan ke galeri atau Download."))
         if (android.os.Build.VERSION.SDK_INT < 30) put(text("HP ini di bawah Android 11: tangkapan layar tidak tersedia.", 12f, false, C_BAD))
         put(infoNote("Layar difoto tiap sekitar 1 detik saat HP menyala, lalu dianalisis di HP oleh model AI. Tidak ada gambar yang disimpan atau dikirim. Bila ada gambar telanjang, layar langsung ditutup dan kamu dikembalikan ke beranda."))
         put(infoNote("Hanya aplikasi yang bisa memuat media (browser, sosmed, galeri, pemutar video) dan aplikasi yang baru dipasang (14 hari) yang dipotret, supaya hemat baterai. Butuh Android 11 ke atas. Salah blokir bisa terjadi."))

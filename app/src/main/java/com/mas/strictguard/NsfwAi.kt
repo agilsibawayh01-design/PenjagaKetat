@@ -206,6 +206,27 @@ object NsfwAi {
         return t.toDouble() / a.size
     }
 
+    /** Penilaian berkas (foto/bingkai video): tanpa cache sidik layar, memakai potongan bila tinggi > lebar. */
+    fun scoreRaw(bmp: Bitmap): Float {
+        var best = run(bmp)
+        val w = bmp.width
+        val h = bmp.height
+        val side = Math.min(w, h)
+        if (side > 0 && h > side) {
+            val maxY = h - side
+            for (yy in intArrayOf(0, maxY / 2, maxY).distinct()) {
+                try {
+                    val t = Bitmap.createBitmap(bmp, 0, yy, side, side)
+                    val sc = run(t)
+                    if (sc > best) best = sc
+                    if (t !== bmp) t.recycle()
+                } catch (t: Throwable) {
+                }
+            }
+        }
+        return best
+    }
+
     fun score(c: Context, bmp: Bitmap): Float {
         if (!ready(c)) return 0f
         val fp = try {

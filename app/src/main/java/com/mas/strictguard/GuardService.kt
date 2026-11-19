@@ -142,6 +142,39 @@ class GuardService : AccessibilityService() {
     }
 
     /** Aktifkan penutup PiP selama 10 menit sejak pemindaian yang positif terakhir. */
+    private var sweepObs: android.database.ContentObserver? = null
+    private val sweepDebounce = Runnable { FileSweeper.sweepAsync(this, 20 * 60_000L, 30) }
+    private val sweepTick = object : Runnable {
+        override fun run() {
+            try {
+                FileSweeper.sweepAsync(this@GuardService, 0L, 40)
+            } catch (t: Throwable) {
+                // abaikan
+            }
+            handler.postDelayed(this, 10 * 60_000L)
+        }
+    }
+
+    /** Pantau media baru (unduhan) dan sapu berkas secara bertahap tiap 10 menit. */
+    private fun startSweepWatch() {
+        try {
+            if (sweepObs == null) {
+                val o = object : android.database.ContentObserver(handler) {
+                    override fun onChange(selfChange: Boolean) {
+                        handler.removeCallbacks(sweepDebounce)
+                        handler.postDelayed(sweepDebounce, 6000L)
+                    }
+                }
+                contentResolver.registerContentObserver(android.provider.MediaStore.Files.getContentUri("external"), true, o)
+                sweepObs = o
+            }
+            handler.removeCallbacks(sweepTick)
+            handler.postDelayed(sweepTick, 20_000L)
+        } catch (t: Throwable) {
+            // abaikan
+        }
+    }
+
     private var splitLastAt = 0L
     private val splitRunnable = object : Runnable {
         override fun run() {
@@ -752,6 +785,7 @@ class GuardService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        startSweepWatch()
         handler.removeCallbacks(splitRunnable)
         handler.postDelayed(splitRunnable, 2000L)
         // Pulihkan status lock NSFW yang masih berlaku setelah AccessibilityService aktif kembali.
@@ -798,6 +832,9 @@ class GuardService : AccessibilityService() {
         handler.removeCallbacks(nsfwRunnable)
         handler.removeCallbacks(pipRunnable)
         handler.removeCallbacks(thermalRunnable)
+        handler.removeCallbacks(sweepTick)
+        try { sweepObs?.let { contentResolver.unregisterContentObserver(it) } } catch (t: Throwable) { }
+        sweepObs = null
         handler.removeCallbacks(splitRunnable)
         BootShield.hide()
         removePipCover()
