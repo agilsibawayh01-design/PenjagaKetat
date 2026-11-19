@@ -58,7 +58,14 @@ object Rules {
         for (k in keywords) {
             val kk = k.trim().lowercase()
             if (kk.isEmpty()) continue
-            if (kk.length >= 5) {
+            if (kk.contains(' ')) {
+                // Frasa beberapa kata: harus diawali batas kata, supaya "Te|gang bang|et" tidak cocok dengan "gang bang".
+                var idx = t.indexOf(kk)
+                while (idx >= 0) {
+                    if (idx == 0 || !t[idx - 1].isLetterOrDigit()) return k
+                    idx = t.indexOf(kk, idx + 1)
+                }
+            } else if (kk.length >= 5) {
                 if (t.contains(kk)) return k
             } else {
                 var idx = t.indexOf(kk)
