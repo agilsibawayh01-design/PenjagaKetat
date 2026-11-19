@@ -18,6 +18,13 @@ object Diag {
         } catch (t: Throwable) {
             sb.append("(gagal membaca status)\n")
         }
+        sb.append("\nRiwayat penghapusan berkas (tanpa nama)\n")
+        try {
+            val h = FileSweeper.history(c)
+            if (h.isEmpty()) sb.append("(kosong)\n") else h.take(20).forEach { sb.append(it).append('\n') }
+        } catch (t: Throwable) {
+            sb.append("(gagal membaca)\n")
+        }
         sb.append("\nPengaturan (jumlah saja)\n")
         try {
             sb.append("Mode Ketat: ").append(if (Store.strictRaw(c)) "aktif" else "mati").append('\n')

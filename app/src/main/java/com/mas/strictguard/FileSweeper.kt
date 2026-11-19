@@ -100,7 +100,9 @@ object FileSweeper {
             }
             if (res) {
                 val path = f.absolutePath
+                val sz = f.length()
                 if (f.delete()) {
+                    addHistory(c, f, ext in VID, sz)
                     deleted++
                     try { MediaScannerConnection.scanFile(c, arrayOf(path), null, null) } catch (t: Throwable) { }
                     Store.log(c, "Berkas dewasa dihapus (${if (ext in VID) "video" else "foto"}, ${f.length() / 1024} KB)")
@@ -115,6 +117,22 @@ object FileSweeper {
         lastInfo = "dipindai $scanned, dihapus $deleted (" + java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date()) + ")"
     }
 
+    @Volatile private var lastScore = 0f
+
+    fun history(c: Context): List<String> =
+        (sp(c).getString("sweep_hist", "") ?: "").split('\n').filter { it.isNotBlank() }.reversed()
+
+    private fun addHistory(c: Context, f: File, isVideo: Boolean, size: Long) {
+        val root = Environment.getExternalStorageDirectory().absolutePath
+        val dir = (f.parent ?: "").removePrefix(root).trim('/').ifEmpty { "(penyimpanan utama)" }
+        val mb = if (size >= 1_048_576L) String.format(java.util.Locale.US, "%.1f MB", size / 1_048_576.0) else "${size / 1024} KB"
+        val stamp = java.text.SimpleDateFormat("dd/MM HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+        val line = "$stamp · ${if (isVideo) "video" else "foto"} · $mb · $dir · skor ${String.format(java.util.Locale.US, "%.2f", lastScore)}"
+        val lines = ArrayList(sp(c).getString("sweep_hist", "")!!.split('\n').filter { it.isNotBlank() })
+        lines.add(line.replace('\n', ' '))
+        sp(c).edit().putString("sweep_hist", lines.takeLast(60).joinToString("\n")).apply()
+    }
+
     private fun key(f: File) = f.absolutePath + "|" + f.lastModified() + "|" + f.length()
 
     private fun imageFlag(f: File, thr: Float): Boolean? {
@@ -127,6 +145,7 @@ object FileSweeper {
         val o2 = BitmapFactory.Options().apply { inSampleSize = s }
         val bmp = BitmapFactory.decodeFile(f.absolutePath, o2) ?: return null
         val sc = try { NsfwAi.scoreRaw(bmp) } finally { bmp.recycle() }
+        lastScore = sc
         return sc >= thr
     }
 
@@ -148,6 +167,7 @@ object FileSweeper {
                 if (sc >= 0.9f) hi++
             }
             if (got == 0) return null
+            lastScore = max
             return max >= thr || hi >= 2
         } finally {
             try { r.release() } catch (t: Throwable) { }

@@ -3218,6 +3218,10 @@ class MainActivity : Activity() {
             })
         }
         put(text("Total dihapus: ${FileSweeper.deletedTotal(this)}" + (if (FileSweeper.lastInfo.isNotEmpty()) " · terakhir: ${FileSweeper.lastInfo}" else ""), 12f, false, C_SUB))
+        val hist = FileSweeper.history(this)
+        header("Riwayat penghapusan")
+        if (hist.isEmpty()) put(text("Belum ada berkas yang dihapus.", 12f, false, C_SUB))
+        else hist.take(20).forEach { put(text(it, 12f, false, C_SUB)) }
         put(infoNote("Penghapusan permanen, tidak masuk tempat sampah. Salah hapus bisa terjadi (mis. foto keluarga). Folder data aplikasi lain (Android/data, termasuk cache internal Telegram) tidak bisa dijangkau; yang terjangkau adalah media yang tersimpan ke galeri atau Download."))
         if (android.os.Build.VERSION.SDK_INT < 30) put(text("HP ini di bawah Android 11: tangkapan layar tidak tersedia.", 12f, false, C_BAD))
         put(infoNote("Layar difoto tiap sekitar 1 detik saat HP menyala, lalu dianalisis di HP oleh model AI. Tidak ada gambar yang disimpan atau dikirim. Bila ada gambar telanjang, layar langsung ditutup dan kamu dikembalikan ke beranda."))
