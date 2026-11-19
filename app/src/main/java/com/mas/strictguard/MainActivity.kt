@@ -3183,6 +3183,15 @@ class MainActivity : Activity() {
             }
         }
         put(text(NsfwAi.status(this), 12f, false, C_SUB))
+        val sb = Store.splitBlock(this)
+        switchLine("Blokir layar terbagi", "Dua aplikasi berdampingan (split screen) langsung ditutup. Tidak bisa dimatikan saat Mode Ketat aktif.", sb, strict && sb) { v ->
+            if (!v && strict) {
+                toast("Mode Ketat aktif: tidak bisa dimatikan")
+                render()
+            } else {
+                gateOff(!v, "mematikan blokir layar terbagi") { Store.setSplitBlock(this, v) }
+            }
+        }
         if (android.os.Build.VERSION.SDK_INT < 30) put(text("HP ini di bawah Android 11: tangkapan layar tidak tersedia.", 12f, false, C_BAD))
         put(infoNote("Layar difoto tiap sekitar 1 detik saat HP menyala, lalu dianalisis di HP oleh model AI. Tidak ada gambar yang disimpan atau dikirim. Bila ada gambar telanjang, layar langsung ditutup dan kamu dikembalikan ke beranda."))
         put(infoNote("Hanya aplikasi yang bisa memuat media (browser, sosmed, galeri, pemutar video) dan aplikasi yang baru dipasang (14 hari) yang dipotret, supaya hemat baterai. Butuh Android 11 ke atas. Salah blokir bisa terjadi."))

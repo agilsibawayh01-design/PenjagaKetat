@@ -424,6 +424,9 @@ object Store {
     fun nsfwAi(c: Context): Boolean = sp(c).getBoolean("nsfw_ai", true)
     fun setNsfwAi(c: Context, v: Boolean) { sp(c).edit().putBoolean("nsfw_ai", v).commit() }
 
+    fun splitBlock(c: Context): Boolean = sp(c).getBoolean("split_block", true)
+    fun setSplitBlock(c: Context, v: Boolean) { sp(c).edit().putBoolean("split_block", v).commit() }
+
     fun blockUnknownInstall(c: Context): Boolean = sp(c).getBoolean("block_unknown_install", false)
     fun setBlockUnknownInstall(c: Context, v: Boolean) { sp(c).edit().putBoolean("block_unknown_install", v).commit() }
 

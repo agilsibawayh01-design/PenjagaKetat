@@ -142,6 +142,46 @@ class GuardService : AccessibilityService() {
     }
 
     /** Aktifkan penutup PiP selama 10 menit sejak pemindaian yang positif terakhir. */
+    private var splitLastAt = 0L
+    private val splitRunnable = object : Runnable {
+        override fun run() {
+            try {
+                blockSplit()
+            } catch (t: Throwable) {
+                // abaikan
+            }
+            handler.postDelayed(this, 1500L)
+        }
+    }
+
+    /** Layar terbagi / jendela mengambang dilarang: dua aplikasi non-sistem tampil bersamaan -> kembali ke layar utama. */
+    private fun blockSplit() {
+        if (selfTesting || backing || !Store.splitBlock(this)) return
+        val pmw = getSystemService(POWER_SERVICE) as android.os.PowerManager
+        if (!pmw.isInteractive) return
+        val dm = resources.displayMetrics
+        val full = dm.widthPixels.toLong() * dm.heightPixels
+        val skip = setOf("com.android.systemui", packageName, "com.samsung.android.app.cocktailbarservice") + Config.PROTECTED + inputMethodPackages
+        var n = 0
+        for (w in windows) {
+            if (w.type != android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION || w.isInPictureInPictureMode) continue
+            val pk = w.root?.packageName?.toString() ?: continue
+            if (pk in skip) continue
+            val r = android.graphics.Rect()
+            w.getBoundsInScreen(r)
+            if (r.width().toLong() * r.height() > full * 0.9) continue
+            if (r.width() < 100 || r.height() < 100) continue
+            n++
+        }
+        // n>=1 berarti ada jendela aplikasi yang tidak memenuhi layar (terbagi / mengambang), selain PiP yang ditangani terpisah.
+        val split = n >= 2 || (n >= 1 && windows.count { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION && !it.isInPictureInPictureMode } >= 2)
+        val now = System.currentTimeMillis()
+        if (split && now - splitLastAt > 2500L) {
+            splitLastAt = now
+            performGlobalAction(GLOBAL_ACTION_HOME)
+        }
+    }
+
     private fun armPip() {
         val wasOff = System.currentTimeMillis() > pipUntil
         pipUntil = System.currentTimeMillis() + 10 * 60_000L
@@ -712,6 +752,8 @@ class GuardService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        handler.removeCallbacks(splitRunnable)
+        handler.postDelayed(splitRunnable, 2000L)
         // Pulihkan status lock NSFW yang masih berlaku setelah AccessibilityService aktif kembali.
         try {
             val until = nsfwLockPrefs.getLong("until", 0L)
@@ -756,6 +798,7 @@ class GuardService : AccessibilityService() {
         handler.removeCallbacks(nsfwRunnable)
         handler.removeCallbacks(pipRunnable)
         handler.removeCallbacks(thermalRunnable)
+        handler.removeCallbacks(splitRunnable)
         BootShield.hide()
         removePipCover()
         restoreMedia()
@@ -831,6 +874,10 @@ class GuardService : AccessibilityService() {
         // Cek latch sebelum filter package. Jika pengguna kembali ke aplikasi yang
         // memicu deteksi, langsung keluarkan lagi tanpa menunggu screenshot berikutnya.
         if (enforceNsfwAppLock(pkg)) return
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            handler.removeCallbacks(splitRunnable)
+            handler.postDelayed(splitRunnable, 500L)
+        }
         if (pkg == "com.android.systemui") closeSafeModePrompt(event)
         if (pkg == packageName || pkg in Config.IGNORED || pkg in inputMethodPackages) return
         fgPkg = pkg
