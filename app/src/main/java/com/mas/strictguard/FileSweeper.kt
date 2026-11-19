@@ -135,20 +135,50 @@ object FileSweeper {
         sp(c).edit().putString("sweep_hist", lines.takeLast(60).joinToString("\n")).apply()
     }
 
-    private fun key(f: File) = f.absolutePath + "|" + f.lastModified() + "|" + f.length()
+    private fun key(f: File) = "v2|" + f.absolutePath + "|" + f.lastModified() + "|" + f.length() + "|v2"
 
     private fun imageFlag(f: File, thr: Float): Boolean? {
         if (f.length() < 15_000L) return false
         val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(f.absolutePath, o)
         if (o.outWidth <= 0) return null
+        // Tangkapan layar (atau gambar sangat tinggi): konten bisa hanya mengisi sebagian kecil (jendela PiP, split),
+        // jadi dipindai juga per petak agar tidak "encer".
+        val shot = f.absolutePath.lowercase().contains("screenshot") || f.absolutePath.lowercase().contains("screen_rec") ||
+            o.outHeight.toFloat() / o.outWidth >= 1.9f
+        val limit = if (shot) 2600 else 800
         var s = 1
-        while (Math.max(o.outWidth, o.outHeight) / s > 800) s *= 2
+        while (Math.max(o.outWidth, o.outHeight) / s > limit) s *= 2
         val o2 = BitmapFactory.Options().apply { inSampleSize = s }
         val bmp = BitmapFactory.decodeFile(f.absolutePath, o2) ?: return null
-        val sc = try { NsfwAi.scoreRaw(bmp) } finally { bmp.recycle() }
-        lastScore = sc
-        return sc >= thr
+        try {
+            var sc = NsfwAi.scoreRaw(bmp)
+            if (sc < DELETE_THRESHOLD && shot) {
+                val w = bmp.width
+                val h = bmp.height
+                val side = Math.max(Math.min(w, h) / 2, 160)
+                val step = Math.max(side / 2, 80)
+                var y = 0
+                while (y < h && sc < DELETE_THRESHOLD) {
+                    val hh = Math.min(side, h - y)
+                    var x = 0
+                    while (x < w && sc < DELETE_THRESHOLD) {
+                        val ww = Math.min(side, w - x)
+                        if (ww >= 120 && hh >= 120) {
+                            val t = Bitmap.createBitmap(bmp, x, y, ww, hh)
+                            val v = try { NsfwAi.scoreRaw(t) } finally { if (t !== bmp) t.recycle() }
+                            if (v > sc) sc = v
+                        }
+                        x += step
+                    }
+                    y += step
+                }
+            }
+            lastScore = sc
+            return sc >= DELETE_THRESHOLD
+        } finally {
+            bmp.recycle()
+        }
     }
 
     private fun videoFlag(f: File, thr: Float): Boolean? {
@@ -157,6 +187,7 @@ object FileSweeper {
             r.setDataSource(f.absolutePath)
             val dur = (r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION) ?: "0").toLongOrNull() ?: 0L
             val pts = if (dur <= 0L) listOf(0L) else listOf(0.12, 0.35, 0.6, 0.85).map { (dur * it * 1000).toLong() }
+            val shotVid = f.absolutePath.lowercase().let { it.contains("screenshot") || it.contains("screen_rec") || it.contains("screenrec") }
             var got = 0
             var hi = 0
             var max = 0f
@@ -164,7 +195,7 @@ object FileSweeper {
                 val b: Bitmap = (if (Build.VERSION.SDK_INT >= 27) r.getScaledFrameAtTime(t, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 640, 640)
                 else r.getFrameAtTime(t, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)) ?: continue
                 got++
-                val sc = try { NsfwAi.scoreRaw(b) } finally { b.recycle() }
+                val sc = try { Math.max(NsfwAi.scoreRaw(b), if (shotVid) NsfwAi.scoreTiles(b) else 0f) } finally { b.recycle() }
                 if (sc > max) max = sc
                 if (sc >= 0.9f) hi++
             }

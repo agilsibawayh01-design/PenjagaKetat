@@ -206,6 +206,32 @@ object NsfwAi {
         return t.toDouble() / a.size
     }
 
+    /** Untuk tangkapan layar: konten kecil di sudut (PiP, jendela video) dinilai lewat petak-petak yang tumpang tindih. */
+    fun scoreTiles(bmp: Bitmap): Float {
+        val w = bmp.width
+        val h = bmp.height
+        val side = (Math.min(w, h) * 0.55f).toInt()
+        if (side < 64) return 0f
+        var best = 0f
+        val xs = intArrayOf(0, (w - side) / 2, w - side).distinct()
+        var y = 0
+        while (true) {
+            val yy = Math.min(y, h - side)
+            for (xx in xs) {
+                try {
+                    val t = Bitmap.createBitmap(bmp, xx, yy, side, side)
+                    val sc = run(t)
+                    if (sc > best) best = sc
+                    if (t !== bmp) t.recycle()
+                } catch (t: Throwable) {
+                }
+            }
+            if (yy >= h - side) break
+            y += (side * 0.6f).toInt().coerceAtLeast(1)
+        }
+        return best
+    }
+
     /** Penilaian berkas (foto/bingkai video): tanpa cache sidik layar, memakai potongan bila tinggi > lebar. */
     fun scoreRaw(bmp: Bitmap): Float {
         var best = run(bmp)
