@@ -458,11 +458,15 @@ class GuardService : AccessibilityService() {
         if (!pm.isInteractive) return
         val p = fgPkg
         if (p.isEmpty() || p == packageName || p == "com.android.systemui" ||
-            p in Config.PROTECTED || p in Config.SCAN_EXEMPT || p in inputMethodPackages) return
+            p in Config.SCAN_EXEMPT || p in inputMethodPackages) return
+        // Jendela PiP / layar terbagi: video kecil harus dipindai sendiri (dipotong), dan peluncur/Pengaturan
+        // di depan tidak boleh jadi celah.
+        val crops = extraWindows()
+        if (p in Config.PROTECTED && crops.isEmpty()) return
         val now = System.currentTimeMillis()
         if (now - nsfwLastScanAt < nsfwIntervalMs - 200L) return
-        // Hemat baterai: hanya aplikasi yang bisa memuat media dan aplikasi baru; PiP tetap dipindai.
-        if (!NsfwScope.shouldScan(this, p, browsers) { findPip() != null }) return
+        // Hemat baterai: hanya aplikasi yang bisa memuat media dan aplikasi baru; PiP/layar terbagi tetap dipindai.
+        if (!NsfwScope.shouldScan(this, p, browsers) { crops.isNotEmpty() }) return
         if (!NsfwAi.ready(this)) return
         nsfwLastScanAt = now
         val src = try {
@@ -470,11 +474,30 @@ class GuardService : AccessibilityService() {
         } catch (t: Throwable) {
             null
         }
-        shootAndScore(p, src)
+        shootAndScore(p, src, crops)
+    }
+
+    /** Jendela aplikasi yang tidak memenuhi layar (PiP, layar terbagi, jendela mengambang) beserta paketnya. */
+    private fun extraWindows(): List<Pair<android.graphics.Rect, String?>> = try {
+        val dm = resources.displayMetrics
+        val full = dm.widthPixels.toLong() * dm.heightPixels
+        windows.mapNotNull { w ->
+            val pip = w.isInPictureInPictureMode
+            if (!pip && w.type != android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION) return@mapNotNull null
+            val r = android.graphics.Rect()
+            w.getBoundsInScreen(r)
+            if (r.width() < 100 || r.height() < 100) return@mapNotNull null
+            if (!pip && r.width().toLong() * r.height() > full * 0.9) return@mapNotNull null
+            val pk = w.root?.packageName?.toString()
+            if (pk == packageName || pk == "com.android.systemui") return@mapNotNull null
+            r to pk
+        }
+    } catch (t: Throwable) {
+        emptyList()
     }
 
     @android.annotation.TargetApi(30)
-    private fun shootAndScore(p: String, src: NsfwSource.Src?) {
+    private fun shootAndScore(p: String, src: NsfwSource.Src?, crops: List<Pair<android.graphics.Rect, String?>> = emptyList()) {
         nsfwBusy = true
         nsfwBusySince = System.currentTimeMillis()
         try {
@@ -486,10 +509,24 @@ class GuardService : AccessibilityService() {
                         val soft = hw?.copy(android.graphics.Bitmap.Config.ARGB_8888, false)
                         hb.close()
                         if (soft != null) {
-                            val s = NsfwAi.score(this@GuardService, soft)
+                            var s = NsfwAi.score(this@GuardService, soft)
+                            var sp = p
+                            for ((r, pk) in crops) {
+                                val rr = android.graphics.Rect(r)
+                                if (!rr.intersect(0, 0, soft.width, soft.height) || rr.width() < 64 || rr.height() < 64) continue
+                                val cb = android.graphics.Bitmap.createBitmap(soft, rr.left, rr.top, rr.width(), rr.height())
+                                val cs = NsfwAi.score(this@GuardService, cb)
+                                cb.recycle()
+                                if (cs > s) {
+                                    s = cs
+                                    if (pk != null && pk !in Config.PROTECTED && pk !in Config.SCAN_EXEMPT) sp = pk
+                                }
+                            }
                             soft.recycle()
                             NsfwAi.lastFail = ""
-                            handler.post { recordNsfwSample(p, s, src) }
+                            val fs = s
+                            val fp = sp
+                            handler.post { recordNsfwSample(fp, fs, src) }
                         }
                     } catch (t: Throwable) {
                         NsfwAi.lastFail = "gagal memproses: " + (t.message ?: t.javaClass.simpleName)
