@@ -3194,7 +3194,7 @@ class MainActivity : Activity() {
         }
         header("Pembersih berkas")
         val fs = FileSweeper.enabled(this)
-        switchLine("Hapus berkas dewasa", "Foto dan video di HP yang terdeteksi konten dewasa (unduhan Telegram, galeri, Download, dll.) DIHAPUS PERMANEN. Tidak bisa dimatikan saat Mode Ketat aktif.", fs, strict && fs) { v ->
+        switchLine("Hapus berkas dewasa", "Foto dan video di HP yang terdeteksi konten dewasa (unduhan Telegram, galeri, Download, dll.) dipindah ke karantina ${FileSweeper.QUARANTINE_DAYS} hari, lalu dihapus permanen. Tidak bisa dimatikan saat Mode Ketat aktif.", fs, strict && fs) { v ->
             if (!v && strict) {
                 toast("Mode Ketat aktif: tidak bisa dimatikan")
                 render()
@@ -3217,12 +3217,28 @@ class MainActivity : Activity() {
                 toast("Memindai di latar belakang")
             })
         }
-        put(text("Total dihapus: ${FileSweeper.deletedTotal(this)}" + (if (FileSweeper.lastInfo.isNotEmpty()) " · terakhir: ${FileSweeper.lastInfo}" else ""), 12f, false, C_SUB))
+        put(text("Total dikarantina: ${FileSweeper.deletedTotal(this)} · di karantina sekarang: ${FileSweeper.quarantineCount(this)}" + (if (FileSweeper.lastInfo.isNotEmpty()) " · terakhir: ${FileSweeper.lastInfo}" else ""), 12f, false, C_SUB))
         val hist = FileSweeper.history(this)
         header("Riwayat penghapusan")
         if (hist.isEmpty()) put(text("Belum ada berkas yang dihapus.", 12f, false, C_SUB))
         else hist.take(20).forEach { put(text(it, 12f, false, C_SUB)) }
-        put(infoNote("Penghapusan permanen, tidak masuk tempat sampah. Salah hapus bisa terjadi (mis. foto keluarga). Folder data aplikasi lain (Android/data, termasuk cache internal Telegram) tidak bisa dijangkau; yang terjangkau adalah media yang tersimpan ke galeri atau Download."))
+        if (FileSweeper.quarantineCount(this) > 0) {
+            for ((folder, cnt) in FileSweeper.quarantineFolders(this)) {
+                put(ghostButton("Pulihkan folder $folder ($cnt)") {
+                    gateOff(true, "memulihkan berkas dari karantina") {
+                        val n = FileSweeper.restore(this, folder)
+                        toast("$n berkas dipulihkan")
+                    }
+                })
+            }
+            put(button("Pulihkan semua dari karantina (${FileSweeper.quarantineCount(this)})") {
+                gateOff(true, "memulihkan berkas dari karantina") {
+                    val n = FileSweeper.restoreAll(this)
+                    toast("$n berkas dipulihkan")
+                }
+            })
+        }
+        put(infoNote("Berkas yang terdeteksi dipindah ke karantina (tersembunyi dari galeri) dan dihapus permanen setelah ${FileSweeper.QUARANTINE_DAYS} hari. Salah deteksi bisa terjadi (mis. foto keluarga): pulihkan sebelum waktunya, lewat gerbang teks acak. Folder data aplikasi lain (Android/data, termasuk cache internal Telegram) tidak bisa dijangkau; yang terjangkau adalah media yang tersimpan ke galeri atau Download."))
         if (android.os.Build.VERSION.SDK_INT < 30) put(text("HP ini di bawah Android 11: tangkapan layar tidak tersedia.", 12f, false, C_BAD))
         put(infoNote("Layar difoto tiap sekitar 1 detik saat HP menyala, lalu dianalisis di HP oleh model AI. Tidak ada gambar yang disimpan atau dikirim. Bila ada gambar telanjang, layar langsung ditutup dan kamu dikembalikan ke beranda."))
         put(infoNote("Hanya aplikasi yang bisa memuat media (browser, sosmed, galeri, pemutar video) dan aplikasi yang baru dipasang (14 hari) yang dipotret, supaya hemat baterai. Butuh Android 11 ke atas. Salah blokir bisa terjadi."))

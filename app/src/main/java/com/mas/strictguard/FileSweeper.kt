@@ -24,6 +24,12 @@ object FileSweeper {
     /** Hapus permanen hanya bila skor tertinggi >= 0,95 (semua folder, foto dan video). */
     const val DELETE_THRESHOLD = 0.95f
 
+    /** Petak tangkapan layar harus lebih tinggi lagi, karena potongan kecil mudah salah dinilai. */
+    const val TILE_THRESHOLD = 0.97f
+
+    /** Berkas terdeteksi dipindah ke karantina dulu; baru dihapus permanen setelah sekian hari. */
+    const val QUARANTINE_DAYS = 2
+
     @Volatile var running = false
         private set
     @Volatile var lastInfo = ""
@@ -71,6 +77,7 @@ object FileSweeper {
     private fun sweep(c: Context, recentMs: Long, maxFiles: Int) {
         if (!NsfwAi.ready(c)) { lastInfo = "model AI belum siap"; return }
         val p = sp(c)
+        purgeQuarantine(c)
         var seen = HashSet(p.getStringSet("sweep_seen", emptySet()) ?: emptySet())
         if (seen.size > SEEN_MAX) seen = HashSet()
         val all = ArrayList<File>()
@@ -103,13 +110,13 @@ object FileSweeper {
             if (res) {
                 val path = f.absolutePath
                 val sz = f.length()
-                if (f.delete()) {
-                    addHistory(c, f, ext in VID, sz)
+                addHistory(c, f, ext in VID, sz)
+                if (quarantine(c, f)) {
                     deleted++
                     try { MediaScannerConnection.scanFile(c, arrayOf(path), null, null) } catch (t: Throwable) { }
-                    Store.log(c, "Berkas dewasa dihapus (${if (ext in VID) "video" else "foto"}, ${f.length() / 1024} KB)")
+                    Store.log(c, "Berkas dewasa dikarantina (${if (ext in VID) "video" else "foto"}, ${sz / 1024} KB)")
                 } else {
-                    Store.log(c, "Berkas dewasa terdeteksi tapi gagal dihapus")
+                    Store.log(c, "Berkas dewasa terdeteksi tapi gagal dikarantina")
                 }
             } else {
                 seen.add(key(f))
@@ -121,6 +128,84 @@ object FileSweeper {
 
     @Volatile private var lastScore = 0f
 
+    // ---------- Karantina ----------
+    private fun qDir(c: Context): File {
+        val base = c.getExternalFilesDir(null) ?: c.filesDir
+        return File(base, "karantina").apply { mkdirs() }
+    }
+
+    private fun qEntries(c: Context): List<List<String>> =
+        (sp(c).getString("sweep_q", "") ?: "").split('\n').filter { it.isNotBlank() }.map { it.split('|') }.filter { it.size >= 3 }
+
+    private fun qSave(c: Context, l: List<List<String>>) {
+        sp(c).edit().putString("sweep_q", l.joinToString("\n") { it.joinToString("|") }).commit()
+    }
+
+    fun quarantineCount(c: Context): Int = qEntries(c).size
+
+    private fun quarantine(c: Context, f: File): Boolean {
+        val name = System.currentTimeMillis().toString() + "_" + Math.abs(f.absolutePath.hashCode()) + "." + f.name.substringAfterLast('.', "bin")
+        val dest = File(qDir(c), name)
+        val ok = try {
+            if (f.renameTo(dest)) true else { f.copyTo(dest, true); f.delete() }
+        } catch (t: Throwable) {
+            false
+        }
+        if (ok) qSave(c, qEntries(c) + listOf(listOf(name, f.absolutePath.replace('|', '_'), System.currentTimeMillis().toString())))
+        return ok
+    }
+
+    private fun purgeQuarantine(c: Context) {
+        val now = System.currentTimeMillis()
+        val keep = ArrayList<List<String>>()
+        for (e in qEntries(c)) {
+            val at = e[2].toLongOrNull() ?: 0L
+            if (now - at > QUARANTINE_DAYS * 86_400_000L) {
+                try { File(qDir(c), e[0]).delete() } catch (t: Throwable) { }
+            } else keep.add(e)
+        }
+        if (keep.size != qEntries(c).size) qSave(c, keep)
+    }
+
+    /** Pulihkan semua berkas karantina ke lokasi asalnya dan tandai sebagai sudah dipindai (tidak dipindai ulang). */
+    private fun folderOf(path: String): String {
+        val root = Environment.getExternalStorageDirectory().absolutePath
+        return (File(path).parent ?: "").removePrefix(root).trim('/').ifEmpty { "(penyimpanan utama)" }
+    }
+
+    /** Jumlah berkas di karantina per folder asal (tanpa nama berkas). */
+    fun quarantineFolders(c: Context): List<Pair<String, Int>> =
+        qEntries(c).groupBy { folderOf(it[1]) }.map { it.key to it.value.size }.sortedBy { it.first }
+
+    fun restoreAll(c: Context): Int = restore(c, null)
+
+    /** folder = null: semua; selain itu hanya berkas yang berasal dari folder tersebut. */
+    fun restore(c: Context, folder: String?): Int {
+        var n = 0
+        val seen = HashSet(sp(c).getStringSet("sweep_seen", emptySet()) ?: emptySet())
+        val left = ArrayList<List<String>>()
+        for (e in qEntries(c)) {
+            if (folder != null && folderOf(e[1]) != folder) { left.add(e); continue }
+            val src = File(qDir(c), e[0])
+            var dest = File(e[1])
+            try {
+                dest.parentFile?.mkdirs()
+                if (dest.exists()) dest = File(dest.parentFile, "pulih_" + dest.name)
+                val ok = if (src.renameTo(dest)) true else { src.copyTo(dest, true); src.delete() }
+                if (ok) {
+                    seen.add(key(dest))
+                    try { MediaScannerConnection.scanFile(c, arrayOf(dest.absolutePath), null, null) } catch (t: Throwable) { }
+                    n++
+                } else left.add(e)
+            } catch (t: Throwable) {
+                left.add(e)
+            }
+        }
+        qSave(c, left)
+        sp(c).edit().putStringSet("sweep_seen", seen).apply()
+        return n
+    }
+
     fun history(c: Context): List<String> =
         (sp(c).getString("sweep_hist", "") ?: "").split('\n').filter { it.isNotBlank() }.reversed()
 
@@ -129,7 +214,7 @@ object FileSweeper {
         val dir = (f.parent ?: "").removePrefix(root).trim('/').ifEmpty { "(penyimpanan utama)" }
         val mb = if (size >= 1_048_576L) String.format(java.util.Locale.US, "%.1f MB", size / 1_048_576.0) else "${size / 1024} KB"
         val stamp = java.text.SimpleDateFormat("dd/MM HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
-        val line = "$stamp · ${if (isVideo) "video" else "foto"} · $mb · $dir · skor ${String.format(java.util.Locale.US, "%.2f", lastScore)}"
+        val line = "$stamp · karantina · ${if (isVideo) "video" else "foto"} · $mb · $dir · skor ${String.format(java.util.Locale.US, "%.2f", lastScore)}"
         val lines = ArrayList(sp(c).getString("sweep_hist", "")!!.split('\n').filter { it.isNotBlank() })
         lines.add(line.replace('\n', ' '))
         sp(c).edit().putString("sweep_hist", lines.takeLast(60).joinToString("\n")).apply()
@@ -144,8 +229,7 @@ object FileSweeper {
         if (o.outWidth <= 0) return null
         // Tangkapan layar (atau gambar sangat tinggi): konten bisa hanya mengisi sebagian kecil (jendela PiP, split),
         // jadi dipindai juga per petak agar tidak "encer".
-        val shot = f.absolutePath.lowercase().contains("screenshot") || f.absolutePath.lowercase().contains("screen_rec") ||
-            o.outHeight.toFloat() / o.outWidth >= 1.9f
+        val shot = f.absolutePath.lowercase().let { it.contains("screenshot") || it.contains("screen_rec") || it.contains("screenrec") }
         val limit = if (shot) 2600 else 800
         var s = 1
         while (Math.max(o.outWidth, o.outHeight) / s > limit) s *= 2
@@ -153,27 +237,29 @@ object FileSweeper {
         val bmp = BitmapFactory.decodeFile(f.absolutePath, o2) ?: return null
         try {
             var sc = NsfwAi.scoreRaw(bmp)
+            var tileMax = 0f
             if (sc < DELETE_THRESHOLD && shot) {
                 val w = bmp.width
                 val h = bmp.height
                 val side = Math.max(Math.min(w, h) / 2, 160)
                 val step = Math.max(side / 2, 80)
                 var y = 0
-                while (y < h && sc < DELETE_THRESHOLD) {
+                while (y < h && tileMax < TILE_THRESHOLD) {
                     val hh = Math.min(side, h - y)
                     var x = 0
-                    while (x < w && sc < DELETE_THRESHOLD) {
+                    while (x < w && tileMax < TILE_THRESHOLD) {
                         val ww = Math.min(side, w - x)
                         if (ww >= 120 && hh >= 120) {
                             val t = Bitmap.createBitmap(bmp, x, y, ww, hh)
                             val v = try { NsfwAi.scoreRaw(t) } finally { if (t !== bmp) t.recycle() }
-                            if (v > sc) sc = v
+                            if (v > tileMax) tileMax = v
                         }
                         x += step
                     }
                     y += step
                 }
             }
+            if (tileMax >= TILE_THRESHOLD) sc = Math.max(sc, tileMax)
             lastScore = sc
             return sc >= DELETE_THRESHOLD
         } finally {
@@ -195,7 +281,7 @@ object FileSweeper {
                 val b: Bitmap = (if (Build.VERSION.SDK_INT >= 27) r.getScaledFrameAtTime(t, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 640, 640)
                 else r.getFrameAtTime(t, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)) ?: continue
                 got++
-                val sc = try { Math.max(NsfwAi.scoreRaw(b), if (shotVid) NsfwAi.scoreTiles(b) else 0f) } finally { b.recycle() }
+                val sc = try { val full = NsfwAi.scoreRaw(b); val tl = if (shotVid) NsfwAi.scoreTiles(b) else 0f; if (tl >= TILE_THRESHOLD) Math.max(full, tl) else full } finally { b.recycle() }
                 if (sc > max) max = sc
                 if (sc >= 0.9f) hi++
             }
