@@ -96,10 +96,17 @@ object FileSweeper {
         val all = ArrayList<File>()
         walk(Environment.getExternalStorageDirectory(), all, 0)
         val now = System.currentTimeMillis()
-        val todo = all.filter {
+        // Berkas yang BARU MASUK ke indeks media (DATE_ADDED) didahulukan, walau waktu ubahnya lama
+        // (salinan dari WhatsApp ke galeri sering membawa waktu ubah berkas asli).
+        val fresh = recentAdded(c, 60 * 60_000L).filter { key(it) !in seen }
+        val rest = all.filter {
             val m = it.lastModified()
             (recentMs <= 0L || now - m <= recentMs) && key(it) !in seen
-        }.sortedByDescending { it.lastModified() }.take(maxFiles)
+        }.sortedByDescending { it.lastModified() }
+        val byPath = LinkedHashMap<String, File>()
+        for (x in fresh) byPath[x.absolutePath] = x
+        for (x in rest) byPath.putIfAbsent(x.absolutePath, x)
+        val todo = byPath.values.take(maxFiles)
         var scanned = 0
         var deleted = 0
         for (f in todo) {
@@ -233,7 +240,34 @@ object FileSweeper {
         sp(c).edit().putString("sweep_hist", lines.takeLast(60).joinToString("\n")).apply()
     }
 
-    private fun key(f: File) = "v2|" + f.absolutePath + "|" + f.lastModified() + "|" + f.length() + "|v2"
+    /** Berkas foto/video yang baru terdaftar di MediaStore dalam rentang waktu itu (menurut DATE_ADDED). */
+    @Suppress("DEPRECATION")
+    private fun recentAdded(c: Context, windowMs: Long): List<File> {
+        val out = ArrayList<File>()
+        try {
+            val since = (System.currentTimeMillis() - windowMs) / 1000L
+            c.contentResolver.query(
+                android.provider.MediaStore.Files.getContentUri("external"),
+                arrayOf(android.provider.MediaStore.Files.FileColumns.DATA),
+                android.provider.MediaStore.Files.FileColumns.DATE_ADDED + " >= ?",
+                arrayOf(since.toString()), null
+            )?.use { cur ->
+                while (cur.moveToNext() && out.size < 300) {
+                    val path = cur.getString(0) ?: continue
+                    val ext = path.substringAfterLast('.', "").lowercase()
+                    if (ext !in IMG && ext !in VID) continue
+                    if (path.contains("/.")) continue
+                    val file = File(path)
+                    if (file.isFile) out.add(file)
+                }
+            }
+        } catch (t: Throwable) {
+            // abaikan
+        }
+        return out
+    }
+
+    private fun key(f: File) = "v3|" + f.absolutePath + "|" + f.lastModified() + "|" + f.length()
 
     private fun imageFlag(f: File, thr: Float): Boolean? {
         if (f.length() < 15_000L) return false
@@ -285,7 +319,9 @@ object FileSweeper {
         try {
             r.setDataSource(f.absolutePath)
             val dur = (r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION) ?: "0").toLongOrNull() ?: 0L
-            val pts = if (dur <= 0L) listOf(0L) else listOf(0.12, 0.35, 0.6, 0.85).map { (dur * it * 1000).toLong() }
+            // Lebih banyak bingkai: satu bingkai eksplisit sudah cukup, jadi video pendek pun diperiksa rapat (tiap ~2,5 dtk, 4-14 bingkai).
+            val cnt = if (dur <= 0L) 1 else (dur / 2500L).toInt().coerceIn(4, 14)
+            val pts = if (dur <= 0L) listOf(0L) else (0 until cnt).map { (dur * 1000L * (0.04 + 0.92 * it / Math.max(1, cnt - 1))).toLong() }
             val shotVid = f.absolutePath.lowercase().let { it.contains("screenshot") || it.contains("screen_rec") || it.contains("screenrec") }
             var got = 0
             var hi = 0
@@ -297,6 +333,7 @@ object FileSweeper {
                 val sc = try { val full = NsfwAi.scoreRaw(b); val tl = if (shotVid) NsfwAi.scoreTiles(b) else 0f; if (tl >= TILE_THRESHOLD) Math.max(full, tl) else full } finally { b.recycle() }
                 if (sc > max) max = sc
                 if (sc >= 0.9f) hi++
+                if (max >= thr) break
             }
             if (got == 0) return null
             lastScore = max
