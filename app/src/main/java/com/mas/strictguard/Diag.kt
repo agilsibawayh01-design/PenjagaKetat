@@ -18,6 +18,9 @@ object Diag {
         } catch (t: Throwable) {
             sb.append("(gagal membaca status)\n")
         }
+        sb.append("\nPembersih berkas: ").append(FileSweeper.lastInfo).append('\n')
+        try { FileSweeper.nearList(c).forEach { sb.append("  ").append(it).append('\n') } } catch (t: Throwable) { }
+        try { FileSweeper.scanLog(c).take(25).forEach { sb.append("  ").append(it).append('\n') } } catch (t: Throwable) { }
         sb.append("\nRiwayat penghapusan berkas (tanpa nama)\n")
         try {
             val h = FileSweeper.history(c)

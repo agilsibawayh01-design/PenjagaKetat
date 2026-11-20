@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Environment
 import java.io.File
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /**
  * Pembersih berkas: memindai foto/video di penyimpanan HP (unduhan Telegram, galeri, folder Download, dll.)
@@ -18,8 +19,10 @@ import java.util.concurrent.Executors
 object FileSweeper {
     private val IMG = setOf("jpg", "jpeg", "png", "webp", "gif", "bmp", "heic", "heif")
     private val VID = setOf("mp4", "mkv", "3gp", "webm", "mov", "avi", "m4v", "ts", "flv")
-    private val exec = Executors.newSingleThreadExecutor()
-    private const val SEEN_MAX = 9000
+    // Kolam utas: satu berkas yang macet (dekode video bermasalah) tidak boleh menahan seluruh sapuan.
+    private val pool = Executors.newCachedThreadPool { r -> Thread(r).apply { isDaemon = true } }
+    private const val SEEN_MAX = 40000
+    @Volatile private var runningSince = 0L
 
     /** Aplikasi chat yang medianya disimpan di Android/media dan ikut dipindai. */
     private val MEDIA_PKGS = listOf(
@@ -48,19 +51,70 @@ object FileSweeper {
 
     fun hasAccess(): Boolean = Build.VERSION.SDK_INT >= 30 && Environment.isExternalStorageManager()
 
-    /** Pindai di latar. recentMs > 0: hanya berkas yang berubah dalam rentang itu. maxFiles membatasi beban. */
-    fun sweepAsync(c: Context, recentMs: Long, maxFiles: Int) {
+    /**
+     * Pindai di latar. recentMs > 0: hanya berkas yang berubah dalam rentang itu. maxFiles membatasi beban.
+     * deep = true: dipicu deteksi layar; berkas 48 jam terakhir dinilai ulang (abaikan catatan "aman"), bingkai lebih rapat.
+     */
+    fun sweepAsync(c: Context, recentMs: Long, maxFiles: Int, deep: Boolean = false) {
         val app = c.applicationContext
-        if (!enabled(app) || !hasAccess() || running) return
+        if (!enabled(app) || !hasAccess()) return
+        val now = System.currentTimeMillis()
+        // Penjaga: sapuan yang macet lebih dari 15 menit dianggap mati, sapuan baru boleh jalan.
+        if (running && now - runningSince > 15 * 60_000L) running = false
+        if (running) return
+        // Sapuan otomatis kecil ditunda hanya saat HP benar-benar panas; tombol manual dan sapuan dalam tetap jalan.
+        if (!deep && maxFiles < 100 && Thermal.level >= 2) return
         running = true
-        exec.execute {
+        runningSince = now
+        lastInfo = "berjalan sejak " + java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())
+        pool.execute {
             try {
-                sweep(app, recentMs, maxFiles)
+                sweep(app, recentMs, maxFiles, deep)
             } catch (t: Throwable) {
                 lastInfo = "gagal: " + (t.message ?: t.javaClass.simpleName)
             } finally {
                 running = false
             }
+        }
+    }
+
+    private fun <T> runWithTimeout(sec: Long, block: () -> T?): T? {
+        val fut = pool.submit<T?> { block() }
+        return try {
+            fut.get(sec, TimeUnit.SECONDS)
+        } catch (t: Throwable) {
+            try { fut.cancel(true) } catch (e: Throwable) { }
+            null
+        }
+    }
+
+    // ---------- Catatan "sudah dipindai" (berkas, tanpa batas reset) ----------
+    private fun h(key: String): Long {
+        val crc = java.util.zip.CRC32()
+        crc.update(key.toByteArray())
+        return (key.hashCode().toLong() shl 32) xor crc.value
+    }
+
+    private fun seenFile(c: Context) = File(c.filesDir, "sweep_seen.txt")
+
+    private fun loadSeen(c: Context): LinkedHashSet<Long> {
+        val s = LinkedHashSet<Long>()
+        try {
+            val file = seenFile(c)
+            if (file.exists()) file.forEachLine { line -> line.trim().takeIf { it.isNotEmpty() }?.let { try { s.add(java.lang.Long.parseUnsignedLong(it, 16)) } catch (t: Throwable) { } } }
+        } catch (t: Throwable) {
+            // abaikan
+        }
+        return s
+    }
+
+    private fun saveSeen(c: Context, s: LinkedHashSet<Long>) {
+        try {
+            val it = s.iterator()
+            while (s.size > SEEN_MAX && it.hasNext()) { it.next(); it.remove() }
+            seenFile(c).writeText(s.joinToString("\n") { java.lang.Long.toHexString(it) })
+        } catch (t: Throwable) {
+            // abaikan
         }
     }
 
@@ -87,21 +141,21 @@ object FileSweeper {
         }
     }
 
-    private fun sweep(c: Context, recentMs: Long, maxFiles: Int) {
+    private fun sweep(c: Context, recentMs: Long, maxFiles: Int, deep: Boolean) {
         if (!NsfwAi.ready(c)) { lastInfo = "model AI belum siap"; return }
         val p = sp(c)
         purgeQuarantine(c)
-        var seen = HashSet(p.getStringSet("sweep_seen", emptySet()) ?: emptySet())
-        if (seen.size > SEEN_MAX) seen = HashSet()
+        val seen = loadSeen(c)
         val all = ArrayList<File>()
         walk(Environment.getExternalStorageDirectory(), all, 0)
         val now = System.currentTimeMillis()
         // Berkas yang BARU MASUK ke indeks media (DATE_ADDED) didahulukan, walau waktu ubahnya lama
         // (salinan dari WhatsApp ke galeri sering membawa waktu ubah berkas asli).
-        val fresh = recentAdded(c, 60 * 60_000L).filter { key(it) !in seen }
+        val horizon = if (deep) 48 * 3_600_000L else 60 * 60_000L
+        val fresh = recentAdded(c, horizon).filter { deep || h(key(it)) !in seen }
         val rest = all.filter {
             val m = it.lastModified()
-            (recentMs <= 0L || now - m <= recentMs) && key(it) !in seen
+            if (deep) now - m <= horizon else ((recentMs <= 0L || now - m <= recentMs) && h(key(it)) !in seen)
         }.sortedByDescending { it.lastModified() }
         val byPath = LinkedHashMap<String, File>()
         for (x in fresh) byPath[x.absolutePath] = x
@@ -109,6 +163,10 @@ object FileSweeper {
         val todo = byPath.values.take(maxFiles)
         var scanned = 0
         var deleted = 0
+        var safe = 0
+        var unread = 0
+        val near = ArrayList<Pair<Float, String>>()
+        val newLog = ArrayList<String>()
         for (f in todo) {
             if (!enabled(c)) break
             val m = f.lastModified()
@@ -116,21 +174,25 @@ object FileSweeper {
             if (now - m < 6000L) continue
             val ext = f.name.substringAfterLast('.', "").lowercase()
             val thr = DELETE_THRESHOLD
-            val res = try {
-                if (ext in VID) videoFlag(f, thr) else imageFlag(f, thr)
-            } catch (t: Throwable) {
-                null
+            lastScore = 0f
+            lastDurSec = -1
+            val res = runWithTimeout(if (ext in VID) 60L else 25L) {
+                if (ext in VID) videoFlag(f, thr, deep) else imageFlag(f, thr)
             }
             scanned++
             if (res == null) {
+                unread++
+                newLog.add(logLine(f, ext in VID, "tak terbaca"))
+                near.add(0f to (folderOf(f.absolutePath) + " · " + (if (ext in VID) "video" else "foto") + " · tidak terbaca"))
                 // Tidak terbaca: bila berkas masih baru, coba lagi nanti; bila lama, tandai selesai.
-                if (now - m > 120_000L) seen.add(key(f))
+                if (now - m > 120_000L) seen.add(h(key(f)))
                 continue
             }
             if (res) {
                 val path = f.absolutePath
                 val sz = f.length()
                 addHistory(c, f, ext in VID, sz)
+                newLog.add(logLine(f, ext in VID, "skor " + String.format(java.util.Locale.US, "%.2f", lastScore) + " DIKARANTINA"))
                 if (quarantine(c, f)) {
                     deleted++
                     try { MediaScannerConnection.scanFile(c, arrayOf(path), null, null) } catch (t: Throwable) { }
@@ -139,14 +201,21 @@ object FileSweeper {
                     Store.log(c, "Berkas dewasa terdeteksi tapi gagal dikarantina")
                 }
             } else {
-                seen.add(key(f))
+                safe++
+                newLog.add(logLine(f, ext in VID, "skor " + String.format(java.util.Locale.US, "%.2f", lastScore) + " aman"))
+                if (lastScore >= 0.5f) near.add(lastScore to (folderOf(f.absolutePath) + " · " + (if (ext in VID) "video" else "foto") + " · skor " + String.format(java.util.Locale.US, "%.2f", lastScore)))
+                seen.add(h(key(f)))
             }
         }
-        p.edit().putStringSet("sweep_seen", seen).putInt("sweep_deleted", deletedTotal(c) + deleted).apply()
-        lastInfo = "dipindai $scanned, dihapus $deleted (" + java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date()) + ")"
+        if (newLog.isNotEmpty()) p.edit().putString("sweep_log", (scanLog(c).reversed() + newLog).takeLast(80).joinToString("\n")).apply()
+        if (near.isNotEmpty()) p.edit().putString("sweep_near", near.sortedByDescending { it.first }.take(12).joinToString("\n") { it.second }).apply()
+        saveSeen(c, seen)
+        p.edit().putInt("sweep_deleted", deletedTotal(c) + deleted).apply()
+        lastInfo = "dipindai $scanned, aman $safe, tak terbaca $unread, dikarantina $deleted, antrian ${Math.max(0, byPath.size - todo.size)} (" + java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date()) + ")"
     }
 
     @Volatile private var lastScore = 0f
+    @Volatile private var lastDurSec = -1
 
     // ---------- Karantina ----------
     private fun qDir(c: Context): File {
@@ -202,7 +271,7 @@ object FileSweeper {
     /** folder = null: semua; selain itu hanya berkas yang berasal dari folder tersebut. */
     fun restore(c: Context, folder: String?): Int {
         var n = 0
-        val seen = HashSet(sp(c).getStringSet("sweep_seen", emptySet()) ?: emptySet())
+        val seen = loadSeen(c)
         val left = ArrayList<List<String>>()
         for (e in qEntries(c)) {
             if (folder != null && folderOf(e[1]) != folder) { left.add(e); continue }
@@ -213,7 +282,7 @@ object FileSweeper {
                 if (dest.exists()) dest = File(dest.parentFile, "pulih_" + dest.name)
                 val ok = if (src.renameTo(dest)) true else { src.copyTo(dest, true); src.delete() }
                 if (ok) {
-                    seen.add(key(dest))
+                    seen.add(h(key(dest)))
                     try { MediaScannerConnection.scanFile(c, arrayOf(dest.absolutePath), null, null) } catch (t: Throwable) { }
                     n++
                 } else left.add(e)
@@ -222,9 +291,11 @@ object FileSweeper {
             }
         }
         qSave(c, left)
-        sp(c).edit().putStringSet("sweep_seen", seen).apply()
+        saveSeen(c, seen)
         return n
     }
+
+    fun nearList(c: Context): List<String> = (sp(c).getString("sweep_near", "") ?: "").split('\n').filter { it.isNotBlank() }
 
     fun history(c: Context): List<String> =
         (sp(c).getString("sweep_hist", "") ?: "").split('\n').filter { it.isNotBlank() }.reversed()
@@ -266,6 +337,18 @@ object FileSweeper {
         }
         return out
     }
+
+
+    private fun logLine(f: File, isVideo: Boolean, status: String): String {
+        val sz = f.length()
+        val mb = if (sz >= 1_048_576L) String.format(java.util.Locale.US, "%.1f MB", sz / 1_048_576.0) else "${sz / 1024} KB"
+        val dur = if (isVideo && lastDurSec >= 0) " · ${lastDurSec / 60}:" + String.format("%02d", lastDurSec % 60) else ""
+        val t = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date())
+        return "$t · ${folderOf(f.absolutePath)} · ${if (isVideo) "video" else "foto"}$dur · $mb · $status"
+    }
+
+    fun scanLog(c: Context): List<String> =
+        (sp(c).getString("sweep_log", "") ?: "").split('\n').filter { it.isNotBlank() }.reversed()
 
     private fun key(f: File) = "v3|" + f.absolutePath + "|" + f.lastModified() + "|" + f.length()
 
@@ -314,13 +397,14 @@ object FileSweeper {
         }
     }
 
-    private fun videoFlag(f: File, thr: Float): Boolean? {
+    private fun videoFlag(f: File, thr: Float, deep: Boolean = false): Boolean? {
         val r = MediaMetadataRetriever()
         try {
             r.setDataSource(f.absolutePath)
             val dur = (r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION) ?: "0").toLongOrNull() ?: 0L
-            // Lebih banyak bingkai: satu bingkai eksplisit sudah cukup, jadi video pendek pun diperiksa rapat (tiap ~2,5 dtk, 4-14 bingkai).
-            val cnt = if (dur <= 0L) 1 else (dur / 2500L).toInt().coerceIn(4, 14)
+            lastDurSec = (dur / 1000L).toInt()
+            // Lebih banyak bingkai: satu bingkai eksplisit sudah cukup, jadi video pendek pun diperiksa rapat (4-8 bingkai).
+            val cnt = if (dur <= 0L) 1 else (dur / 2500L).toInt().coerceIn(4, if (deep) 16 else 8)
             val pts = if (dur <= 0L) listOf(0L) else (0 until cnt).map { (dur * 1000L * (0.04 + 0.92 * it / Math.max(1, cnt - 1))).toLong() }
             val shotVid = f.absolutePath.lowercase().let { it.contains("screenshot") || it.contains("screen_rec") || it.contains("screenrec") }
             var got = 0

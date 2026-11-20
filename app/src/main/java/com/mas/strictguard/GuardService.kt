@@ -147,11 +147,11 @@ class GuardService : AccessibilityService() {
     private val sweepTick = object : Runnable {
         override fun run() {
             try {
-                FileSweeper.sweepAsync(this@GuardService, 0L, 40)
+                FileSweeper.sweepAsync(this@GuardService, 0L, 15)
             } catch (t: Throwable) {
                 // abaikan
             }
-            handler.postDelayed(this, 10 * 60_000L)
+            handler.postDelayed(this, 15 * 60_000L)
         }
     }
 
@@ -677,8 +677,20 @@ class GuardService : AccessibilityService() {
                 // jangan ganggu blokir utama
             }
         }
+        // Layar menunjukkan konten dewasa: sapu dalam berkas 48 jam terakhir (bingkai rapat, abaikan catatan aman), paling cepat tiap 3 menit.
+        try {
+            val nowD = System.currentTimeMillis()
+            if (nowD - lastDeepAt > 3 * 60_000L) {
+                lastDeepAt = nowD
+                FileSweeper.sweepAsync(this, 0L, 20, true)
+            }
+        } catch (t: Throwable) {
+            // abaikan
+        }
         startBlock("nsfw", p)
     }
+
+    private var lastDeepAt = 0L
 
     private var blockedBrowsers: Set<String> = emptySet()
     private var browsersAt = 0L
