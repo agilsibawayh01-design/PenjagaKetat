@@ -195,7 +195,10 @@ class GuardService : AccessibilityService() {
         val dm = resources.displayMetrics
         val full = dm.widthPixels.toLong() * dm.heightPixels
         val skip = setOf("com.android.systemui", packageName, "com.samsung.android.app.cocktailbarservice") + Config.PROTECTED + inputMethodPackages
-        var n = 0
+        // Layar terbagi = minimal dua aplikasi BERBEDA, masing-masing jendelanya tidak memenuhi layar.
+        // Toolbar pilih-teks, dialog, dan menu milik aplikasi yang sama tidak dihitung; bottom sheet di atas
+        // aplikasi yang memenuhi layar (mis. menu Bagikan) juga tidak, karena jendela di bawahnya penuh.
+        val pkgs = HashSet<String>()
         for (w in windows) {
             if (w.type != android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION || w.isInPictureInPictureMode) continue
             val pk = w.root?.packageName?.toString() ?: continue
@@ -203,11 +206,10 @@ class GuardService : AccessibilityService() {
             val r = android.graphics.Rect()
             w.getBoundsInScreen(r)
             if (r.width().toLong() * r.height() > full * 0.9) continue
-            if (r.width() < 100 || r.height() < 100) continue
-            n++
+            if (r.width() < 200 || r.height() < 200) continue
+            pkgs.add(pk)
         }
-        // n>=1 berarti ada jendela aplikasi yang tidak memenuhi layar (terbagi / mengambang), selain PiP yang ditangani terpisah.
-        val split = n >= 2 || (n >= 1 && windows.count { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION && !it.isInPictureInPictureMode } >= 2)
+        val split = pkgs.size >= 2
         val now = System.currentTimeMillis()
         if (split && now - splitLastAt > 2500L) {
             splitLastAt = now
@@ -916,6 +918,7 @@ class GuardService : AccessibilityService() {
             handler.postDelayed(splitRunnable, 500L)
         }
         if (pkg == "com.android.systemui") closeSafeModePrompt(event)
+        if (pkg == "com.android.settings") closeFilesAccessPage(event)
         if (pkg == packageName || pkg in Config.IGNORED || pkg in inputMethodPackages) return
         fgPkg = pkg
         if (pkg == BrowserStoreGuard.STORE) {
@@ -952,6 +955,34 @@ class GuardService : AccessibilityService() {
                 lastSafeModeCloseAt = now
                 performGlobalAction(GLOBAL_ACTION_HOME)
                 Store.log(this, "Dialog Safe Mode ditutup")
+            }
+        } catch (t: Throwable) {
+            // jangan pernah membuat service crash
+        }
+    }
+
+    private var lastFilesCloseAt = 0L
+
+    /** Mode Ketat: halaman izin "Akses semua file" untuk Penjaga Ketat ditutup, supaya pembersih berkas tidak bisa dicabut. */
+    private fun closeFilesAccessPage(event: AccessibilityEvent) {
+        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && event.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return
+        if (!Store.strictOn(this) || !FileSweeper.enabled(this)) return
+        val now = System.currentTimeMillis()
+        if (now - lastFilesCloseAt < 700L) return
+        try {
+            val sb = StringBuilder()
+            for (t in event.text) sb.append(t).append(' ')
+            val root = rootInActiveWindow
+            if (root != null) {
+                collectTexts(root, sb, 0)
+                root.recycle()
+            }
+            val s = sb.toString().lowercase()
+            val files = s.contains("semua file") || s.contains("semua berkas") || s.contains("all files") || s.contains("mengelola semua")
+            if (files && s.contains("penjaga ketat")) {
+                lastFilesCloseAt = now
+                performGlobalAction(GLOBAL_ACTION_HOME)
+                Store.log(this, "Halaman izin akses file ditutup (Mode Ketat)")
             }
         } catch (t: Throwable) {
             // jangan pernah membuat service crash

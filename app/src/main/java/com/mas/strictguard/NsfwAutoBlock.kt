@@ -14,18 +14,23 @@ object NsfwAutoBlock {
     const val LIMIT = 5
     const val MIN_GAP_MS = 60_000L
 
+    /** Chat Telegram (channel/grup/bot) lebih ketat: 2 deteksi dalam 30 menit, berjarak minimal 30 detik. */
+    const val TG_LIMIT = 2
+    const val TG_WINDOW_MS = 30 * 60_000L
+    const val TG_GAP_MS = 30_000L
+
     data class Ev(val key: String, val at: Long)
     data class Outcome(val events: List<Ev>, val count: Int, val accepted: Boolean, val reached: Boolean)
 
     /** Murni (bisa dites). */
-    fun apply(events: List<Ev>, key: String, now: Long): Outcome {
-        val recent = events.filter { now - it.at in 0..WINDOW_MS }
+    fun apply(events: List<Ev>, key: String, now: Long, limit: Int = LIMIT, gap: Long = MIN_GAP_MS, window: Long = WINDOW_MS): Outcome {
+        val recent = events.filter { now - it.at in 0..window }
         val mine = recent.filter { it.key == key }
-        if (mine.isNotEmpty() && now - mine.maxOf { it.at } < MIN_GAP_MS) {
+        if (mine.isNotEmpty() && now - mine.maxOf { it.at } < gap) {
             return Outcome(recent, mine.size, false, false)
         }
         val count = mine.size + 1
-        if (count >= LIMIT) return Outcome(recent.filter { it.key != key }, count, true, true)
+        if (count >= limit) return Outcome(recent.filter { it.key != key }, count, true, true)
         return Outcome(recent + Ev(key, now), count, true, false)
     }
 
@@ -47,7 +52,9 @@ object NsfwAutoBlock {
     /** Catat satu kejadian NSFW untuk sumber ini. Mengembalikan keterangan bila baru saja diblokir permanen, selain itu null. */
     @Synchronized
     fun record(c: Context, src: NsfwSource.Src): String? {
-        val o = apply(load(c), src.key, System.currentTimeMillis())
+        val tg = src.kind != "d"
+        val o = if (tg) apply(load(c), src.key, System.currentTimeMillis(), TG_LIMIT, TG_GAP_MS, TG_WINDOW_MS)
+        else apply(load(c), src.key, System.currentTimeMillis())
         save(c, o.events)
         if (!o.reached) return null
         return if (src.kind == "d") {
@@ -56,7 +63,7 @@ object NsfwAutoBlock {
             "situs " + src.name + " diblokir permanen otomatis (" + LIMIT + " kali NSFW dalam " + (WINDOW_MS / 60000L) + " menit)"
         } else {
             Store.addChannel(c, src.name)
-            "channel \"" + src.name + "\" diblokir permanen otomatis (" + LIMIT + " kali NSFW dalam " + (WINDOW_MS / 60000L) + " menit)"
+            "chat Telegram \"" + src.name + "\" diblokir permanen otomatis (" + TG_LIMIT + " kali NSFW dalam " + (TG_WINDOW_MS / 60000L) + " menit)"
         }
     }
 }
