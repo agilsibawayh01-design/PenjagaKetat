@@ -21,6 +21,12 @@ object FileSweeper {
     private val exec = Executors.newSingleThreadExecutor()
     private const val SEEN_MAX = 9000
 
+    /** Aplikasi chat yang medianya disimpan di Android/media dan ikut dipindai. */
+    private val MEDIA_PKGS = listOf(
+        "com.whatsapp", "com.whatsapp.w4b", "org.telegram.messenger", "org.telegram.messenger.web",
+        "org.telegram.messenger.beta", "org.thunderdog.challegram"
+    )
+
     /** Hapus permanen hanya bila skor tertinggi >= 0,95 (semua folder, foto dan video). */
     const val DELETE_THRESHOLD = 0.95f
 
@@ -64,7 +70,14 @@ object FileSweeper {
         for (f in list) {
             if (f.isDirectory) {
                 val n = f.name
-                if (n == "Android" && depth == 0) continue
+                if (n == "Android" && depth == 0) {
+                    // Hanya media WhatsApp dan Telegram di Android/media (Android/data tidak terjangkau).
+                    for (pk in MEDIA_PKGS) {
+                        val d = File(f, "media/$pk")
+                        if (d.isDirectory) walk(d, out, depth + 2)
+                    }
+                    continue
+                }
                 if (n.startsWith(".")) continue
                 walk(f, out, depth + 1)
             } else {
