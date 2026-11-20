@@ -12,6 +12,12 @@ import android.content.pm.PackageManager
 object NsfwScope {
     const val NEW_APP_DAYS = 14
 
+    /** Aplikasi berisi kisi (grid) thumbnail, termasuk pratinjau video yang memutar sendiri: layar dipindai juga per petak. */
+    val GRID_APPS = setOf(
+        "com.sec.android.gallery3d", "com.google.android.apps.photos", "com.sec.android.app.myfiles",
+        "com.android.documentsui", "com.google.android.documentsui", "com.google.android.apps.nbu.files"
+    )
+
     private val KNOWN = setOf(
         "org.telegram.messenger", "org.telegram.messenger.web", "org.telegram.messenger.beta",
         "com.whatsapp", "com.whatsapp.w4b", "com.instagram.android", "com.instagram.barcelona",

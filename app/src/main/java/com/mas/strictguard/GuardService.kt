@@ -597,6 +597,12 @@ class GuardService : AccessibilityService() {
                                     if (pk != null && pk !in Config.PROTECTED && pk !in Config.SCAN_EXEMPT) sp = pk
                                 }
                             }
+                            // Kisi thumbnail (galeri, Foto, Berkasku): video kecil yang memutar sendiri mudah "encer" di layar utuh,
+                            // jadi dinilai juga per petak. Petak baru dihitung bila skornya >= 0,97.
+                            if (p in NsfwScope.GRID_APPS) {
+                                val tl = NsfwAi.scoreTiles(soft)
+                                if (tl >= FileSweeper.TILE_THRESHOLD && tl > s) s = tl
+                            }
                             soft.recycle()
                             NsfwAi.lastFail = ""
                             val fs = s
