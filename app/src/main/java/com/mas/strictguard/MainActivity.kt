@@ -3202,6 +3202,15 @@ class MainActivity : Activity() {
                 gateOff(!v, "mematikan penghapus berkas dewasa") { FileSweeper.setEnabled(this, v) }
             }
         }
+        val cab = Store.chatAutoBlock(this)
+        switchLine("Blokir chat/channel otomatis", "Channel, grup, bot Telegram dan chat WhatsApp/WhatsApp Business yang terdeteksi konten dewasa 2 kali dalam 30 menit masuk daftar blokir. Tidak bisa dimatikan saat Mode Ketat aktif.", cab, strict && cab) { v ->
+            if (!v && strict) {
+                toast("Mode Ketat aktif: tidak bisa dimatikan")
+                render()
+            } else {
+                gateOff(!v, "mematikan blokir chat otomatis") { Store.setChatAutoBlock(this, v) }
+            }
+        }
         status(FileSweeper.hasAccess(), "Izin akses semua berkas")
         if (!FileSweeper.hasAccess()) {
             put(button("Beri izin akses semua berkas") {

@@ -23,6 +23,8 @@ object FileSweeper {
     private val pool = Executors.newCachedThreadPool { r -> Thread(r).apply { isDaemon = true } }
     private const val SEEN_MAX = 40000
     @Volatile private var runningSince = 0L
+    @Volatile private var pendingDeep = false
+    @Volatile private var pendingScope: String? = null
 
     /** Aplikasi chat yang medianya disimpan di Android/media dan ikut dipindai. */
     private val MEDIA_PKGS = listOf(
@@ -55,13 +57,17 @@ object FileSweeper {
      * Pindai di latar. recentMs > 0: hanya berkas yang berubah dalam rentang itu. maxFiles membatasi beban.
      * deep = true: dipicu deteksi layar; berkas 48 jam terakhir dinilai ulang (abaikan catatan "aman"), bingkai lebih rapat.
      */
-    fun sweepAsync(c: Context, recentMs: Long, maxFiles: Int, deep: Boolean = false) {
+    fun sweepAsync(c: Context, recentMs: Long, maxFiles: Int, deep: Boolean = false, scopePkg: String? = null) {
         val app = c.applicationContext
         if (!enabled(app) || !hasAccess()) return
         val now = System.currentTimeMillis()
         // Penjaga: sapuan yang macet lebih dari 15 menit dianggap mati, sapuan baru boleh jalan.
         if (running && now - runningSince > 15 * 60_000L) running = false
-        if (running) return
+        if (running) {
+            // Sapuan dalam tidak dibuang: dijalankan begitu sapuan yang sedang berjalan selesai.
+            if (deep) { pendingDeep = true; pendingScope = scopePkg }
+            return
+        }
         // Sapuan otomatis kecil ditunda hanya saat HP benar-benar panas; tombol manual dan sapuan dalam tetap jalan.
         if (!deep && maxFiles < 100 && Thermal.level >= 2) return
         running = true
@@ -69,11 +75,16 @@ object FileSweeper {
         lastInfo = "berjalan sejak " + java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())
         pool.execute {
             try {
-                sweep(app, recentMs, maxFiles, deep)
+                sweep(app, recentMs, maxFiles, deep, scopePkg)
             } catch (t: Throwable) {
                 lastInfo = "gagal: " + (t.message ?: t.javaClass.simpleName)
             } finally {
                 running = false
+                if (pendingDeep) {
+                    pendingDeep = false
+                    val sc = pendingScope
+                    sweepAsync(app, 0L, 20, true, sc)
+                }
             }
         }
     }
@@ -141,7 +152,18 @@ object FileSweeper {
         }
     }
 
-    private fun sweep(c: Context, recentMs: Long, maxFiles: Int, deep: Boolean) {
+    /** Cakupan sapuan dalam: aplikasi chat hanya memeriksa foldernya sendiri; lainnya (galeri, pemutar) semua folder. */
+    private fun inScope(f: File, pkg: String?): Boolean {
+        if (pkg == null) return true
+        val low = f.absolutePath.lowercase()
+        return when {
+            pkg.startsWith("com.whatsapp") -> low.contains("whatsapp")
+            pkg.startsWith("org.telegram") || pkg == "org.thunderdog.challegram" -> low.contains("telegram")
+            else -> true
+        }
+    }
+
+    private fun sweep(c: Context, recentMs: Long, maxFiles: Int, deep: Boolean, scopePkg: String?) {
         if (!NsfwAi.ready(c)) { lastInfo = "model AI belum siap"; return }
         val p = sp(c)
         purgeQuarantine(c)
@@ -152,10 +174,10 @@ object FileSweeper {
         // Berkas yang BARU MASUK ke indeks media (DATE_ADDED) didahulukan, walau waktu ubahnya lama
         // (salinan dari WhatsApp ke galeri sering membawa waktu ubah berkas asli).
         val horizon = if (deep) 48 * 3_600_000L else 60 * 60_000L
-        val fresh = recentAdded(c, horizon).filter { deep || h(key(it)) !in seen }
+        val fresh = recentAdded(c, horizon).filter { (deep && inScope(it, scopePkg)) || (!deep && h(key(it)) !in seen) }
         val rest = all.filter {
             val m = it.lastModified()
-            if (deep) now - m <= horizon else ((recentMs <= 0L || now - m <= recentMs) && h(key(it)) !in seen)
+            if (deep) (now - m <= horizon && inScope(it, scopePkg)) else ((recentMs <= 0L || now - m <= recentMs) && h(key(it)) !in seen)
         }.sortedByDescending { it.lastModified() }
         val byPath = LinkedHashMap<String, File>()
         for (x in fresh) byPath[x.absolutePath] = x
@@ -167,6 +189,7 @@ object FileSweeper {
         var unread = 0
         val near = ArrayList<Pair<Float, String>>()
         val newLog = ArrayList<String>()
+        val cands = ArrayList<Triple<Float, File, Boolean>>()
         for (f in todo) {
             if (!enabled(c)) break
             val m = f.lastModified()
@@ -180,6 +203,7 @@ object FileSweeper {
                 if (ext in VID) videoFlag(f, thr, deep) else imageFlag(f, thr)
             }
             scanned++
+            if (deep && res != null) { cands.add(Triple(lastScore, f, ext in VID)); continue }
             if (res == null) {
                 unread++
                 newLog.add(logLine(f, ext in VID, "tak terbaca"))
@@ -205,6 +229,22 @@ object FileSweeper {
                 newLog.add(logLine(f, ext in VID, "skor " + String.format(java.util.Locale.US, "%.2f", lastScore) + " aman"))
                 if (lastScore >= 0.5f) near.add(lastScore to (folderOf(f.absolutePath) + " · " + (if (ext in VID) "video" else "foto") + " · skor " + String.format(java.util.Locale.US, "%.2f", lastScore)))
                 seen.add(h(key(f)))
+            }
+        }
+        if (deep && cands.isNotEmpty()) {
+            // Layar baru saja memblokir konten dewasa: karantina semua yang >= ambang; bila tidak ada, dua yang paling tinggi (>= 0,80).
+            val over = cands.filter { it.first >= DELETE_THRESHOLD }
+            val pick = if (over.isNotEmpty()) over else cands.sortedByDescending { it.first }.filter { it.first >= 0.80f }.take(2)
+            for ((sc, file, isV) in pick) {
+                val sz = file.length()
+                val path = file.absolutePath
+                lastScore = sc
+                addHistory(c, file, isV, sz)
+                if (quarantine(c, file)) {
+                    deleted++
+                    try { MediaScannerConnection.scanFile(c, arrayOf(path), null, null) } catch (t: Throwable) { }
+                    Store.log(c, "Berkas dikarantina setelah deteksi layar (${if (isV) "video" else "foto"}, ${sz / 1024} KB)")
+                }
             }
         }
         if (newLog.isNotEmpty()) p.edit().putString("sweep_log", (scanLog(c).reversed() + newLog).takeLast(80).joinToString("\n")).apply()

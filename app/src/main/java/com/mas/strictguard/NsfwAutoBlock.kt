@@ -62,8 +62,9 @@ object NsfwAutoBlock {
             Store.addDomain(c, src.name)
             "situs " + src.name + " diblokir permanen otomatis (" + LIMIT + " kali NSFW dalam " + (WINDOW_MS / 60000L) + " menit)"
         } else {
+            if (!Store.chatAutoBlock(c)) return null
             Store.addChannel(c, src.name)
-            "chat Telegram \"" + src.name + "\" diblokir permanen otomatis (" + TG_LIMIT + " kali NSFW dalam " + (TG_WINDOW_MS / 60000L) + " menit)"
+            "chat/channel \"" + src.name + "\" diblokir permanen otomatis (" + TG_LIMIT + " kali NSFW dalam " + (TG_WINDOW_MS / 60000L) + " menit)"
         }
     }
 }

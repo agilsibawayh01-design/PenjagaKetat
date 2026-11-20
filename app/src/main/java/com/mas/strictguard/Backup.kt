@@ -37,7 +37,7 @@ object Backup {
         "strict_sched", "exp_min", "exit_wait_on", "exit_delay", "exit_text_len",
         "profiles", "keyword_split_v21", "seeded", "sched_notify", "warn_before", "store_block", "block_ip_urls",
         "block_unknown_install", "night_on", "night_start", "night_end", "night_lock_play", "night_lock_settings", "letter", "nsfw_ai",
-        "tgwork_on", "safe_search", "pause_min", "thermal_on", "split_block", "file_sweep", "theme_mode", "upd_repo", "upd_auto"
+        "tgwork_on", "safe_search", "pause_min", "thermal_on", "split_block", "file_sweep", "chat_autoblock", "theme_mode", "upd_repo", "upd_auto"
     )
 
     private val PREFIXES = listOf("cfg_", "sitecfg_", "cat_", "loc_", "feat_")
@@ -205,9 +205,9 @@ object Backup {
                             added++
                         }
                     }
-                    k == "block_unknown_install" || k == "nsfw_ai" || k == "night_on" || k == "night_lock_play" || k == "night_lock_settings" || k == "tgwork_on" || k == "safe_search" || k == "thermal_on" || k == "split_block" || k == "file_sweep" -> {
+                    k == "block_unknown_install" || k == "nsfw_ai" || k == "night_on" || k == "night_lock_play" || k == "night_lock_settings" || k == "tgwork_on" || k == "safe_search" || k == "thermal_on" || k == "split_block" || k == "file_sweep" || k == "chat_autoblock" -> {
                         // hanya boleh menyalakan (memperketat) saat Mode Ketat aktif
-                        if (o.opt("v") == true && !p.getBoolean(k, k == "night_on" || k == "nsfw_ai" || k == "safe_search" || k == "thermal_on" || k == "split_block" || k == "file_sweep")) {
+                        if (o.opt("v") == true && !p.getBoolean(k, k == "night_on" || k == "nsfw_ai" || k == "safe_search" || k == "thermal_on" || k == "split_block" || k == "file_sweep" || k == "chat_autoblock")) {
                             e.putBoolean(k, true)
                             added++
                         }

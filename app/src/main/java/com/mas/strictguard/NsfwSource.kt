@@ -18,6 +18,7 @@ object NsfwSource {
     }
 
     val TG_PACKAGES = setOf("org.telegram.messenger", "org.telegram.messenger.web", "org.telegram.messenger.beta")
+    val WA_PACKAGES = setOf("com.whatsapp", "com.whatsapp.w4b")
 
     /** Domain gerbang yang tidak pernah diblokir otomatis (mesin pencari dan Telegram web). */
     private val NEVER_DOMAIN = setOf(
@@ -62,7 +63,8 @@ object NsfwSource {
         return try {
             when {
                 pkg in browsers -> urlDomain(root)?.let { Src("d", it) }
-                pkg in TG_PACKAGES -> channelTitle(root, screenHeight)?.let { Src("c", it) }
+                pkg in TG_PACKAGES -> chatHeader(root, screenHeight)?.takeIf { it.second == "c" || it.second == "g" || it.second == "b" }?.let { Src(it.second, it.first) }
+                pkg in WA_PACKAGES -> whatsappTitle(root)?.let { Src("w", it) }
                 else -> null
             }
         } catch (t: Throwable) {
@@ -152,6 +154,23 @@ object NsfwSource {
             it.second.bottom <= sub.second.top + 12 }
             .maxByOrNull { it.second.bottom }?.first ?: return null
         return title to kind
+    }
+
+    /** Judul chat WhatsApp / WhatsApp Business dari header layar obrolan (id conversation_contact_name). null bila bukan layar obrolan. */
+    fun whatsappTitle(root: AccessibilityNodeInfo): String? {
+        val q = ArrayDeque<AccessibilityNodeInfo>()
+        q.add(root)
+        var n = 0
+        while (q.isNotEmpty() && n++ < 600) {
+            val node = q.removeFirst()
+            val id = (node.viewIdResourceName ?: "").lowercase(Locale.US)
+            if (id.endsWith("conversation_contact_name")) {
+                val t = node.text?.toString()?.trim() ?: ""
+                if (t.length in 2..80) return t
+            }
+            for (i in 0 until node.childCount) node.getChild(i)?.let { q.add(it) }
+        }
+        return null
     }
 
     private fun channelTitle(root: AccessibilityNodeInfo, screenHeight: Int): String? =

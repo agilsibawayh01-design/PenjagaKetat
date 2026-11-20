@@ -424,6 +424,9 @@ object Store {
     fun nsfwAi(c: Context): Boolean = sp(c).getBoolean("nsfw_ai", true)
     fun setNsfwAi(c: Context, v: Boolean) { sp(c).edit().putBoolean("nsfw_ai", v).commit() }
 
+    fun chatAutoBlock(c: Context): Boolean = sp(c).getBoolean("chat_autoblock", true)
+    fun setChatAutoBlock(c: Context, v: Boolean) { sp(c).edit().putBoolean("chat_autoblock", v).commit() }
+
     fun splitBlock(c: Context): Boolean = sp(c).getBoolean("split_block", true)
     fun setSplitBlock(c: Context, v: Boolean) { sp(c).edit().putBoolean("split_block", v).commit() }
 

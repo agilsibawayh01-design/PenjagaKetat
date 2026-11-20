@@ -680,9 +680,9 @@ class GuardService : AccessibilityService() {
         // Layar menunjukkan konten dewasa: sapu dalam berkas 48 jam terakhir (bingkai rapat, abaikan catatan aman), paling cepat tiap 3 menit.
         try {
             val nowD = System.currentTimeMillis()
-            if (nowD - lastDeepAt > 3 * 60_000L) {
+            if (nowD - lastDeepAt > 30_000L) {
                 lastDeepAt = nowD
-                FileSweeper.sweepAsync(this, 0L, 20, true)
+                FileSweeper.sweepAsync(this, 0L, 20, true, p)
             }
         } catch (t: Throwable) {
             // abaikan
@@ -1111,7 +1111,7 @@ class GuardService : AccessibilityService() {
         if (BlockEngine.hasLimit(this, pkg, apps, profiles)) scheduleLimitCheck(pkg)
 
         // 1a. Channel Telegram yang diblokir (otomatis/manual): keluar dari channel itu saja, aplikasi Telegram tetap bisa dipakai.
-        if (pkg in NsfwSource.TG_PACKAGES && now - lastChannelCheckAt > 400L) {
+        if ((pkg in NsfwSource.TG_PACKAGES || pkg in NsfwSource.WA_PACKAGES) && now - lastChannelCheckAt > 400L) {
             lastChannelCheckAt = now
             if (channelBlockedNow(foregroundRoot, pkg)) {
                 startBlock("channel", pkg)
@@ -1648,7 +1648,7 @@ class GuardService : AccessibilityService() {
         val list = Store.channels(this)
         if (list.isEmpty() || root == null) return false
         val s = NsfwSource.identify(root, pkg, browsers, resources.displayMetrics.heightPixels) ?: return false
-        return s.kind == "c" && s.name.trim().lowercase() in list
+        return s.kind in setOf("c", "g", "b", "w") && s.name.trim().replace(Regex("\\s+"), " ").lowercase() in list
     }
 
     private fun stillBad(mode: String, pkg: String): Boolean {
