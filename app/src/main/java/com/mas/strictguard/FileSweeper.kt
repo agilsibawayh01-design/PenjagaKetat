@@ -255,6 +255,7 @@ object FileSweeper {
 
     @Volatile private var lastScore = 0f
     @Volatile private var lastDurSec = -1
+    @Volatile private var lastFrames = 0
 
     // ---------- Karantina ----------
     private fun qDir(c: Context): File {
@@ -429,7 +430,43 @@ object FileSweeper {
         return done
     }
 
-    private fun key(f: File) = "v3|" + f.absolutePath + "|" + f.lastModified() + "|" + f.length()
+    /** Naikkan angka ini SETIAP kali cara menilai berubah, supaya berkas yang dulu dinilai "aman" dinilai ulang. */
+    private const val SCORE_VER = 4
+
+    /** Uji satu kali: nilai n video terbaru di galeri dengan bingkai rapat, tampilkan skor tertinggi (tanpa nama, tanpa karantina). */
+    @Suppress("DEPRECATION")
+    fun testRecent(c: Context, n: Int): List<String> {
+        val out = ArrayList<String>()
+        if (!hasAccess()) return listOf("Izin akses semua berkas belum diberikan.")
+        try {
+            if (!NsfwAi.ready(c)) return listOf("Model AI belum siap.")
+            val q = android.os.Bundle().apply {
+                putString(android.content.ContentResolver.QUERY_ARG_SQL_SELECTION, android.provider.MediaStore.Files.FileColumns.MEDIA_TYPE + " = " + android.provider.MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO)
+                putStringArray(android.content.ContentResolver.QUERY_ARG_SORT_COLUMNS, arrayOf(android.provider.MediaStore.Files.FileColumns.DATE_ADDED))
+                putInt(android.content.ContentResolver.QUERY_ARG_SORT_DIRECTION, android.content.ContentResolver.QUERY_SORT_DIRECTION_DESCENDING)
+                putInt(android.content.ContentResolver.QUERY_ARG_LIMIT, n)
+            }
+            val files = ArrayList<File>()
+            c.contentResolver.query(android.provider.MediaStore.Files.getContentUri("external"), arrayOf(android.provider.MediaStore.Files.FileColumns.DATA), q, null)?.use { cur ->
+                while (cur.moveToNext()) { val p = cur.getString(0) ?: continue; val file = File(p); if (file.isFile) files.add(file) }
+            }
+            if (files.isEmpty()) return listOf("Tidak ada video di indeks media.")
+            for (file in files) {
+                lastScore = 0f; lastDurSec = -1; lastFrames = 0
+                val res = runWithTimeout(120L) { videoFlag(file, 2f, true) }
+                val sz = file.length()
+                val mb = if (sz >= 1_048_576L) String.format(java.util.Locale.US, "%.1f MB", sz / 1_048_576.0) else "${sz / 1024} KB"
+                val dur = if (lastDurSec >= 0) "${lastDurSec / 60}:" + String.format("%02d", lastDurSec % 60) else "?"
+                out.add(if (res == null) "${folderOf(file.absolutePath)} · $dur · $mb · TIDAK TERBACA (bingkai terbaca ${lastFrames})"
+                else "${folderOf(file.absolutePath)} · $dur · $mb · skor tertinggi ${String.format(java.util.Locale.US, "%.2f", lastScore)} dari ${lastFrames} bingkai")
+            }
+        } catch (t: Throwable) {
+            out.add("Uji gagal: " + (t.message ?: t.javaClass.simpleName))
+        }
+        return out
+    }
+
+    private fun key(f: File) = "v$SCORE_VER|" + f.absolutePath + "|" + f.lastModified() + "|" + f.length()
 
     private fun imageFlag(f: File, thr: Float): Boolean? {
         if (f.length() < 15_000L) return false
@@ -501,6 +538,7 @@ object FileSweeper {
                 if (sc >= 0.9f) hi++
                 if (max >= thr) break
             }
+            lastFrames = got
             if (got == 0) return null
             lastScore = max
             return max >= thr

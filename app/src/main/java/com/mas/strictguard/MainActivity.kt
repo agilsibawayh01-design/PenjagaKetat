@@ -3225,6 +3225,16 @@ class MainActivity : Activity() {
                 FileSweeper.sweepAsync(this, 0L, 400)
                 toast("Memindai di latar belakang")
             })
+            put(ghostButton("Uji 3 video terbaru (lihat skor)") {
+                toast("Menguji, mohon tunggu")
+                Thread {
+                    val lines = FileSweeper.testRecent(this, 3)
+                    runOnUiThread {
+                        android.app.AlertDialog.Builder(this).setTitle("Hasil uji video terbaru")
+                            .setMessage(lines.joinToString("\n\n")).setPositiveButton("Tutup", null).show()
+                    }
+                }.start()
+            })
             put(ghostButton("Karantina 3 video terbaru di galeri") {
                 Thread {
                     val n = FileSweeper.quarantineRecent(this, 3)
