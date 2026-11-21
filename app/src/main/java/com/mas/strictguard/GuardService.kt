@@ -538,6 +538,7 @@ class GuardService : AccessibilityService() {
         // di depan tidak boleh jadi celah.
         val crops = extraWindows()
         if (p in Config.PROTECTED && crops.isEmpty()) return
+        if (p in Config.CAMERA_APPS && crops.isEmpty()) return
         val now = System.currentTimeMillis()
         if (now - nsfwLastScanAt < nsfwIntervalMs - 200L) return
         // Hemat baterai: hanya aplikasi yang bisa memuat media dan aplikasi baru; PiP/layar terbagi tetap dipindai.

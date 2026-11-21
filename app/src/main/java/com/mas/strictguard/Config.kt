@@ -13,6 +13,9 @@ object Config {
      */
     val SCAN_EXEMPT: Set<String> = setOf("com.mas.tgblocker")
 
+    /** Aplikasi kamera: pratinjau langsung (cermin) tidak dipindai AI. PiP/layar terbagi di atasnya tetap dipindai. */
+    val CAMERA_APPS: Set<String> = setOf("com.sec.android.app.camera", "com.android.camera", "com.android.camera2", "com.google.android.GoogleCamera")
+
     /** Layar sistem tempat orang biasanya mencopot / mematikan aplikasi. Dijaga saat Mode Ketat aktif. */
     val PROTECTED: Set<String> = setOf(
         "com.android.settings",
