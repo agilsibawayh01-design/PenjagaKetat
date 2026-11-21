@@ -182,7 +182,10 @@ object FileSweeper {
         val byPath = LinkedHashMap<String, File>()
         for (x in fresh) byPath[x.absolutePath] = x
         for (x in rest) byPath.putIfAbsent(x.absolutePath, x)
-        val todo = byPath.values.take(maxFiles)
+        val chatScope = deep && scopePkg != null && (scopePkg.startsWith("com.whatsapp") || scopePkg.startsWith("org.telegram") || scopePkg == "org.thunderdog.challegram")
+        // Sapuan dalam di aplikasi chat: video didahulukan (foto tidak boleh menutup antrian video), batas lebih longgar.
+        val ordered = if (chatScope) byPath.values.sortedBy { if (it.name.substringAfterLast('.', "").lowercase() in VID) 0 else 1 } else byPath.values.toList()
+        val todo = ordered.take(if (chatScope) 40 else maxFiles)
         var scanned = 0
         var deleted = 0
         var safe = 0
@@ -203,7 +206,12 @@ object FileSweeper {
                 if (ext in VID) videoFlag(f, thr, deep) else imageFlag(f, thr)
             }
             scanned++
-            if (deep && res != null) { cands.add(Triple(lastScore, f, ext in VID)); continue }
+            if (deep && res != null) {
+                cands.add(Triple(lastScore, f, ext in VID))
+                newLog.add(logLine(f, ext in VID, "sapuan layar, skor " + String.format(java.util.Locale.US, "%.2f", lastScore)))
+                if (lastScore >= 0.5f) near.add(lastScore to (folderOf(f.absolutePath) + " · " + (if (ext in VID) "video" else "foto") + " · skor " + String.format(java.util.Locale.US, "%.2f", lastScore)))
+                continue
+            }
             if (res == null) {
                 unread++
                 newLog.add(logLine(f, ext in VID, "tak terbaca"))
@@ -233,7 +241,8 @@ object FileSweeper {
         }
         if (deep && cands.isNotEmpty()) {
             // Layar baru saja memblokir konten dewasa: karantina hanya berkas yang skornya >= ambang (0,95). Tanpa tebakan.
-            val pick = cands.filter { it.first >= DELETE_THRESHOLD }
+            // Di aplikasi chat yang layarnya baru terblokir, video dengan skor >= 0,90 (salinan WhatsApp dikompres ulang, skor turun) juga dikarantina.
+            val pick = cands.filter { it.first >= DELETE_THRESHOLD || (chatScope && it.third && it.first >= 0.90f) }
             for ((sc, file, isV) in pick) {
                 val sz = file.length()
                 val path = file.absolutePath
@@ -433,6 +442,38 @@ object FileSweeper {
     /** Naikkan angka ini SETIAP kali cara menilai berubah, supaya berkas yang dulu dinilai "aman" dinilai ulang. */
     private const val SCORE_VER = 4
 
+    private fun testOne(file: File): String {
+        lastScore = 0f; lastDurSec = -1; lastFrames = 0
+        val res = runWithTimeout(120L) { videoFlag(file, 2f, true) }
+        val sz = file.length()
+        val mb = if (sz >= 1_048_576L) String.format(java.util.Locale.US, "%.1f MB", sz / 1_048_576.0) else "${sz / 1024} KB"
+        val dur = if (lastDurSec >= 0) "${lastDurSec / 60}:" + String.format("%02d", lastDurSec % 60) else "?"
+        val t = java.text.SimpleDateFormat("dd/MM HH:mm", java.util.Locale.getDefault()).format(java.util.Date(file.lastModified()))
+        return if (res == null) "${folderOf(file.absolutePath)} · $t · $dur · $mb · TIDAK TERBACA (bingkai terbaca ${lastFrames})"
+        else "${folderOf(file.absolutePath)} · $t · $dur · $mb · skor tertinggi ${String.format(java.util.Locale.US, "%.2f", lastScore)} dari ${lastFrames} bingkai"
+    }
+
+    /** Uji: video terbaru (menurut waktu ubah) di folder media WhatsApp dan WhatsApp Business, n per aplikasi. */
+    fun testChatApps(c: Context, n: Int): List<String> {
+        val out = ArrayList<String>()
+        if (!hasAccess()) return listOf("Izin akses semua berkas belum diberikan.")
+        if (!NsfwAi.ready(c)) return listOf("Model AI belum siap.")
+        for (pk in listOf("com.whatsapp.w4b", "com.whatsapp", "org.telegram.messenger", "org.telegram.messenger.web", "org.telegram.messenger.beta", "org.thunderdog.challegram")) {
+            try {
+                val all = ArrayList<File>()
+                val d = File(Environment.getExternalStorageDirectory(), "Android/media/$pk")
+                if (!d.isDirectory) { if (pk.startsWith("com.whatsapp")) out.add("$pk: folder media tidak ditemukan / tidak terjangkau"); continue }
+                walk(d, all, 2)
+                val vids = all.filter { it.name.substringAfterLast('.', "").lowercase() in VID }.sortedByDescending { it.lastModified() }.take(n)
+                if (vids.isEmpty()) out.add("$pk: tidak ada video di foldernya")
+                for (v in vids) out.add(testOne(v))
+            } catch (t: Throwable) {
+                out.add("$pk: uji gagal: " + (t.message ?: t.javaClass.simpleName))
+            }
+        }
+        return out
+    }
+
     /** Uji satu kali: nilai n video terbaru di galeri dengan bingkai rapat, tampilkan skor tertinggi (tanpa nama, tanpa karantina). */
     @Suppress("DEPRECATION")
     fun testRecent(c: Context, n: Int): List<String> {
@@ -451,15 +492,7 @@ object FileSweeper {
                 while (cur.moveToNext()) { val p = cur.getString(0) ?: continue; val file = File(p); if (file.isFile) files.add(file) }
             }
             if (files.isEmpty()) return listOf("Tidak ada video di indeks media.")
-            for (file in files) {
-                lastScore = 0f; lastDurSec = -1; lastFrames = 0
-                val res = runWithTimeout(120L) { videoFlag(file, 2f, true) }
-                val sz = file.length()
-                val mb = if (sz >= 1_048_576L) String.format(java.util.Locale.US, "%.1f MB", sz / 1_048_576.0) else "${sz / 1024} KB"
-                val dur = if (lastDurSec >= 0) "${lastDurSec / 60}:" + String.format("%02d", lastDurSec % 60) else "?"
-                out.add(if (res == null) "${folderOf(file.absolutePath)} · $dur · $mb · TIDAK TERBACA (bingkai terbaca ${lastFrames})"
-                else "${folderOf(file.absolutePath)} · $dur · $mb · skor tertinggi ${String.format(java.util.Locale.US, "%.2f", lastScore)} dari ${lastFrames} bingkai")
-            }
+            for (file in files) out.add(testOne(file))
         } catch (t: Throwable) {
             out.add("Uji gagal: " + (t.message ?: t.javaClass.simpleName))
         }
