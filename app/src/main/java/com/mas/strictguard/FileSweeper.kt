@@ -232,9 +232,8 @@ object FileSweeper {
             }
         }
         if (deep && cands.isNotEmpty()) {
-            // Layar baru saja memblokir konten dewasa: karantina semua yang >= ambang; bila tidak ada, dua yang paling tinggi (>= 0,80).
-            val over = cands.filter { it.first >= DELETE_THRESHOLD }
-            val pick = if (over.isNotEmpty()) over else cands.sortedByDescending { it.first }.filter { it.first >= 0.80f }.take(2)
+            // Layar baru saja memblokir konten dewasa: karantina hanya berkas yang skornya >= ambang (0,95). Tanpa tebakan.
+            val pick = cands.filter { it.first >= DELETE_THRESHOLD }
             for ((sc, file, isV) in pick) {
                 val sz = file.length()
                 val path = file.absolutePath
