@@ -340,12 +340,12 @@ object FileSweeper {
     fun history(c: Context): List<String> =
         (sp(c).getString("sweep_hist", "") ?: "").split('\n').filter { it.isNotBlank() }.reversed()
 
-    private fun addHistory(c: Context, f: File, isVideo: Boolean, size: Long) {
+    private fun addHistory(c: Context, f: File, isVideo: Boolean, size: Long, tag: String? = null) {
         val root = Environment.getExternalStorageDirectory().absolutePath
         val dir = (f.parent ?: "").removePrefix(root).trim('/').ifEmpty { "(penyimpanan utama)" }
         val mb = if (size >= 1_048_576L) String.format(java.util.Locale.US, "%.1f MB", size / 1_048_576.0) else "${size / 1024} KB"
         val stamp = java.text.SimpleDateFormat("dd/MM HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
-        val line = "$stamp · karantina · ${if (isVideo) "video" else "foto"} · $mb · $dir · skor ${String.format(java.util.Locale.US, "%.2f", lastScore)}"
+        val line = "$stamp · karantina · ${if (isVideo) "video" else "foto"} · $mb · $dir · ${tag ?: "skor " + String.format(java.util.Locale.US, "%.2f", lastScore)}"
         val lines = ArrayList(sp(c).getString("sweep_hist", "")!!.split('\n').filter { it.isNotBlank() })
         lines.add(line.replace('\n', ' '))
         sp(c).edit().putString("sweep_hist", lines.takeLast(60).joinToString("\n")).apply()
@@ -389,6 +389,46 @@ object FileSweeper {
 
     fun scanLog(c: Context): List<String> =
         (sp(c).getString("sweep_log", "") ?: "").split('\n').filter { it.isNotBlank() }.reversed()
+
+    /**
+     * Tindakan manual: karantina n video yang paling baru ditambahkan ke galeri (menurut MediaStore), tanpa dinilai AI.
+     * Untuk video yang jelas-jelas baru kamu simpan dan lolos pindai. Berkas bisa dipulihkan dari karantina.
+     */
+    @Suppress("DEPRECATION")
+    fun quarantineRecent(c: Context, n: Int): Int {
+        if (!hasAccess()) return 0
+        var done = 0
+        try {
+            val q = android.os.Bundle().apply {
+                putString(android.content.ContentResolver.QUERY_ARG_SQL_SELECTION, android.provider.MediaStore.Files.FileColumns.MEDIA_TYPE + " = " + android.provider.MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO)
+                putStringArray(android.content.ContentResolver.QUERY_ARG_SORT_COLUMNS, arrayOf(android.provider.MediaStore.Files.FileColumns.DATE_ADDED))
+                putInt(android.content.ContentResolver.QUERY_ARG_SORT_DIRECTION, android.content.ContentResolver.QUERY_SORT_DIRECTION_DESCENDING)
+                putInt(android.content.ContentResolver.QUERY_ARG_LIMIT, n)
+            }
+            val files = ArrayList<File>()
+            c.contentResolver.query(android.provider.MediaStore.Files.getContentUri("external"), arrayOf(android.provider.MediaStore.Files.FileColumns.DATA), q, null)?.use { cur ->
+                while (cur.moveToNext()) {
+                    val p = cur.getString(0) ?: continue
+                    val file = File(p)
+                    if (file.isFile) files.add(file)
+                }
+            }
+            for (file in files) {
+                val sz = file.length()
+                val path = file.absolutePath
+                addHistory(c, file, true, sz, "manual")
+                if (quarantine(c, file)) {
+                    done++
+                    try { MediaScannerConnection.scanFile(c, arrayOf(path), null, null) } catch (t: Throwable) { }
+                    Store.log(c, "Video dikarantina manual (${sz / 1024} KB)")
+                }
+            }
+            if (done > 0) sp(c).edit().putInt("sweep_deleted", deletedTotal(c) + done).apply()
+        } catch (t: Throwable) {
+            lastInfo = "karantina manual gagal: " + (t.message ?: t.javaClass.simpleName)
+        }
+        return done
+    }
 
     private fun key(f: File) = "v3|" + f.absolutePath + "|" + f.lastModified() + "|" + f.length()
 
@@ -444,14 +484,17 @@ object FileSweeper {
             val dur = (r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION) ?: "0").toLongOrNull() ?: 0L
             lastDurSec = (dur / 1000L).toInt()
             // Lebih banyak bingkai: satu bingkai eksplisit sudah cukup, jadi video pendek pun diperiksa rapat (4-8 bingkai).
-            val cnt = if (dur <= 0L) 1 else (dur / 2500L).toInt().coerceIn(4, if (deep) 16 else 8)
+            val cnt = if (dur <= 0L) 1 else (dur / 2000L).toInt().coerceIn(4, if (deep) 16 else 10)
             val pts = if (dur <= 0L) listOf(0L) else (0 until cnt).map { (dur * 1000L * (0.04 + 0.92 * it / Math.max(1, cnt - 1))).toLong() }
             val shotVid = f.absolutePath.lowercase().let { it.contains("screenshot") || it.contains("screen_rec") || it.contains("screenrec") }
+            // Video pendek: ambil bingkai persis (bukan hanya keyframe). Video kecil sering hanya punya 1-2 keyframe,
+            // sehingga semua bingkai terpilih sama dan adegan yang berbeda tidak pernah dinilai.
+            val opt = if (dur in 1..180_000L) MediaMetadataRetriever.OPTION_CLOSEST else MediaMetadataRetriever.OPTION_CLOSEST_SYNC
             var got = 0
             var hi = 0
             var max = 0f
             for (t in pts) {
-                val b: Bitmap = (if (Build.VERSION.SDK_INT >= 27) r.getScaledFrameAtTime(t, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 640, 640)
+                val b: Bitmap = (if (Build.VERSION.SDK_INT >= 27) r.getScaledFrameAtTime(t, opt, 640, 640)
                 else r.getFrameAtTime(t, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)) ?: continue
                 got++
                 val sc = try { val full = NsfwAi.scoreRaw(b); val tl = if (shotVid) NsfwAi.scoreTiles(b) else 0f; if (tl >= TILE_THRESHOLD) Math.max(full, tl) else full } finally { b.recycle() }

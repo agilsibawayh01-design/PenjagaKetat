@@ -3225,6 +3225,15 @@ class MainActivity : Activity() {
                 FileSweeper.sweepAsync(this, 0L, 400)
                 toast("Memindai di latar belakang")
             })
+            put(ghostButton("Karantina 3 video terbaru di galeri") {
+                Thread {
+                    val n = FileSweeper.quarantineRecent(this, 3)
+                    runOnUiThread {
+                        toast(if (n > 0) "$n video dikarantina" else "Tidak ada yang dikarantina")
+                        render()
+                    }
+                }.start()
+            })
         }
         put(text("Total dikarantina: ${FileSweeper.deletedTotal(this)} · di karantina sekarang: ${FileSweeper.quarantineCount(this)}" + (if (FileSweeper.lastInfo.isNotEmpty()) " · terakhir: ${FileSweeper.lastInfo}" else ""), 12f, false, C_SUB))
         val hist = FileSweeper.history(this)
